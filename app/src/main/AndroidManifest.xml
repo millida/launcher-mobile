@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <!--
+      Android 11 hides other applications: without this the Bedrock client is
+      invisible to us even when it is installed, and its deep link resolves to
+      nothing.
+    -->
+    <queries>
+        <package android:name="com.mojang.minecraftpe" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="minecraft" />
+        </intent>
+    </queries>
+
+    <uses-feature android:name="android.hardware.touchscreen" android:required="true" />
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+
+    <!--
+      allowNativeHeapPointerTagging: Android hides a tag in the top byte of every
+      native pointer, and the desktop virtual machine strips that byte while
+      packing its own pointers. The system then kills the process on the next
+      free with "Pointer tag was truncated".
+      memtagMode: the same story for hardware memory tagging on newer chips.
+    -->
+    <application
+        android:name=".MillidaApp"
+        android:allowBackup="false"
+        android:allowNativeHeapPointerTagging="false"
+        android:memtagMode="off"
+        android:enableOnBackInvokedCallback="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:largeHeap="true"
+        android:supportsRtl="false"
+        android:theme="@style/Theme.Millida">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|density|smallestScreenSize"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:screenOrientation="fullUser"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Millida">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!--
+              The site's "Играть" and "Установить в Millida Launcher" buttons open
+              millida:// addresses. Of the https links to millida.net only pack
+              codes are claimed; every other page stays in the browser.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="millida" />
+            </intent-filter>
+            <!--
+              Verified against https://millida.net/.well-known/assetlinks.json,
+              so a shared pack code opens here without a chooser.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="millida.net" />
+                <data android:pathPrefix="/p/" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".GameActivity"
+            android:exported="false"
+            android:process=":game"
+            android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode|density|smallestScreenSize"
+            android:launchMode="singleTask"
+            android:screenOrientation="userLandscape"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.Millida" />
+        <!--
+          "Play again" after a crash needs a fresh game process, and the old one
+          is still alive while its screen closes. This screen waits in the
+          launcher process until the old one is gone and starts the game anew.
+        -->
+        <activity
+            android:name=".GameRelaunchActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|density|smallestScreenSize"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.Millida" />
+        <!--
+          The keep-alive service guards the game, so it has to live in the game
+          process; the runtime library declares it without a process of its own.
+        -->
+        <service
+            android:name="net.millida.launcher.runtime.GameKeepAliveService"
+            android:process=":game" />
+        <!--
+          The translator runs a second desktop virtual machine, and one process
+          holds only one: it gets its own, kept alive in front so the system
+          does not take it away while the game is on screen.
+        -->
+        <service
+            android:name=".BedrockProxyService"
+            android:exported="false"
+            android:process=":proxy"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Translates the Bedrock protocol for the running game" />
+        </service>
+        <!--
+          Forge and NeoForge finish the client with their own Java programs. The
+          desktop virtual machine starts once per process and never in the
+          launcher's own, so the install gets a process of its own.
+        -->
+        <service
+            android:name=".ForgeProcessorService"
+            android:exported="false"
+            android:process=":installer"
+            android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".HostingTransferService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <!--
+          A call keeps the microphone open while the launcher is in the
+          background or the game is on screen; without a foreground service of
+          the microphone type the system silences the capture.
+        -->
+        <service
+            android:name=".call.CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+        <!--
+          The friends chat over the game: the game process binds here, and the
+          session with its refresh token never leaves the launcher process.
+        -->
+        <service
+            android:name=".call.FriendsBridgeService"
+            android:exported="false" />
+        <!--
+          Files leave the launcher only through a grant: the log a player sends
+          us and the update package the system installer reads both live inside
+          our own storage, which no other application may open directly.
+        -->
+        <receiver
+            android:name=".UpdateInstallReceiver"
+            android:exported="false" />
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>

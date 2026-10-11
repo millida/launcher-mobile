@@ -1,0 +1,370 @@
+{
+  "pack": {
+    "file": "millida-runtime-arm64.zip",
+    "s3Key": "mobile/runtime/millida-runtime-arm64.zip",
+    "sha256": "3111f7b444e61f4fb312b04aa6bde674a8ade2a49cfb4cae2ace3e9a5a0fb870",
+    "origin": "scripts/make_bundle.py: ZalithLauncher2 APK (GPL-3.0) + bridge/ of this repository (GPL-3.0-only)"
+  },
+  "downloads": {
+    "jre8-android-arm64": {
+      "url": "https://github.com/AngelAuraMC/angelauramc-openjdk-build/releases/download/download_jre8/jre8-android-arm64.tar.xz",
+      "sha256": "9a59124d9791957d55c68be664ab76831f336cf2e1e1cd4414220c6fdbf0e06d"
+    },
+    "openjdk-LICENSE": {
+      "url": "https://raw.githubusercontent.com/openjdk/jdk21u/jdk-21.0.1-ga/LICENSE",
+      "sha256": "4b9abebc4338048a7c2dc184e9f800deb349366bdf28eb23c2677a77b4c87726"
+    },
+    "openjdk-ASSEMBLY_EXCEPTION": {
+      "url": "https://raw.githubusercontent.com/openjdk/jdk21u/jdk-21.0.1-ga/ASSEMBLY_EXCEPTION",
+      "sha256": "75292f03bf23d3db7c985aecc191029b93883200721ed23ed34a2e601463df33"
+    },
+    "openjdk-ADDITIONAL_LICENSE_INFO": {
+      "url": "https://raw.githubusercontent.com/openjdk/jdk21u/jdk-21.0.1-ga/ADDITIONAL_LICENSE_INFO",
+      "sha256": "a69bce275ba7a3570af6579cb0f55682cd75fedfcd49e0e8e9022270c447c916"
+    },
+    "zalithlauncher2-LICENSE": {
+      "url": "https://raw.githubusercontent.com/ZalithLauncher/ZalithLauncher2/2.6.1/LICENSE",
+      "sha256": "24dd2b610a052501058aecaf2a0318b6f3a0b5e0baa5428a31c143c92c52aaf5"
+    },
+    "lwjgl3-LICENSE": {
+      "url": "https://raw.githubusercontent.com/LWJGL/lwjgl3/3.3.6/LICENSE.md",
+      "sha256": "4c2f770897d0cfda4d9a65bb4d6d6983dccfd57d4c7eb74ea5ded0762cbc0e75"
+    },
+    "gl4es-LICENSE": {
+      "url": "https://raw.githubusercontent.com/ptitSeb/gl4es/a444cc94b17c672c66c3e6ce07428dc603034db1/LICENSE",
+      "sha256": "69a3049c77abd88658f6ad7cf6a5b6ceb5cf03b80e60f7c4657d90322cfab7bd"
+    },
+    "openal-soft-COPYING": {
+      "url": "https://raw.githubusercontent.com/kcat/openal-soft/1.24.3/COPYING",
+      "sha256": "d808ce217e5b611854da622b57ec29fe545584c48bc5352fae72a4b6e5074a15"
+    },
+    "lwjgl-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl/3.4.2/lwjgl-3.4.2.jar",
+      "sha256": "980072f45e9ece70d77ce8c8c4299075b2f36fa25c3b17b4e98090f7de75d639"
+    },
+    "lwjgl-opengl-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-opengl/3.4.2/lwjgl-opengl-3.4.2.jar",
+      "sha256": "b8c655fce5ccb5780287a5bae15cf32353582e76c44f1c77ea2d8fd27f1e1a67"
+    },
+    "lwjgl-openal-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-openal/3.4.2/lwjgl-openal-3.4.2.jar",
+      "sha256": "ec67efd3ec98fd4a6f1cb2fa41e6c9a1493ee167d23ca27d394597b9a06d020c"
+    },
+    "lwjgl-stb-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-stb/3.4.2/lwjgl-stb-3.4.2.jar",
+      "sha256": "6ee0b57fb8107e8ae961b981a262d96b97b88eff3ac86b8eb6f55362fbbfd82e"
+    },
+    "lwjgl-sdl-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-sdl/3.4.2/lwjgl-sdl-3.4.2.jar",
+      "sha256": "4acb736e7b2ab0d1b84b651ebac7a5405e25ce7252e830edc647c846bf4eb775"
+    },
+    "lwjgl-spng-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-spng/3.4.2/lwjgl-spng-3.4.2.jar",
+      "sha256": "9382bda2026fbfe4ddc5246abab6aa0d3d5e7fc59a196bb98e936aa2f9186633"
+    },
+    "lwjgl-freetype-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-freetype/3.4.2/lwjgl-freetype-3.4.2.jar",
+      "sha256": "cd086dcc53bf9897589a446b58bb990dfaa48136b72ac987e0a757803b9096b7"
+    },
+    "lwjgl-harfbuzz-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-harfbuzz/3.4.2/lwjgl-harfbuzz-3.4.2.jar",
+      "sha256": "565b76f7d8282a43aeca419365e3014a4f4d37cd122b3d5d938fce9411341a07"
+    },
+    "lwjgl-jemalloc-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-jemalloc/3.4.2/lwjgl-jemalloc-3.4.2.jar",
+      "sha256": "c5d535f251e5960070c2b9dc0cf8e373c8c2f14046c211f5c0a51fa6c970a164"
+    },
+    "lwjgl-nuklear-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-nuklear/3.4.2/lwjgl-nuklear-3.4.2.jar",
+      "sha256": "e833cca71db9caf722218901c91544e87ca439f16ea68bdecfe58082cda15697"
+    },
+    "lwjgl-shaderc-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-shaderc/3.4.2/lwjgl-shaderc-3.4.2.jar",
+      "sha256": "aa66fba33fe8a9cef4aea46c515cbcfc1974acf3017506d5b9d840caec6e6cad"
+    },
+    "lwjgl-spvc-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-spvc/3.4.2/lwjgl-spvc-3.4.2.jar",
+      "sha256": "cd408d04011beadb6edc4e435438021b05f74f0fbc7be31b244d1e5666c5f3db"
+    },
+    "lwjgl-tinyfd-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-tinyfd/3.4.2/lwjgl-tinyfd-3.4.2.jar",
+      "sha256": "2f7a1b33917e753194e0a429a841ed5a272870d04c948b9abf30b86043bb7c48"
+    },
+    "lwjgl-zstd-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-zstd/3.4.2/lwjgl-zstd-3.4.2.jar",
+      "sha256": "be43046918ee94b6d85596e8fa5fa31c384b7dd07a1a825cbae4a9dfec9322f7"
+    },
+    "lwjgl-vulkan-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-vulkan/3.4.2/lwjgl-vulkan-3.4.2.jar",
+      "sha256": "373282b9e652ddc36c7cbacb659c889ce071c9fcf7c50ed7077f367c2648fbf3"
+    },
+    "lwjgl-vma-3.4.2.jar": {
+      "url": "https://repo1.maven.org/maven2/org/lwjgl/lwjgl-vma/3.4.2/lwjgl-vma-3.4.2.jar",
+      "sha256": "8b10a8eb44daba950b453e75388473d4a72f6e5a59a8cfbb2746d777945a7d78"
+    },
+    "libffi-3.7.1.tar.gz": {
+      "url": "https://github.com/libffi/libffi/releases/download/v3.7.1/libffi-3.7.1.tar.gz",
+      "sha256": "d5e9a6638ddbd2513ddb54518eb67e4bbe6fa707bcc01c10f6212f0a088d819d"
+    },
+    "sdl-LICENSE": {
+      "url": "https://raw.githubusercontent.com/libsdl-org/SDL/release-3.4.12/LICENSE.txt",
+      "sha256": "1c040b8271b37e5076359f8fd54240e371114112924d2df81ef87c7d6a1dfdfd"
+    },
+    "libffi-LICENSE": {
+      "url": "https://raw.githubusercontent.com/libffi/libffi/v3.7.1/LICENSE",
+      "sha256": "17b64dc60f3b6897a60f971e288b973f655c2edcdf08b25f3c3dd5549857881c"
+    },
+    "shaderc-LICENSE": {
+      "url": "https://raw.githubusercontent.com/google/shaderc/d5f08ae5c5a9a45165578445cbd0f9adf0223448/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    "glslang-LICENSE": {
+      "url": "https://raw.githubusercontent.com/KhronosGroup/glslang/5ed4003a18a10a9d1bd7e43aaf1664499abffa83/LICENSE.txt",
+      "sha256": "17e70c676e1521ff3e4686f04a2053d93a7e28a33be8de7ec37ab0ff72feb677"
+    },
+    "spirv-tools-LICENSE": {
+      "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Tools/c1cb30bb04e2bf911755a40df1242cc6e3d83e26/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    "spirv-headers-LICENSE": {
+      "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Headers/ad9184e76a66b1001c29db9b0a3e87f646c64de0/LICENSE",
+      "sha256": "ea43b1de38a6f90c488800d66dec1ed671e68cda530266bc96951fb5b6307613"
+    },
+    "spirv-cross-LICENSE": {
+      "url": "https://raw.githubusercontent.com/KhronosGroup/SPIRV-Cross/6c09849fe88c48eaed08413aa022aaa136a3a057/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    "nuklear-LICENSE": {
+      "url": "https://raw.githubusercontent.com/Immediate-Mode-UI/Nuklear/v4.13.3/src/LICENSE",
+      "sha256": "7575b17b315ac28d4aafda3189c0f22cf11292979e032a2a0c49ede985520e22"
+    },
+    "tinyfd-LICENSE": {
+      "url": "https://raw.githubusercontent.com/LWJGL/lwjgl3/32593afe25e2f1394c3425673f1b71a0122f5cd4/modules/lwjgl/tinyfd/tinyfd_license.txt",
+      "sha256": "43eedc0b74269e842aebc6d28286bcd3f4a464aed058687dc6a1b3835e3593f4"
+    },
+    "zstd-LICENSE": {
+      "url": "https://raw.githubusercontent.com/LWJGL/lwjgl3/32593afe25e2f1394c3425673f1b71a0122f5cd4/modules/lwjgl/zstd/zstd_license.txt",
+      "sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8"
+    },
+    "xxhash-LICENSE": {
+      "url": "https://raw.githubusercontent.com/LWJGL/lwjgl3/32593afe25e2f1394c3425673f1b71a0122f5cd4/modules/lwjgl/xxhash/xxhash_license.txt",
+      "sha256": "86ec6953794503942b70fcd4f35b565d44f63f703b7037ce44dad965c4aaae91"
+    },
+    "mobileglues-2.0.0.apk": {
+      "url": "https://github.com/MobileGL-Dev/MobileGlues-release/releases/download/V2.0.0/MobileGlues_2.0.0.apk",
+      "sha256": "a7e1eb29731fdece7ab3af7fb00692b856f1808a7544436e7b3eb6c08355581a"
+    },
+    "mobileglues-LICENSE": {
+      "url": "https://raw.githubusercontent.com/MobileGL-Dev/MobileGlues/f56af31d3e490d95808b3adc4ace20234249a37a/LICENSE",
+      "sha256": "35a20d16c9f153b1603bb46228d58344450606bbe7ce4f181bbf0a45aadc2ae7"
+    },
+    "cjson-LICENSE": {
+      "url": "https://raw.githubusercontent.com/DaveGamble/cJSON/v1.7.18/LICENSE",
+      "sha256": "a36dda207c36db5818729c54e7ad4e8b0c6fba847491ba64f372c1a2037b6d5c"
+    },
+    "fidelityfx-fsr-LICENSE": {
+      "url": "https://raw.githubusercontent.com/GPUOpen-Effects/FidelityFX-FSR/a21ffb8f6c13233ba336352bdff293894c706575/license.txt",
+      "sha256": "db089274ce766da70f5b7d791029c3486f9f9e27c8c79c652689603d3192e802"
+    }
+  },
+  "builds": {
+    "sdl3": {
+      "sdl": {
+        "repo": "https://github.com/libsdl-org/SDL.git",
+        "tag": "release-3.4.12",
+        "commit": "f87239e71e42da91ca317a12eefb82cfbf3393eb",
+        "version": "3.4.12"
+      },
+      "lwjgl": {
+        "repo": "https://github.com/LWJGL/lwjgl3.git",
+        "tag": "3.4.2",
+        "commit": "32593afe25e2f1394c3425673f1b71a0122f5cd4",
+        "version": "3.4.2"
+      },
+      "shaderc": {
+        "shaderc": {
+          "repo": "https://github.com/google/shaderc.git",
+          "tag": "v2026.2",
+          "commit": "d5f08ae5c5a9a45165578445cbd0f9adf0223448",
+          "version": "2026.2"
+        },
+        "glslang": {
+          "repo": "https://github.com/KhronosGroup/glslang.git",
+          "commit": "5ed4003a18a10a9d1bd7e43aaf1664499abffa83"
+        },
+        "spirv-tools": {
+          "repo": "https://github.com/KhronosGroup/SPIRV-Tools.git",
+          "commit": "c1cb30bb04e2bf911755a40df1242cc6e3d83e26"
+        },
+        "spirv-headers": {
+          "repo": "https://github.com/KhronosGroup/SPIRV-Headers.git",
+          "commit": "ad9184e76a66b1001c29db9b0a3e87f646c64de0"
+        }
+      },
+      "spirvCross": {
+        "repo": "https://github.com/KhronosGroup/SPIRV-Cross.git",
+        "tag": "vulkan-sdk-1.4.357.0",
+        "commit": "6c09849fe88c48eaed08413aa022aaa136a3a057",
+        "version": "vulkan-sdk-1.4.357.0"
+      },
+      "libffi": "libffi-3.7.1.tar.gz",
+      "jars": [
+        "lwjgl-3.4.2.jar",
+        "lwjgl-opengl-3.4.2.jar",
+        "lwjgl-openal-3.4.2.jar",
+        "lwjgl-stb-3.4.2.jar",
+        "lwjgl-sdl-3.4.2.jar",
+        "lwjgl-spng-3.4.2.jar",
+        "lwjgl-freetype-3.4.2.jar",
+        "lwjgl-harfbuzz-3.4.2.jar",
+        "lwjgl-jemalloc-3.4.2.jar",
+        "lwjgl-nuklear-3.4.2.jar",
+        "lwjgl-shaderc-3.4.2.jar",
+        "lwjgl-spvc-3.4.2.jar",
+        "lwjgl-tinyfd-3.4.2.jar",
+        "lwjgl-zstd-3.4.2.jar",
+        "lwjgl-vulkan-3.4.2.jar",
+        "lwjgl-vma-3.4.2.jar"
+      ]
+    }
+  },
+  "components": [
+    {
+      "id": "jre-8",
+      "category": "jre",
+      "major": 8,
+      "fromDownload": "jre8-android-arm64",
+      "licenses": [],
+      "notice": [
+        "OpenJDK 8 (1.8.0_482) for Android arm64, GPL-2.0 with the Classpath Exception; LICENSE, ASSEMBLY_EXCEPTION and THIRD_PARTY_README are at the root of this folder.",
+        "Binary: https://github.com/AngelAuraMC/angelauramc-openjdk-build/releases/tag/download_jre8 (CI run 22620663943).",
+        "Build scripts and patches: https://github.com/AngelAuraMC/angelauramc-openjdk-build/tree/62359f04413c3ffe339e652b88a96d9087840cbf",
+        "OpenJDK source revision: cea3cd4c1d7a (see the release file)."
+      ]
+    },
+    {
+      "id": "jre-21",
+      "category": "jre",
+      "major": 21,
+      "fromPack": "jre-21/",
+      "licenses": [
+        "openjdk-LICENSE",
+        "openjdk-ASSEMBLY_EXCEPTION",
+        "openjdk-ADDITIONAL_LICENSE_INFO"
+      ],
+      "notice": [
+        "OpenJDK 21.0.1 for Android arm64, GPL-2.0 with the Classpath Exception.",
+        "Taken from the runtime bundled in ZalithLauncher2: https://github.com/ZalithLauncher/ZalithLauncher2",
+        "OpenJDK source: https://github.com/openjdk/jdk21u/tree/jdk-21.0.1-ga"
+      ]
+    },
+    {
+      "id": "jre-25",
+      "category": "jre",
+      "major": 25,
+      "fromPack": "jre-25/",
+      "licenses": [
+        "openjdk-LICENSE",
+        "openjdk-ASSEMBLY_EXCEPTION",
+        "openjdk-ADDITIONAL_LICENSE_INFO"
+      ],
+      "notice": [
+        "OpenJDK 25.0.3 for Android arm64, GPL-2.0 with the Classpath Exception.",
+        "Taken from the runtime bundled in ZalithLauncher2: https://github.com/ZalithLauncher/ZalithLauncher2",
+        "OpenJDK source: https://github.com/openjdk/jdk25u/tree/jdk-25.0.3-ga"
+      ]
+    },
+    {
+      "id": "bridge",
+      "category": "bridge",
+      "fromPack": "bridge/",
+      "licenses": [
+        "lwjgl3-LICENSE",
+        "zalithlauncher2-LICENSE"
+      ],
+      "notice": [
+        "millida-glfw.jar: this repository, GPL-3.0-only (bridge/).",
+        "lwjgl-glfw-classes.jar: LWJGL 3.3.6 (BSD-3-Clause, https://github.com/LWJGL/lwjgl3) with the GLFW and LWJGL 2 compatibility classes of ZalithLauncher2 (GPL-3.0, https://github.com/ZalithLauncher/ZalithLauncher2).",
+        "Modified by scripts/make_runtime_components.py: org/lwjgl/glfw/GLFW, org/lwjgl/opengl/GL and org/lwjgl/opengl/Display read the renderer from MILLIDA_RENDER instead of POJAV_RENDERER."
+      ]
+    },
+    {
+      "id": "native",
+      "category": "renderer",
+      "fromPack": "native/",
+      "licenses": [
+        "zalithlauncher2-LICENSE",
+        "gl4es-LICENSE",
+        "openal-soft-COPYING",
+        "lwjgl3-LICENSE",
+        "mobileglues-LICENSE",
+        "glslang-LICENSE",
+        "spirv-cross-LICENSE",
+        "cjson-LICENSE",
+        "fidelityfx-fsr-LICENSE",
+        "xxhash-LICENSE"
+      ],
+      "notice": [
+        "Window layer and renderers taken from ZalithLauncher2 (GPL-3.0): https://github.com/ZalithLauncher/ZalithLauncher2",
+        "libpojavexec*, libdriver_helper, libexithook, liblinkerhook: ZalithLauncher2 / PojavLauncher sources, GPL-3.0 / LGPL-3.0.",
+        "libpojavexec.so is modified by scripts/make_runtime_components.py: it reads the renderer from MILLIDA_RENDER instead of POJAV_RENDERER.",
+        "libgl4es_114: gl4es, MIT (https://github.com/ptitSeb/gl4es). libng_gl4es: Krypton Wrapper (NG-GL4ES), MIT (https://github.com/BZLZHH/NG-GL4ES).",
+        "libopenal: OpenAL Soft, LGPL-2.0-or-later (https://github.com/kcat/openal-soft).",
+        "liblwjgl*: LWJGL 3.3.6, BSD-3-Clause. libEGL_angle/libGLESv2_angle: ANGLE, BSD-3-Clause. libEGL_mesa, libglapi, libzink_dri: Mesa, MIT.",
+        "libshaderc, libspirv-cross-c-shared, libfreetype, libjnidispatch, libbytehook, libc++_shared, libcutils: their upstream licenses (Apache-2.0, FreeType/GPL-2.0, Apache-2.0/LGPL-2.1, MIT, Apache-2.0 with LLVM exception, Apache-2.0).",
+        "libmobileglues.so: MobileGlues 2.0.0, LGPL-2.1-only (licenses/mobileglues-LICENSE), unmodified binary from lib/arm64-v8a of MobileGlues_2.0.0.apk: https://github.com/MobileGL-Dev/MobileGlues-release/releases/tag/V2.0.0",
+        "MobileGlues source of this binary: https://github.com/MobileGL-Dev/MobileGlues/tree/f56af31d3e490d95808b3adc4ace20234249a37a. It is a separate shared library loaded at run time and can be replaced by a build of that source.",
+        "libmobileglues.so links statically glslang (BSD-3-Clause and others), SPIRV-Cross (Apache-2.0), cJSON (MIT), FidelityFX FSR 1 (MIT) and xxHash (BSD-2-Clause)."
+      ],
+      "addFiles": [
+        {
+          "download": "mobileglues-2.0.0.apk",
+          "member": "lib/arm64-v8a/libmobileglues.so",
+          "as": "libmobileglues.so"
+        }
+      ],
+      "addRenderers": [
+        {
+          "id": "mobileglues",
+          "label": "MobileGlues (для Sodium)",
+          "library": "libmobileglues.so",
+          "eglLibrary": "libmobileglues.so",
+          "nativeId": "opengles3",
+          "shaders": true,
+          "environment": {
+            "LIBGL_ES": "3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sdl3",
+      "category": "sdl",
+      "fromBuild": "sdl3",
+      "licenses": [
+        "sdl-LICENSE",
+        "lwjgl3-LICENSE",
+        "libffi-LICENSE",
+        "shaderc-LICENSE",
+        "glslang-LICENSE",
+        "spirv-tools-LICENSE",
+        "spirv-headers-LICENSE",
+        "spirv-cross-LICENSE",
+        "nuklear-LICENSE",
+        "tinyfd-LICENSE",
+        "zstd-LICENSE",
+        "xxhash-LICENSE"
+      ],
+      "notice": [
+        "libSDL3.so: SDL 3.4.12 (zlib license, https://github.com/libsdl-org/SDL/tree/release-3.4.12), built by the runtime workflow of this repository with the Android NDK.",
+        "This is an altered build of SDL: scripts/build_sdl_runtime.py (SDL_PATCHES) lists every change, each marked 'Millida' in the source.",
+        "liblwjgl*.so and lwjgl*.jar: LWJGL 3.4.2 (BSD-3-Clause, https://github.com/LWJGL/lwjgl3/tree/3.4.2); natives built from source by scripts/build_sdl_runtime.py, jars from Maven Central.",
+        "liblwjgl.so links libffi 3.7.1 statically (MIT, https://github.com/libffi/libffi/releases/tag/v3.7.1); liblwjgl_spng.so carries libspng and miniz (BSD-2-Clause, MIT) from the LWJGL sources.",
+        "liblwjgl_nuklear.so carries Nuklear 4.13.3 (MIT or public domain), liblwjgl_tinyfd.so tiny file dialogs (zlib), liblwjgl_zstd.so Zstandard and xxHash (BSD-2-Clause/BSD-3-Clause), all from the LWJGL 3.4.2 sources.",
+        "libshaderc.so: shaderc 2026.2 (Apache-2.0, https://github.com/google/shaderc/tree/v2026.2) with glslang (BSD-3-Clause and others, see licenses/glslang-LICENSE), SPIRV-Tools (Apache-2.0) and SPIRV-Headers (MIT) at the revisions of its DEPS file, linked statically.",
+        "libspirv-cross.so: SPIRV-Cross vulkan-sdk-1.4.357.0 C API (Apache-2.0, https://github.com/KhronosGroup/SPIRV-Cross/tree/vulkan-sdk-1.4.357.0).",
+        "lwjgl-freetype, lwjgl-harfbuzz, lwjgl-jemalloc, lwjgl-vulkan and lwjgl-vma jars are Java bindings only (BSD-3-Clause); their native libraries are not part of this component."
+      ]
+    }
+  ]
+}
