@@ -1,35 +1,31 @@
-# Как собрать Millida Launcher для Android самому
+# How to build Millida Launcher for Android yourself
 
-<p align="center">
-  <a href="https://github.com/millida/launcher-mobile/raw/main/.github/readme/build-guide.mp4"><img src=".github/readme/build-guide.gif" alt="Сборка APK из исходников: клонирование и сборка" width="100%"></a>
-  <br>
-  <a href="https://github.com/millida/launcher-mobile/raw/main/.github/readme/build-guide.mp4"><b>Смотреть видео целиком (MP4, 75 с)</b></a>
-</p>
+Russian version: [BUILDING.ru.md](BUILDING.ru.md)
 
-Три команды. Первая сборка дольше: Gradle один раз скачивает зависимости. Дальше — пара минут.
+Three commands. The first build takes longer: Gradle downloads the dependencies once. After that, a couple of minutes.
 
-## 1. Поставь инструменты
+## 1. Install the tools
 
-Проще всего — [Android Studio](https://developer.android.com/studio): в ней уже есть JDK и Android SDK. Дальше «Settings» → «Languages & Frameworks» → «Android SDK»:
+The easiest way is [Android Studio](https://developer.android.com/studio): it already has a JDK and the Android SDK. Then go to "Settings" → "Languages & Frameworks" → "Android SDK":
 
-- вкладка «SDK Platforms» — **Android 15 (API 35)**;
-- вкладка «SDK Tools» — **NDK (Side by side) 27** и **CMake 3.22.1**.
+- the "SDK Platforms" tab: **Android 15 (API 35)**;
+- the "SDK Tools" tab: **NDK (Side by side) 27** and **CMake 3.22.1**.
 
-Без Android Studio — JDK 17 или новее и [command-line tools](https://developer.android.com/studio#command-line-tools-only):
+Without Android Studio: JDK 17 or newer and the [command-line tools](https://developer.android.com/studio#command-line-tools-only):
 
 ```bash
 sdkmanager "platforms;android-35" "ndk;27.0.12077973" "cmake;3.22.1"
 ```
 
-Укажи, где лежит SDK, — переменной `ANDROID_HOME` или файлом `local.properties` в корне репозитория:
+Tell the build where the SDK is, with the `ANDROID_HOME` variable or a `local.properties` file in the root of the repository:
 
 ```properties
-sdk.dir=C\:\\Users\\<имя>\\AppData\\Local\\Android\\Sdk
+sdk.dir=C\:\\Users\\<name>\\AppData\\Local\\Android\\Sdk
 ```
 
-Android Studio создаёт этот файл сама, когда открываешь в ней проект.
+Android Studio creates this file itself when you open the project in it.
 
-## 2. Собери
+## 2. Build
 
 ```bash
 git clone https://github.com/millida/launcher-mobile.git
@@ -37,40 +33,40 @@ cd launcher-mobile
 ./gradlew :app:assembleDebug
 ```
 
-В PowerShell — `.\gradlew :app:assembleDebug`.
+In PowerShell: `.\gradlew :app:assembleDebug`.
 
-Хочешь собрать ровно ту версию, что раздаётся на сайте, — это последний коммит «Millida Mobile X.Y.Z» в [истории](https://github.com/millida/launcher-mobile/commits/main).
+To build exactly the version served on the website, take the latest "Millida Mobile X.Y.Z" commit in the [history](https://github.com/millida/launcher-mobile/commits/main).
 
-## 3. Забери результат
+## 3. Get the result
 
-`app/build/outputs/apk/debug/app-debug.apk` — скопируй на телефон и открой или поставь по кабелю:
+`app/build/outputs/apk/debug/app-debug.apk`: copy it to the phone and open it, or install it over a cable:
 
 ```bash
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Нужен телефон на Android 8.0 и новее с 64-битным процессором (arm64).
+You need a phone with Android 8.0 or newer and a 64-bit processor (arm64).
 
-## Чем твоя сборка отличается от нашей
+## How your build differs from ours
 
-| | Твоя сборка | С millida.net |
+| | Your build | From millida.net |
 | --- | --- | --- |
-| Код | Тот же, что в этом репозитории | Тот же: каждый выпуск здесь — коммит «Millida Mobile X.Y.Z» |
-| Подпись | Отладочный ключ Android SDK | Ключ Millida. Его не публикует ни один разработчик: с ним любой выпустил бы приложение от нашего имени |
-| Приложение | Отдельное — `net.millida.launcher.debug`: ставится рядом с официальным и его не трогает | `net.millida.launcher` |
-| Java и графика | Скачаются при первом запуске игры | Уже внутри APK |
+| Code | The same as in this repository | The same: every release here is a "Millida Mobile X.Y.Z" commit |
+| Signature | The debug key of the Android SDK | The Millida key. No developer publishes it: with it, anyone could release an app in our name |
+| App | A separate one, `net.millida.launcher.debug`: it installs next to the official one and does not touch it | `net.millida.launcher` |
+| Java and graphics | Downloaded on the first game launch | Already inside the APK |
 
-## Как проверить официальный APK
+## How to check the official APK
 
-- Скачивай только с [millida.net/launcher](https://millida.net/launcher). Всё остальное — не наше.
-- SHA-256 файла должна совпасть с опубликованной в [latest.json](https://launcher-storage.millida.net/mobile/latest.json): Windows — `certutil -hashfile <файл> SHA256`, macOS и Linux — `sha256sum <файл>`.
-- Отпечаток ключа подписи — `apksigner verify --print-certs <файл>` — должен совпасть с `sha256_cert_fingerprints` в [assetlinks.json](https://millida.net/.well-known/assetlinks.json).
+- Download only from [millida.net/launcher](https://millida.net/launcher). Anything else is not ours.
+- The SHA-256 of the file must match the one published in [latest.json](https://launcher-storage.millida.net/mobile/latest.json): on Windows `certutil -hashfile <file> SHA256`, on macOS and Linux `sha256sum <file>`.
+- The signing key fingerprint, `apksigner verify --print-certs <file>`, must match `sha256_cert_fingerprints` in [assetlinks.json](https://millida.net/.well-known/assetlinks.json).
 
-## Если не собирается
+## If it does not build
 
-| Ошибка | Что сделать |
+| Error | What to do |
 | --- | --- |
-| `SDK location not found` | Не указан путь к SDK — `ANDROID_HOME` или `local.properties`, шаг 1 |
-| `Android Gradle plugin requires Java 17 to run` | Поставь JDK 17 или новее либо укажи `JAVA_HOME` на папку `jbr` из Android Studio |
-| Ошибка про NDK или CMake | Поставь NDK 27 и CMake 3.22.1 в «SDK Tools», шаг 1 |
-| Что-то другое | [Заведи issue](https://github.com/millida/launcher-mobile/issues/new) и приложи вывод команды |
+| `SDK location not found` | The SDK path is not set: `ANDROID_HOME` or `local.properties`, step 1 |
+| `Android Gradle plugin requires Java 17 to run` | Install JDK 17 or newer, or point `JAVA_HOME` to the `jbr` folder of Android Studio |
+| An error about the NDK or CMake | Install NDK 27 and CMake 3.22.1 in "SDK Tools", step 1 |
+| Something else | [Open an issue](https://github.com/millida/launcher-mobile/issues/new) and attach the output of the command |
