@@ -68,9 +68,9 @@ android {
         buildConfigField("boolean", "PD_CONSENT", "false")
         // Test-only hooks (offline nick, scripted pack runs, stand override); on in debug and preview.
         buildConfigField("boolean", "TEST_HOOKS", "false")
-        // Guest nick without an account: test builds only, players sign in to Millida or Microsoft
-        // (owner, 29.10.2026). Guest accounts already saved keep working.
-        buildConfigField("boolean", "GUEST_LOGIN", "false")
+        // The offline nick for players without a Minecraft licence. 1.10.2 shipped without it and 92% of
+        // new installs never got past «Как будешь играть?» (telemetry 03.11.2026), so it stays on.
+        buildConfigField("boolean", "GUEST_LOGIN", "true")
     }
 
     signingConfigs {
@@ -100,7 +100,6 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("millida")
             buildConfigField("boolean", "TEST_HOOKS", testHooks.toString())
-            buildConfigField("boolean", "GUEST_LOGIN", testHooks.toString())
         }
         debug {
             applicationIdSuffix = ".debug"
