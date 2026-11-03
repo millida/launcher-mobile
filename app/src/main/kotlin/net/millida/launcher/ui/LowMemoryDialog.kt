@@ -12,20 +12,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import net.millida.launcher.core.LowMemoryNotice
 
+import net.millida.launcher.core.i18n.tr
 /** Shown on start while the player has not asked to stop seeing it. */
 @Composable
 fun LowMemoryNoticeDialog(notice: LowMemoryNotice, onClose: (hideForever: Boolean) -> Unit) {
     var hide by rememberSaveable { mutableStateOf(false) }
     MDialog(
-        title = "Мало памяти",
+        title = tr("Мало памяти"),
         onDismiss = { onClose(hide) },
         body = {
             Text(notice.text, style = MillidaType.body, color = millida.fgMuted)
             Spacer(Modifier.height(8.dp))
-            MSwitchRow(title = "Не показывать снова", hint = null, checked = hide, onChange = { hide = it })
+            MSwitchRow(title = tr("Не показывать снова"), hint = null, checked = hide, onChange = { hide = it })
         },
         actions = {
-            MPrimaryButton("Понятно", onClick = { onClose(hide) })
+            MPrimaryButton(tr("Понятно"), onClick = { onClose(hide) })
         },
     )
 }
@@ -34,9 +35,9 @@ fun LowMemoryNoticeDialog(notice: LowMemoryNotice, onClose: (hideForever: Boolea
 @Composable
 fun LowMemoryPlayDialog(notice: LowMemoryNotice, onPlay: () -> Unit, onCancel: () -> Unit) {
     MConfirmDialog(
-        title = "Мало памяти",
+        title = tr("Мало памяти"),
         text = notice.text,
-        confirm = "Всё равно играть",
+        confirm = tr("Всё равно играть"),
         onConfirm = onPlay,
         onDismiss = onCancel,
         danger = false,

@@ -39,6 +39,7 @@ import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.Screen
 import net.millida.launcher.UiState
 import net.millida.launcher.core.SafePath
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.packs.MyPack
 import net.millida.launcher.core.packs.PackCodes
 import net.millida.launcher.core.packs.SharedPackView
@@ -84,20 +85,20 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
             if (ready) {
                 model.installPackFile(target).invokeOnCompletion { target.delete() }
             } else {
-                model.notice("Файл не прочитался — выбери .mrpack или zip со сборкой", isError = true)
+                model.notice(tr("Файл не прочитался — выбери .mrpack или zip со сборкой"), isError = true)
             }
         }
     }
     val copyCode: (String) -> Unit = { shared ->
         clipboard.setText(AnnotatedString(shared))
-        model.notice("Код скопирован: $shared")
+        model.notice(tr("Код скопирован: {shared}", shared))
     }
     val find: () -> Unit = { if (PackCodes.valid(code) && idle) model.previewPack(code) }
     val picked = state.profiles.firstOrNull { it.id == shareProfileId } ?: state.profiles.firstOrNull()
 
-    MScreen(modifier = modifier, title = "Коды сборок", onBack = { model.back() }) {
+    MScreen(modifier = modifier, title = tr("Коды сборок"), onBack = { model.back() }) {
         if (importing && state.busy == null) {
-            item(key = "importing") { MBusyCard(label = "Читаем файл сборки", progress = null) }
+            item(key = "importing") { MBusyCard(label = tr("Читаем файл сборки"), progress = null) }
         }
         state.busy?.let { task ->
             item(key = "busy") {
@@ -109,13 +110,13 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
             }
         }
 
-        item(key = "code-title") { MSectionHeader("Поставить по коду") }
+        item(key = "code-title") { MSectionHeader(tr("Поставить по коду")) }
         item(key = "code") {
             MCard {
                 MField(
                     value = code,
                     onValueChange = { code = PackCodes.normalize(it) },
-                    placeholder = "Код, например K7M2QRT9",
+                    placeholder = tr("Код, например K7M2QRT9"),
                     imeAction = androidx.compose.ui.text.input.ImeAction.Search,
                     onImeAction = find,
                     leadingIcon = MIcons.key,
@@ -123,7 +124,7 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
                 )
                 Spacer(Modifier.height(12.dp))
                 MPrimaryButton(
-                    "Найти",
+                    tr("Найти"),
                     onClick = find,
                     enabled = PackCodes.valid(code) && idle,
                     icon = MIcons.search,
@@ -137,20 +138,20 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
         }
         item(key = "file") {
             MListRow(
-                title = "Поставить из файла",
-                subtitle = ".mrpack или zip со сборкой",
+                title = tr("Поставить из файла"),
+                subtitle = tr(".mrpack или zip со сборкой"),
                 icon = MIcons.folder,
                 onClick = { if (idle) pickFile.launch("*/*") },
             )
         }
 
         item(key = "mine-title") {
-            PacksShelfTitle("Мои коды") {
+            PacksShelfTitle(tr("Мои коды")) {
                 if (state.millidaSignedIn) {
                     MIconButton(
                         MIcons.refresh,
                         onClick = { model.loadMyPacks() },
-                        label = "Обновить",
+                        label = tr("Обновить"),
                         enabled = !state.isLoading(Area.PACKS),
                     )
                 }
@@ -159,7 +160,7 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
         val packsError = state.errorOf(Area.PACKS)
         when {
             !state.millidaSignedIn -> item(key = "mine-gate") {
-                MSignInGate(onSignIn = { model.loginMillida() }, title = "Войди, чтобы видеть коды")
+                MSignInGate(onSignIn = { model.loginMillida() }, title = tr("Войди, чтобы видеть коды"))
             }
             packsError != null -> item(key = "mine-error") {
                 MErrorCard(packsError, onRetry = { model.retry(Area.PACKS) })
@@ -170,8 +171,8 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
             state.myPacks.isEmpty() -> item(key = "mine-empty") {
                 MEmptyState(
                     icon = MIcons.key,
-                    title = "Кодов пока нет",
-                    actionText = if (picked != null) "Получить код" else null,
+                    title = tr("Кодов пока нет"),
+                    actionText = if (picked != null) tr("Получить код") else null,
                     onAction = { picked?.let { profile -> model.sharePack(profile, onDone = copyCode) } },
                     actionIcon = MIcons.copy,
                     primary = false,
@@ -184,13 +185,13 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
             }
         }
 
-        item(key = "share-title") { MSectionHeader("Поделиться сборкой") }
+        item(key = "share-title") { MSectionHeader(tr("Поделиться сборкой")) }
         if (picked == null) {
             item(key = "share-empty") {
                 MEmptyState(
                     icon = MIcons.box,
-                    title = "Создай сборку во вкладке «Играть»",
-                    actionText = "Играть",
+                    title = tr("Создай сборку во вкладке «Играть»"),
+                    actionText = tr("Играть"),
                     onAction = { model.open(Screen.HOME) },
                     actionIcon = MIcons.play,
                 )
@@ -198,23 +199,23 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
         } else {
             item(key = "share") {
                 MCard {
-                    Text("СБОРКА", style = MillidaType.caption, color = millida.fgSubtle)
+                    Text(tr("СБОРКА"), style = MillidaType.caption, color = millida.fgSubtle)
                     Spacer(Modifier.height(8.dp))
                     ProfilePicker(state.profiles, picked) { shareProfileId = it.id }
                     Spacer(Modifier.height(14.dp))
                     MButtonRow {
                         if (state.millidaSignedIn) {
                             MPrimaryButton(
-                                "Получить код",
+                                tr("Получить код"),
                                 onClick = { model.sharePack(picked, onDone = copyCode) },
                                 enabled = idle,
                                 icon = MIcons.copy,
                             )
                         } else {
-                            MPrimaryButton("Войти за кодом", onClick = { model.loginMillida() }, icon = MIcons.login)
+                            MPrimaryButton(tr("Войти за кодом"), onClick = { model.loginMillida() }, icon = MIcons.login)
                         }
                         MSecondaryButton(
-                            "Файл .mrpack",
+                            tr("Файл .mrpack"),
                             onClick = {
                                 exporting = true
                                 val stem = SafePath.fileName(picked.name.ifEmpty { "millida-pack" })
@@ -226,6 +227,18 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
                             icon = MIcons.download,
                             loading = exporting,
                         )
+                        MSecondaryButton(
+                            tr("Zip для CurseForge"),
+                            onClick = {
+                                exporting = true
+                                val stem = SafePath.fileName(picked.name.ifEmpty { "millida-pack" })
+                                val target = File(context.cacheDir, "$stem-curseforge.zip")
+                                model.exportPack(picked, target, curseForge = true) { file -> readyExport = file }
+                                    .invokeOnCompletion { exporting = false }
+                            },
+                            enabled = idle && !exporting,
+                            icon = MIcons.download,
+                        )
                     }
                 }
             }
@@ -234,9 +247,9 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
 
     revoking?.let { pack ->
         MConfirmDialog(
-            title = "Удалить код ${pack.code}?",
-            text = "По нему сборка «${pack.name.ifEmpty { pack.code }}» больше не поставится",
-            confirm = "Удалить",
+            title = tr("Удалить код {code}?", pack.code),
+            text = tr("По нему сборка «{0}» больше не поставится", pack.name.ifEmpty { pack.code }),
+            confirm = tr("Удалить"),
             onConfirm = {
                 revoking = null
                 model.unsharePack(pack.code)
@@ -247,7 +260,7 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
 
     readyExport?.let { file ->
         MDialog(
-            title = "Файл готов",
+            title = tr("Файл готов"),
             onDismiss = { readyExport = null },
             body = {
                 Text(
@@ -257,12 +270,13 @@ fun PacksScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
                 )
             },
             actions = {
-                MTextButton("Позже", onClick = { readyExport = null })
+                MTextButton(tr("Позже"), onClick = { readyExport = null })
                 MPrimaryButton(
-                    "Отправить",
+                    tr("Отправить"),
                     onClick = {
-                        val sent = shareFile(context, file, MRPACK_MIME, "Сборка Millida")
-                        if (!sent) model.notice("Не нашлось приложения, готового принять файл", isError = true)
+                        val mime = if (file.extension == "zip") "application/zip" else MRPACK_MIME
+                        val sent = shareFile(context, file, mime, tr("Сборка Millida"))
+                        if (!sent) model.notice(tr("Не нашлось приложения, готового принять файл"), isError = true)
                         readyExport = null
                     },
                     icon = MIcons.share,
@@ -309,7 +323,7 @@ private fun PackPreviewCard(preview: SharedPackView, enabled: Boolean, onInstall
                 if (preview.author.isNotEmpty()) {
                     Spacer(Modifier.height(2.dp))
                     Text(
-                        "Собрал ${preview.author}",
+                        tr("Собрал {author}", preview.author),
                         style = MillidaType.small,
                         color = colors.fgSubtle,
                         maxLines = 1,
@@ -339,7 +353,7 @@ private fun PackPreviewCard(preview: SharedPackView, enabled: Boolean, onInstall
             previewFacts(preview).forEach { (value, caption) -> PackFact(value, caption) }
         }
         Spacer(Modifier.height(14.dp))
-        MPrimaryButton("Установить", onClick = onInstall, enabled = enabled, icon = MIcons.download)
+        MPrimaryButton(tr("Установить"), onClick = onInstall, enabled = enabled, icon = MIcons.download)
     }
 }
 
@@ -365,8 +379,8 @@ private fun MyPackRow(pack: MyPack, modifier: Modifier = Modifier, onRevoke: () 
         subtitle = myPackFacts(pack),
         trailing = {
             MBadge(pack.code, colors.accentText, colors.accentSoft)
-            MIconButton(MIcons.copy, onClick = onCopy, label = "Скопировать код")
-            MIconButton(MIcons.trash, onClick = onRevoke, tint = colors.danger, label = "Удалить код")
+            MIconButton(MIcons.copy, onClick = onCopy, label = tr("Скопировать код"))
+            MIconButton(MIcons.trash, onClick = onRevoke, tint = colors.danger, label = tr("Удалить код"))
         },
     )
 }
@@ -391,15 +405,15 @@ private fun ProfilePicker(profiles: List<Profile>, picked: Profile, onPick: (Pro
 }
 
 private fun previewFacts(preview: SharedPackView): List<Pair<String, String>> = listOfNotNull(
-    preview.gameVersion.takeIf { it.isNotEmpty() }?.let { it to "версия" },
-    preview.loader.takeIf { it.isNotEmpty() }?.let { it to "загрузчик" },
-    preview.files.toString() to "файлов",
-    preview.sizeBytes.takeIf { it > 0 }?.let { humanSize(it) to "размер" },
+    preview.gameVersion.takeIf { it.isNotEmpty() }?.let { it to tr("версия") },
+    preview.loader.takeIf { it.isNotEmpty() }?.let { it to tr("загрузчик") },
+    preview.files.toString() to tr("файлов"),
+    preview.sizeBytes.takeIf { it > 0 }?.let { humanSize(it) to tr("размер") },
 )
 
 private fun myPackFacts(pack: MyPack): String = listOf(
-    "${pack.files} файлов",
-    "ставили ${pack.installs} раз",
+    tr("{files} файлов", pack.files),
+    tr("ставили {installs} раз", pack.installs),
 ).joinToString(" · ")
 
 /**

@@ -33,11 +33,11 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -60,11 +60,12 @@ import net.millida.launcher.UiState
 import net.millida.launcher.core.account.AccountKind
 import net.millida.launcher.core.cosmetics.CosmeticSections
 import net.millida.launcher.core.cosmetics.Outfit
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.rubies.WardrobeBill
 import net.millida.launcher.core.skins.ShowcaseKind
-import net.millida.launcher.core.skins.SkinCatalog
 import net.millida.launcher.core.skins.TextureKind
 import net.millida.launcher.core.skins.TexturePng
+import net.millida.launcher.ui.character.CAPE_CHIP_ALL
 import net.millida.launcher.ui.character.CharacterPanel
 import net.millida.launcher.ui.character.CharacterStage
 import net.millida.launcher.ui.character.CharacterTab
@@ -73,6 +74,7 @@ import net.millida.launcher.ui.character.OutfitEditDialog
 import net.millida.launcher.ui.character.ConfirmAsk
 import net.millida.launcher.ui.character.Fitting
 import net.millida.launcher.ui.character.FittingBar
+import net.millida.launcher.ui.character.SKIN_CHIP_MINE
 import net.millida.launcher.ui.character.StageCollapse
 import net.millida.launcher.ui.character.TryOnPurchase
 import net.millida.launcher.ui.character.TryOnPurchaseDialog
@@ -92,6 +94,7 @@ import net.millida.launcher.ui.character.skinFitting
 import net.millida.launcher.ui.character.slimArms
 import net.millida.launcher.ui.character.stageFile
 import net.millida.launcher.ui.character.wearBytes
+import net.millida.launcher.ui.shop.ShopFeed
 import java.io.File
 
 private const val MILLIDA_SKINS_URL = "https://millida.net/skins"
@@ -130,7 +133,9 @@ fun SkinsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
 
     var tab by rememberSaveable { mutableStateOf(CharacterTab.SKIN) }
     var pose by remember { mutableStateOf(SkinPose.Idle) }
-    var catalogGroup by rememberSaveable { mutableIntStateOf(0) }
+    var skinChip by rememberSaveable { mutableStateOf(SKIN_CHIP_MINE) }
+    var capeChip by rememberSaveable { mutableStateOf(CAPE_CHIP_ALL) }
+    var importOpen by rememberSaveable { mutableStateOf(false) }
     var fitting by remember { mutableStateOf<Fitting?>(null) }
     var settled by remember { mutableStateOf<Fitting?>(null) }
     var wearing by remember { mutableStateOf(false) }
@@ -189,8 +194,8 @@ fun SkinsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
             itemChip = chip.key
         }
     }
-    LaunchedEffect(catalogGroup) {
-        ShowcaseKind.entries.getOrNull(catalogGroup - SkinCatalog.GROUPS.size)?.let { wardrobe.loadShowcase(it) }
+    LaunchedEffect(skinChip) {
+        ShowcaseKind.entries.firstOrNull { it.wire == skinChip }?.let { wardrobe.loadShowcase(it) }
     }
     val currentLook = remember(target, state.gameProfile, state.wardrobe, cosmetics.worn, cosmetics.wornReady) {
         lookOf(state, target, cosmetics.worn, cosmetics.wornReady)
@@ -226,7 +231,7 @@ fun SkinsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
                         outfit.cape.url.isEmpty() -> model.takeOffCape { done = true }
                         cards.any { it.id == outfit.cape.wardrobeId && it.isCape } -> model.applyWardrobeItem(outfit.cape.wardrobeId) { done = true }
                         else -> {
-                            model.notice("Плаща из образа больше нет в гардеробе — надень плащ заново и пересохрани образ", isError = true)
+                            model.notice(tr("Плаща из образа больше нет в гардеробе — надень плащ заново и пересохрани образ"), isError = true)
                             null
                         }
                     }
@@ -268,7 +273,11 @@ fun SkinsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
                 model.notice(result.problem, isError = true)
                 return@launch
             }
-            model.saveTexture(picked.name, picked.bytes, picked.slim ?: false) { tab = CharacterTab.SKIN }
+            model.saveTexture(picked.name, picked.bytes, picked.slim ?: false) {
+                tab = CharacterTab.SKIN
+                skinChip = SKIN_CHIP_MINE
+                importOpen = false
+            }
         }
     }
 
@@ -279,13 +288,17 @@ fun SkinsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
         target = target,
         look = look,
         fittingKey = fitting?.key,
-        catalogGroup = catalogGroup,
+        skinChip = skinChip,
+        capeChip = capeChip,
+        importOpen = importOpen,
         feedback = feedback,
         mojangCapes = mojangCapes,
         onFit = { next -> fitting = next },
         onAsk = { next -> ask = next },
         onTab = { next -> tab = next },
-        onCatalogGroup = { next -> catalogGroup = next },
+        onSkinChip = { next -> skinChip = next },
+        onCapeChip = { next -> capeChip = next },
+        onImportOpen = { open -> importOpen = open },
         onPickSkin = { pickSkin.launch("image/png") },
         onPickLibrary = { pickToLibrary.launch("image/png") },
         onOrderSkin = { model.openLinkOrNotice(context, MILLIDA_SKINS_URL) },
@@ -324,11 +337,11 @@ fun SkinsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
     val stageSlim = if (shown != null && shownSkin != null) shown.slim ?: guessedSlim ?: look.slim else look.slim
     val readyRewards = state.rewards.count { it.done && !it.claimed }
     val stageOutfit by rememberStageOutfit(cosmetics.dressed, stageSlim, wardrobe) { lost ->
-        model.notice("Не удалось показать на фигуре: " + lost.joinToString(", ") + " — обнови гардероб", isError = true)
+        model.notice(tr("Не удалось показать на фигуре: {0} — обнови гардероб", lost.joinToString(", ")), isError = true)
     }
 
     val density = LocalDensity.current
-    val stageMax = (LocalConfiguration.current.screenHeightDp.dp * STAGE_SHARE).coerceIn(STAGE_MIN, STAGE_MAX)
+    val stageMax = (effectiveScreenHeightDp().dp * STAGE_SHARE).coerceIn(STAGE_MIN, STAGE_MAX)
     val maxPx = with(density) { stageMax.toPx() }
     val minPx = with(density) { STAGE_MIN.toPx() }
     val stagePx = remember(maxPx) { mutableFloatStateOf(maxPx) }
@@ -338,10 +351,12 @@ fun SkinsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
     LaunchedEffect(imeUp) { if (imeUp) stagePx.floatValue = minPx }
 
     val wide = LocalWideLayout.current
-    val shownTabs = remember(cosmetics.catalog.items) {
+    val shopShown = state.millidaSignedIn
+    val shownTabs = remember(cosmetics.catalog.items, shopShown) {
         val present = CosmeticSections.of(cosmetics.catalog.items.map { it.slot }.toSet()).map { it.key }.toSet()
-        CharacterTab.entries.filter { it.section == null || it.section in present }
+        CharacterTab.entries.filter { (it != CharacterTab.SHOP || shopShown) && (it.section == null || it.section in present) }
     }
+    LaunchedEffect(shopShown) { if (!shopShown && tab == CharacterTab.SHOP) tab = CharacterTab.SKIN }
     val stage: @Composable (Modifier) -> Unit = { placement ->
         CharacterStage(
             nick = look.nick,
@@ -355,7 +370,7 @@ fun SkinsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
             modifier = placement,
         )
     }
-    val tabBadge: (CharacterTab) -> Int = { if (it == CharacterTab.REWARDS || it == CharacterTab.CAPE) readyRewards else 0 }
+    val tabBadge: (CharacterTab) -> Int = { if (it == CharacterTab.CAPE) readyRewards else 0 }
     val wideTile = if (LocalConfiguration.current.screenWidthDp > WIDE_ROOMY_WIDTH_DP) WIDE_TILE_MIN else WIDE_TILE_MIN_NARROW
     val wardrobePane: @Composable ColumnScope.() -> Unit = {
         if (wide) {
@@ -380,17 +395,30 @@ fun SkinsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
                 scrollable = true,
             )
         }
-        LazyVerticalGrid(
-            columns = if (wide) GridCells.Adaptive(wideTile) else GridCells.Fixed(GRID_COLUMNS),
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            state = gridState,
-            contentPadding = PaddingValues(start = screenPadding, end = screenPadding, top = 12.dp, bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            characterSection(tab, panel)
+        if (tab == CharacterTab.SHOP) {
+            // The narrow layout keeps the feed from drawing the desktop strip inside the pane.
+            CompositionLocalProvider(LocalWideLayout provides false) {
+                ShopFeed(
+                    state,
+                    model,
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                )
+            }
+        } else {
+            LazyVerticalGrid(
+                columns = if (wide) GridCells.Adaptive(wideTile) else GridCells.Fixed(GRID_COLUMNS),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                state = gridState,
+                contentPadding = PaddingValues(start = screenPadding, end = screenPadding, top = 12.dp, bottom = 24.dp + wideBottomInset()),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                characterSection(tab, panel)
+            }
         }
     }
     val fittingBars: @Composable ColumnScope.() -> Unit = {
@@ -442,8 +470,17 @@ fun SkinsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
                 title = null,
                 onBack = null,
                 actions = {
-                    MSecondaryButton("Импорт", onClick = { pickToLibrary.launch("image/png") }, icon = MIcons.download, size = MButtonSize.Small)
-                    MPrimaryButton("Загрузить скин", onClick = { pickSkin.launch("image/png") }, icon = MIcons.upload, size = MButtonSize.Small)
+                    MSecondaryButton(
+                        tr("Импорт"),
+                        onClick = {
+                            tab = CharacterTab.SKIN
+                            skinChip = SKIN_CHIP_MINE
+                            importOpen = true
+                        },
+                        icon = MIcons.download,
+                        size = MButtonSize.Small,
+                    )
+                    MPrimaryButton(tr("Загрузить скин"), onClick = { pickSkin.launch("image/png") }, icon = MIcons.upload, size = MButtonSize.Small)
                 },
             )
             Row(Modifier.weight(1f)) {
@@ -451,7 +488,7 @@ fun SkinsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
                     Modifier
                         .weight(WIDE_STAGE_SHARE)
                         .fillMaxHeight()
-                        .padding(start = screenPadding, top = 12.dp, bottom = screenPadding),
+                        .padding(start = screenPadding, top = 12.dp, bottom = screenPadding + wideBottomInset()),
                 ) {
                     stage(
                         Modifier
@@ -532,17 +569,17 @@ private class PickedSkin(val bytes: ByteArray, val name: String, val slim: Boole
 private class SkinPick(val skin: PickedSkin?, val problem: String = "")
 
 private fun readSkin(context: Context, uri: Uri, stage: Boolean): SkinPick {
-    val bytes = readPicked(context, uri) ?: return SkinPick(null, "Файл не прочитался — выбери PNG со скином")
+    val bytes = readPicked(context, uri) ?: return SkinPick(null, tr("Файл не прочитался — выбери PNG со скином"))
     val problem = try {
         TexturePng.validate(TextureKind.SKIN, bytes)
         null
     } catch (bad: Exception) {
-        bad.message?.takeIf { it.isNotBlank() } ?: "Это не скин — нужен PNG 64×64"
+        bad.message?.takeIf { it.isNotBlank() } ?: tr("Это не скин — нужен PNG 64×64")
     }
     if (problem != null) return SkinPick(null, problem)
     val preview = if (stage) stageFile(context, bytes) else null
     if (stage && preview == null) {
-        return SkinPick(null, "Не хватило места для примерки — освободи память телефона")
+        return SkinPick(null, tr("Не хватило места для примерки — освободи память телефона"))
     }
-    return SkinPick(PickedSkin(bytes, pickedName(context, uri, "Скин"), slimArms(bytes), preview))
+    return SkinPick(PickedSkin(bytes, pickedName(context, uri, tr("Скин")), slimArms(bytes), preview))
 }

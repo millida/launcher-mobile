@@ -5,6 +5,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.roundToLong
 
+import net.millida.launcher.core.i18n.tr
 enum class CallOutcome(val wire: String) { DONE("done"), MISSED("missed"), DECLINED("declined"), CANCELED("canceled"), FAILED("failed") }
 
 data class CallLogEntry(val outcome: CallOutcome, val seconds: Long)
@@ -34,12 +35,12 @@ object CallLogs {
     }
 
     fun title(entry: CallLogEntry, mine: Boolean): String = when (entry.outcome) {
-        CallOutcome.DONE -> if (mine) "Исходящий звонок" else "Входящий звонок"
-        CallOutcome.DECLINED -> if (mine) "Звонок отклонён" else "Ты отклонил звонок"
-        CallOutcome.FAILED -> "Звонок сорвался"
-        CallOutcome.MISSED, CallOutcome.CANCELED -> if (mine) "Не дозвонился" else "Пропущенный звонок"
+        CallOutcome.DONE -> if (mine) tr("Исходящий звонок") else tr("Входящий звонок")
+        CallOutcome.DECLINED -> if (mine) tr("Звонок отклонён") else tr("Ты отклонил звонок")
+        CallOutcome.FAILED -> tr("Звонок сорвался")
+        CallOutcome.MISSED, CallOutcome.CANCELED -> if (mine) tr("Не дозвонился") else tr("Пропущенный звонок")
     }
 
     fun subtitle(entry: CallLogEntry): String =
-        if (entry.outcome == CallOutcome.DONE) CallRules.formatTime(entry.seconds * 1000) else "Перезвонить"
+        if (entry.outcome == CallOutcome.DONE) CallRules.formatTime(entry.seconds * 1000) else tr("Перезвонить")
 }

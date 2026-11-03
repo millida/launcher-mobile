@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,19 +32,26 @@ import net.millida.launcher.core.MemoryTuning
 import net.millida.launcher.core.account.Account
 import net.millida.launcher.core.account.AccountKind
 import net.millida.launcher.core.account.DevicePoll
+import net.millida.launcher.core.account.FirstRunGameStep
+import net.millida.launcher.core.account.LoginGate
 import net.millida.launcher.core.account.GameSession
 import net.millida.launcher.core.account.MicrosoftSignInRequired
 import net.millida.launcher.core.account.OfflineAuth
 import net.millida.launcher.core.account.Unauthorized
 import net.millida.launcher.core.catalog.CatalogItem
 import net.millida.launcher.core.catalog.CatalogSource
+import net.millida.launcher.core.catalog.CatalogVersion
 import net.millida.launcher.core.catalog.ContentKind
 import net.millida.launcher.core.catalog.MillidaItem
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.core.links.MillidaLink
 import net.millida.launcher.core.links.MillidaLinks
+import net.millida.launcher.core.remoteui.RemoteUiBridgeRules
 import net.millida.launcher.core.game.WorldCard
 import net.millida.launcher.core.profile.ContentFile
 import net.millida.launcher.core.install.InstallStage
+import net.millida.launcher.core.install.LoaderFilesMissing
 import net.millida.launcher.core.loader.ForgeFamilyInstaller
 import net.millida.launcher.core.loader.ForgeInstallStep
 import net.millida.launcher.core.loader.LoaderKind
@@ -53,8 +61,14 @@ import net.millida.launcher.core.cabinet.AchievementsPage
 import net.millida.launcher.core.cabinet.NewsItem
 import net.millida.launcher.core.cabinet.WalletBalance
 import net.millida.launcher.core.cabinet.WalletOperation
+import net.millida.launcher.core.content.MissingMod
+import net.millida.launcher.core.content.ModCompat
+import net.millida.launcher.core.content.ModDependencies
 import net.millida.launcher.core.content.PhoneBlockedMods
+import net.millida.launcher.core.content.newestInstallable
 import net.millida.launcher.core.content.SafetyReport
+import net.millida.launcher.core.content.ShaderKit
+import net.millida.launcher.core.profile.BuildFileEntry
 import net.millida.launcher.core.content.UpdatePlan
 import net.millida.launcher.core.cosmetics.CosmeticsModState
 import net.millida.launcher.core.cosmetics.LaunchModAction
@@ -109,6 +123,7 @@ import net.millida.launcher.core.portal.AccountDetails
 import net.millida.launcher.core.portal.AccountSession
 import net.millida.launcher.core.portal.PortalProfile
 import net.millida.launcher.core.portal.Privacy
+import net.millida.launcher.core.profile.DISABLED_SUFFIX
 import net.millida.launcher.core.profile.Profile
 import net.millida.launcher.core.rating.LicenseFilter
 import net.millida.launcher.core.rating.RatedServer
@@ -123,6 +138,7 @@ import net.millida.launcher.core.telemetry.TelemetryCore
 import net.millida.launcher.core.telemetry.TelemetryPrivacy
 import net.millida.launcher.core.telemetry.TelemetryType
 import net.millida.launcher.runtime.GameSession as RuntimeSession
+import net.millida.launcher.ui.signInService
 import net.millida.launcher.ui.catalog.CatalogHost
 import net.millida.launcher.ui.catalog.CatalogModel
 import net.millida.launcher.ui.catalog.CatalogTab
@@ -134,6 +150,7 @@ import net.millida.launcher.ui.catalog.MillidaContentModel
 import net.millida.launcher.ui.build.PackUpdateModel
 import net.millida.launcher.core.catalog.MillidaCatalog
 import net.millida.launcher.core.hub.HubClient
+import net.millida.launcher.core.hub.PhoneBlocked
 import net.millida.launcher.core.media.LobbyMusic
 import net.millida.launcher.core.media.LiveWallpaper
 import net.millida.launcher.core.premium.PremiumClient
@@ -149,7 +166,16 @@ import net.millida.launcher.ui.character.MojangCapes
 import net.millida.launcher.ui.character.slimArms
 import net.millida.launcher.core.skins.Reward
 import net.millida.launcher.core.skins.WardrobeItem
+import net.millida.launcher.core.game.FrameCap
+import net.millida.launcher.core.launch.JvmOptions
+import net.millida.launcher.core.input.GamepadMap
+import net.millida.launcher.core.http.CellularDownload
+import net.millida.launcher.core.game.GameResolution
 import net.millida.launcher.core.game.VideoSettings
+import net.millida.launcher.core.hud.HudStore
+import net.millida.launcher.core.hud.HudLayout
+import net.millida.launcher.core.runtime.PhoneVersions
+import net.millida.launcher.core.runtime.RendererCatalog
 import net.millida.launcher.core.runtime.RuntimeImport
 import net.millida.launcher.core.runtime.RuntimeManifest
 import net.millida.launcher.core.support.ReportRedaction
@@ -175,7 +201,7 @@ import java.util.concurrent.atomic.AtomicLong
 enum class Screen {
     HOME, BUILD, SERVERS, CATALOG, ACCOUNT, MORE, SETTINGS, SKINS, HOSTING, HOSTING_MANAGE,
     BEDROCK, PACKS, FRIENDS, CHAT, CABINET, SCREENSHOTS, SHOP,
-    PREMIUM,
+    PREMIUM, PLUS,
 }
 
 val rootTabs: List<Screen> = listOf(Screen.HOME, Screen.CATALOG, Screen.SKINS, Screen.SHOP, Screen.MORE)
@@ -190,25 +216,32 @@ fun rootTabOf(screen: Screen): Screen = when (screen) {
     Screen.MORE, Screen.ACCOUNT, Screen.SERVERS, Screen.FRIENDS, Screen.CHAT, Screen.HOSTING,
     Screen.HOSTING_MANAGE, Screen.CABINET, Screen.PACKS, Screen.SCREENSHOTS, Screen.BEDROCK,
     Screen.SETTINGS -> Screen.MORE
-    Screen.PREMIUM -> Screen.MORE
+    Screen.PREMIUM, Screen.PLUS -> Screen.MORE
 }
 
 /** A part of the app that loads on its own, so its wait and its failure stay inside it. */
 enum class Area { SERVERS, CATALOG, FRIENDS, CABINET, PACKS, HOSTING, HOSTED_SERVER, SKINS, BUILD, SHOP, ACCOUNT, SHOTS }
 
-enum class BuildTab(val label: String) {
-    CONTENT("Содержимое"),
-    WORLDS("Миры"),
-    SERVERS("Серверы"),
-    SHOTS("Снимки"),
-    LOGS("Журнал"),
-    OPTIONS("Параметры"),
+enum class BuildTab(private val labelKey: String) {
+    CONTENT(trKey("Содержимое")),
+    WORLDS(trKey("Миры")),
+    SERVERS(trKey("Серверы")),
+    SHOTS(trKey("Снимки")),
+    LOGS(trKey("Журнал")),
+    OPTIONS(trKey("Параметры")),;
+
+    val label: String get() = tr(labelKey)
 }
+
+internal val MICROSOFT_LOGIN_TASK: String get() = tr("Вход через Microsoft")
+
+internal val MILLIDA_LOGIN_TASK: String get() = tr("Вход через Millida")
 
 data class LoginPrompt(
     val code: String,
     val url: String,
     val kind: AccountKind,
+    val inline: Boolean = false,
 )
 
 enum class ToastTone { Success, Info, Error }
@@ -225,19 +258,35 @@ data class PendingPlay(val profile: Profile, val serverAddress: String, val noti
 
 data class PendingModOffer(val profile: Profile, val serverAddress: String)
 
+/** A dependency the build lacks, with the catalogue version that fills the gap. */
+data class InstallableMod(val missing: MissingMod, val version: CatalogVersion)
+
+data class PendingMissingMods(val profile: Profile, val serverAddress: String, val mods: List<InstallableMod>)
+
+/** Mods that would stop the game from starting, found before the start; the player decides whether to switch them off. */
+data class PendingModProblems(val profile: Profile, val serverAddress: String, val problems: List<ModCompat.Problem>)
+
+/** A start that has to download [bytes] while the phone is on a metered network. */
+data class PendingCellular(val profile: Profile, val serverAddress: String, val bytes: Long)
+
 data class UiState(
     val screen: Screen = Screen.HOME,
     val profiles: List<Profile> = emptyList(),
     val versions: List<VersionManifest.ManifestEntry> = emptyList(),
     val renderers: List<RuntimeManifest.RendererEntry> = emptyList(),
+    /** Which game versions a phone is offered first; the runtime manifest can change it without a release. */
+    val phoneVersions: PhoneVersions = PhoneVersions.DEFAULT,
     val safeGraphics: Boolean = true,
+    /** Каталог и Хостинг показываются экранами сайта (WebView), если модуль проверен. */
+    val remoteUi: Boolean = true,
+    /** Каталог открыт нативным экраном (его позвал экран сайта: установка, карточка проекта). */
+    val nativeCatalog: Boolean = false,
     val memoryCeilingMb: Int = 4096,
     val accounts: List<Account> = emptyList(),
     val account: Account? = null,
     val portal: PortalProfile? = null,
     val privacy: Privacy? = null,
     val hosted: List<HostingServerState> = emptyList(),
-    val offlineNick: String = "",
     val tasks: List<String> = emptyList(),
     val progress: Float = 0f,
     val progressNote: String = "",
@@ -270,6 +319,9 @@ data class UiState(
     val buildLog: String? = null,
     val deviceReport: String = "",
     val rendererId: String = "",
+    val rendererAuto: Boolean = true,
+    val resolutionPercent: Int = GameResolution.FULL,
+    val highRefresh: Boolean = false,
     val lookSensitivity: Float = 1.0f,
     val memoryOverrideMb: Int = 0,
     val windowLayer: String = Prefs.LAYER_PACK,
@@ -314,7 +366,7 @@ data class UiState(
     val onboarding: Boolean = false,
     val wallpaperPath: String = "",
     val liveWallpaper: String = "",
-    val wallpaperMotion: Boolean = true,
+    val wallpaperMotion: Boolean = LiveWallpaper.MOTION_DEFAULT,
     val cacheBytes: Long = 0,
     val duplicateBytes: Long = 0,
     val duplicateGroups: Int = 0,
@@ -333,14 +385,22 @@ data class UiState(
     val loadedAreas: Set<Area> = emptySet(),
     val millidaSignedIn: Boolean = false,
     val sessionExpired: AccountKind? = null,
+    val gameStep: Boolean = false,
+    val loginGate: Boolean = false,
+    val guestAllowed: Boolean = false,
     val unreadMessages: Int = 0,
     val soundMode: String = Prefs.SOUND_NOTIFY,
     val soundVolume: Int = Prefs.SOUND_VOLUME_DEFAULT,
     val haptics: Boolean = true,
+    val autoJump: Boolean = true,
+    /** The active touch layout, read when the controls section opens; null until then. */
+    val controls: HudLayout? = null,
     val profilesLoaded: Boolean = false,
     val lowMemoryNotice: LowMemoryNotice? = null,
     val lowMemoryPlay: PendingPlay? = null,
     val millidaModOffer: PendingModOffer? = null,
+    val modProblems: PendingModProblems? = null,
+    val cellularPlay: PendingCellular? = null,
     val linkJoin: MillidaLink.Join? = null,
 ) {
     val busy: String? get() = tasks.lastOrNull()
@@ -388,6 +448,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private var loginJob: Job? = null
     private var playJob: Job? = null
+
+    /** Dependencies already offered for a build in this session: one that did not help is not offered in a loop. */
+    private val missingModsTried = HashMap<String, Set<String>>()
     private var packWatch: Job? = null
     private val packGate by lazy { PackLaunchGate(container.packApi) }
     private val memorySaveJobs = HashMap<String, Job>()
@@ -416,7 +479,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 if (state.value.screen == Screen.CATALOG) {
                     openBuild(profile)
                 } else {
-                    this@LauncherViewModel.notice("Сборка «${profile.name}» готова")
+                    this@LauncherViewModel.notice(tr("Сборка «{name}» готова", profile.name))
                 }
             }
 
@@ -508,10 +571,34 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         FriendAlerts(application),
     )
 
+    private val downloadNotice = DownloadNotice(application)
+
+    /** Quick tasks never reach the shade; one that runs past the delay shows its progress there until it ends. */
+    private fun watchDownloads() = viewModelScope.launch {
+        state.map { it.busy != null }.distinctUntilChanged().collectLatest { busy ->
+            if (!busy) {
+                downloadNotice.clear()
+                return@collectLatest
+            }
+            delay(DOWNLOAD_NOTICE_DELAY_MS)
+            while (true) {
+                val current = state.value
+                val title = current.busy ?: break
+                downloadNotice.show(title, current.progressNote, current.progress)
+                delay(DOWNLOAD_NOTICE_STEP_MS)
+            }
+        }
+    }
+
     init {
+        watchDownloads()
+        refreshPhoneBlocked()
         state.update {
             it.copy(
                 rendererId = prefs.rendererId,
+                rendererAuto = prefs.rendererId.isEmpty(),
+                resolutionPercent = prefs.resolutionPercent,
+                highRefresh = prefs.highRefresh,
                 lookSensitivity = prefs.lookSensitivity,
                 memoryOverrideMb = prefs.memoryOverrideMb,
                 windowLayer = prefs.windowLayer,
@@ -526,10 +613,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 accentCustom = prefs.accentCustom,
                 bedrockMode = prefs.bedrockMode,
             safeGraphics = prefs.safeGraphics,
+            remoteUi = prefs.remoteUi,
                 memoryCeilingMb = MemoryTuning.settingCeilingMb(container.deviceMemory().totalMb),
                 soundMode = prefs.soundMode,
                 soundVolume = prefs.soundVolume,
                 haptics = prefs.haptics,
+                autoJump = prefs.autoJump,
             )
         }
         if (prefs.soundMode != Prefs.SOUND_OFF) viewModelScope.launch { container.uiSoundPlayer.prepare() }
@@ -541,7 +630,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         installBundledRuntime()
         viewModelScope.launch {
             val signedIn = millidaReady()
-            runTask("Читаем данные лаунчера", silent = true) {
+            runTask(tr("Читаем данные лаунчера"), silent = true) {
                 val profiles = profileWrites.withLock {
                     try {
                         PackNames.migrate(container.profiles)
@@ -550,8 +639,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                         container.profiles.load()
                     }
                 }
-                val accounts = container.accounts.load()
-                val active = accounts.firstOrNull { it.id == prefs.activeAccountId }
+                val stored = container.accounts.migrate(prefs.activeAccountId, container.vault)
+                if (stored.retired.isNotEmpty()) prefs.activeAccountId = stored.active
+                val accounts = stored.accounts
+                if (signedIn || accounts.any { it.kind == AccountKind.MILLIDA }) prefs.millidaEver = true
+                val active = accounts.firstOrNull { it.id == stored.active }
                     ?: accounts.firstOrNull()
                 val report = container.deviceReport()
                 val remembered = prefs.activeProfileId.takeIf { id -> profiles.any { it.id == id } }
@@ -563,7 +655,23 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                         activeProfileId = it.activeProfileId ?: remembered,
                         deviceReport = report,
                         importedRuntime = importedLabel(),
+                        guestAllowed = LoginGate.guestAllowed(prefs.millidaEver),
                     )
+                }
+                val start = LoginGate.atStart(
+                    active = active?.kind,
+                    signedIn = signedIn,
+                    firstRun = prefs.firstRun,
+                    hasGame = accounts.any { FirstRunGameStep.isGameAccount(it.kind) },
+                )
+                when (start) {
+                    LoginGate.Start.LOBBY -> Unit
+                    LoginGate.Start.SIGN_IN -> state.update { it.copy(loginGate = true) }
+                    LoginGate.Start.GAME_STEP -> state.update { it.copy(gameStep = true) }
+                    LoginGate.Start.SESSION_LOST -> {
+                        leaveToLogin()
+                        notice(tr("Сессия истекла — войди заново"), isError = true)
+                    }
                 }
             }
             state.update { it.copy(profilesLoaded = true) }
@@ -593,7 +701,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 withContext(Dispatchers.IO) {
                     val crash = RuntimeSession.nativeCrash(container.layout.runtimes)?.lastModified()?.takeIf { it > 0 }
                     val runtimes = container.layout.runtimes
-                    telemetry.settleLostGame(GameProcess.alive(getApplication()), crash) { since ->
+                    telemetry.settleLostGame(GameProcess.alive(getApplication()), crash, onCleaned = ::adviseBatterySettings) { since ->
                         // A game that called System.exit after a crash leaves its own report, which names the
                         // failure better than the session tail, so it goes first.
                         val report = runCatching { lostGameCrashReport(since) }.getOrNull()
@@ -673,7 +781,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun handleLink(raw: String?) {
         val link = MillidaLinks.parse(raw)
         if (link == null) {
-            notice("Ссылка не распознана — открой её на сайте ещё раз", isError = true)
+            notice(tr("Ссылка не распознана — открой её на сайте ещё раз"), isError = true)
             return
         }
         when (link) {
@@ -694,6 +802,72 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    // ---- Экраны сайта (WebView): мост отдаёт сюда то, что у приложения уже есть ----
+
+    /** Ответ сервера как есть: экран сайта сам показывает ошибки API. Токен остаётся здесь. */
+    suspend fun remoteApi(path: String, method: String, body: String?) = container.millidaAuth.raw(path, method, body)
+
+    /** Сборки игрока для выбора «Для сборки»: имена, версии, загрузчики. */
+    fun remoteProfiles(): Pair<List<Profile>, String?> {
+        val s = state.value
+        return s.profiles to s.profiles.firstOrNull { it.id == s.activeProfileId }?.name
+    }
+
+    /**
+     * Экран сайта просит поставить материал: дальше обычный путь приложения (карточка, выбор сборки, подтверждение).
+     * Нативный Каталог открывается поверх экрана сайта, пока игрок не уйдёт с вкладки.
+     */
+    fun installFromRemote(section: String, slug: String, name: String?, source: String?, cfid: Int?, build: String?) {
+        build?.let { wanted -> state.value.profiles.firstOrNull { it.name == wanted || it.id == wanted }?.let(::selectBuild) }
+        state.update { it.copy(nativeCatalog = true) }
+        val foreign = source == "modrinth" || source == "curseforge"
+        if (foreign) {
+            val tab = LINK_TABS[section] ?: if (section == "modpacks") CatalogTab.MODPACKS else null
+            if (tab == null) {
+                notice("Этот раздел на телефоне не ставится", isError = true)
+                return
+            }
+            val cf = source == "curseforge"
+            openCatalogItem(
+                tab,
+                CatalogItem(
+                    projectId = if (cf) cfid?.toString() ?: slug else slug,
+                    slug = slug,
+                    title = name ?: slug,
+                    source = if (cf) CatalogSource.CURSEFORGE else CatalogSource.MODRINTH,
+                ),
+            )
+        } else {
+            openInstallLink(MillidaLink.Install(section, slug, name = name))
+        }
+    }
+
+    fun joinFromRemote(address: String, name: String, version: String?) =
+        playServer(address, name, listOfNotNull(version?.takeIf { it.isNotBlank() }))
+
+    /** Путь сайта, который экран сайта не разобрал сам: вкладка приложения, если она есть, иначе браузер. */
+    fun navigateFromRemote(path: String) {
+        val p = path.substringBefore('?').substringBefore('#').trimEnd('/')
+        when {
+            p.isEmpty() -> open(Screen.HOME)
+            p.startsWith("/hosting") -> open(Screen.HOSTING)
+            p.startsWith("/catalog") || p.startsWith("/mods") -> {
+                state.update { it.copy(nativeCatalog = false) }
+                open(Screen.CATALOG)
+            }
+            p.startsWith("/skins") -> open(Screen.SKINS)
+            p.startsWith("/shop") || p.startsWith("/store") -> open(Screen.SHOP)
+            p.startsWith("/servers") || p.startsWith("/rating") -> open(Screen.SERVERS)
+            else -> RemoteUiBridgeRules.sitePath(path)?.let { openLink(getApplication<Application>(), it) }
+        }
+    }
+
+    fun openExternalFromRemote(url: String) {
+        if (RemoteUiBridgeRules.externalAllowed(url)) openLink(getApplication<Application>(), url)
+    }
+
+    fun toastFromRemote(message: String, isError: Boolean) = notice(message, isError)
+
     fun confirmLinkJoin() {
         val ask = state.value.linkJoin ?: return
         state.update { it.copy(linkJoin = null) }
@@ -707,6 +881,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         when {
             link.section == MillidaShelfModel.SECTION -> {
                 open(Screen.CATALOG)
+                state.update { it.copy(nativeCatalog = true) }
                 catalogModel.setTab(CatalogTab.MODPACKS)
                 millidaShelf.openFromLink(link)
             }
@@ -715,10 +890,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             }
             link.section == "skins" || link.section == "capes" -> {
                 open(Screen.SKINS)
-                notice("На телефоне это по ссылке пока не надевается — выбери во вкладке «Персонаж»", tone = ToastTone.Info)
+                notice(tr("На телефоне это по ссылке пока не надевается — выбери во вкладке «Персонаж»"), tone = ToastTone.Info)
             }
             else -> notice(
-                "«${link.slug}» на телефоне не ставится — поставь через Millida Launcher на компьютере",
+                tr("«{slug}» на телефоне не ставится — поставь через Millida Launcher на компьютере", link.slug),
                 isError = true,
             )
         }
@@ -728,12 +903,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private fun openNativeItem(tab: CatalogTab, item: MillidaItem) {
         val kind = tab.millida ?: return
         open(Screen.CATALOG)
+        state.update { it.copy(nativeCatalog = true) }
         catalogModel.setTab(tab)
         millidaContent.askFromLink(item, kind)
     }
 
     private fun openCatalogItem(tab: CatalogTab, item: CatalogItem) {
         open(Screen.CATALOG)
+        state.update { it.copy(nativeCatalog = true) }
         catalogModel.setTab(tab)
         catalogModel.openDetail(item)
     }
@@ -762,7 +939,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         } else {
             history.removeLastOrNull() ?: rootTabOf(current)
         }
-        state.update { it.copy(screen = target) }
+        state.update { it.copy(screen = target, nativeCatalog = false) }
         return true
     }
 
@@ -789,7 +966,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             current != screen -> history.addLast(current)
         }
         while (history.size > HISTORY_LIMIT) history.removeFirst()
-        state.update { it.copy(screen = screen) }
+        state.update { it.copy(screen = screen, nativeCatalog = it.nativeCatalog && screen == Screen.CATALOG) }
         if (current != screen) {
             container.telemetry.track(
                 TelemetryType.SCREEN_VIEW,
@@ -950,7 +1127,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             val dir = container.profiles.directory(profile)
             if (container.content.delete(dir, file)) {
                 runCatching { PackOriginStore.forget(dir, "${file.kind.folder}/${file.name}") }
-                notice("Удалено: ${file.name}")
+                notice(tr("Удалено: {name}", file.name))
             }
         }
         refreshBuild()
@@ -960,7 +1137,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         guarded {
             val profile = state.value.openedProfile ?: return@guarded
             val dir = container.profiles.directory(profile)
-            if (container.worlds.delete(dir, world.folder)) notice("Мир удалён")
+            if (container.worlds.delete(dir, world.folder)) notice(tr("Мир удалён"))
         }
         refreshBuild()
     }
@@ -968,7 +1145,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun renameProfile(profile: Profile, name: String) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) {
-            notice("Название не может быть пустым", isError = true)
+            notice(tr("Название не может быть пустым"), isError = true)
             return
         }
         saveProfile(profile.copy(name = trimmed))
@@ -996,6 +1173,104 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun setProfileRenderer(profile: Profile, rendererId: String) =
         saveProfile(profile.copy(rendererId = rendererId))
+
+    /** Extra Java options typed by the player, cut to what the launch line can take. */
+    fun setProfileJvmArgs(profile: Profile, typed: String) = viewModelScope.launch {
+        val parsed = JvmOptions.parse(typed)
+        if (parsed.rejected != null) {
+            notice(tr("Не сохранено: {problem}", parsed.rejected), isError = true)
+            return@launch
+        }
+        if (patchProfile(profile.id) { it.copy(extraJvmArgs = parsed.options) }) {
+            notice(tr("Аргументы Java сохранены — подействуют со следующего запуска"))
+        }
+
+    }
+
+    /**
+     * Sodium, Iris and a light shader pack in one go, with the pack switched on.
+     * A step that fails stops the rest: half a set gives a build that starts
+     * without shaders and looks like the button did nothing.
+     */
+    fun installShaders(profile: Profile) = viewModelScope.launch {
+        runTask(tr("Ставим шейдеры")) {
+            if (!ShaderKit.supports(profile.loader)) {
+                throw IOException(tr("Шейдерам нужен Fabric, Quilt или NeoForge — в «{name}» другой загрузчик", profile.name))
+            }
+            val dir = container.profiles.directory(profile)
+            val mods = container.content.list(dir, ContentKind.MOD)
+            suspend fun newest(projectId: String, loader: LoaderKind?, gameVersion: String?): CatalogVersion? =
+                container.catalog.versionsFor(CatalogItem(projectId = projectId, source = CatalogSource.MODRINTH), gameVersion, loader).newestInstallable()
+            val iris = newest(ShaderKit.IRIS, profile.loader, profile.gameVersion)
+                ?: throw IOException(tr("Для Minecraft {gameVersion} с {loader} Iris пока не вышел — шейдеры поставить не на что", profile.gameVersion, profile.loader.label))
+            if (!ShaderKit.hasSodium(mods)) {
+                state.update { it.copy(progressNote = "Sodium", progress = 0f) }
+                // Iris refuses any Sodium but the series it was built on («requires any 0.6.x of Sodium, but only the
+                // wrong version is present»: 55 phones, 10.2026), so the Sodium Iris names wins over the newest one.
+                val pinned = iris.dependencies.firstOrNull { it.projectId == ShaderKit.SODIUM && !it.versionId.isNullOrEmpty() }?.versionId
+                val sodium = pinned?.let { id ->
+                    container.catalog.versionsFor(CatalogItem(projectId = ShaderKit.SODIUM, source = CatalogSource.MODRINTH), profile.gameVersion, profile.loader)
+                        .firstOrNull { it.id == id }
+                } ?: newest(ShaderKit.SODIUM, profile.loader, profile.gameVersion)
+                    ?: throw IOException(tr("Для Minecraft {gameVersion} нет Sodium — без него шейдеры на телефоне не потянут", profile.gameVersion))
+                container.catalog.install(sodium, ContentKind.MOD, dir) { share -> state.update { it.copy(progress = share) } }
+            }
+            if (!ShaderKit.hasIris(mods)) {
+                state.update { it.copy(progressNote = "Iris", progress = 0f) }
+                container.catalog.install(iris, ContentKind.MOD, dir) { share -> state.update { it.copy(progress = share) } }
+            }
+            state.update { it.copy(progressNote = tr("Шейдерпак"), progress = 0f) }
+            val pack = newest(ShaderKit.LIGHT_PACK, null, profile.gameVersion) ?: newest(ShaderKit.LIGHT_PACK, null, null)
+                ?: throw IOException(tr("Шейдерпак сейчас не скачивается — попробуй позже"))
+            val packFile = container.catalog.install(pack, ContentKind.SHADER, dir) { share -> state.update { it.copy(progress = share) } }
+            ShaderKit.enable(dir, packFile.name)
+            if (state.value.openedProfile?.id == profile.id) refreshBuild()
+
+            notice(tr("Шейдеры включены. В игре: Настройки → Видео → Шейдеры, чтобы выбрать другой пак или выключить"))
+        }
+    }
+
+    suspend fun buildFiles(profile: Profile, path: String): List<BuildFileEntry> =
+        withContext(Dispatchers.IO) { container.buildFiles.list(container.profiles.directory(profile), path) }
+
+    suspend fun deleteBuildFile(profile: Profile, path: String) =
+        withContext(Dispatchers.IO) { container.buildFiles.delete(container.profiles.directory(profile), path) }
+
+    suspend fun importBuildFile(profile: Profile, folder: String, uri: android.net.Uri): BuildFileEntry =
+        withContext(Dispatchers.IO) {
+            val resolver = getApplication<Application>().contentResolver
+            val name = displayName(uri) ?: "file"
+            val stream = resolver.openInputStream(uri) ?: throw IOException(tr("файл не открылся — выбери его ещё раз"))
+            stream.use { container.buildFiles.importInto(container.profiles.directory(profile), folder, name, it) }
+        }
+
+    fun buildFile(profile: Profile, path: String): File = container.buildFiles.file(container.profiles.directory(profile), path)
+
+    private fun displayName(uri: android.net.Uri): String? = runCatching {
+        getApplication<Application>().contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }.getOrNull()?.takeIf { it.isNotBlank() }
+
+    /** Two builds trade places on the home screen. */
+
+
+    fun swapBuilds(first: Profile, second: Profile) = viewModelScope.launch {
+        try {
+            withContext(Dispatchers.IO) {
+                profileWrites.withLock {
+                    val profiles = container.profiles.swap(first.id, second.id)
+                    state.update { it.copy(profiles = profiles) }
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            Log.w("millida", "порядок сборок не сохранился: ${error.message}")
+            notice(tr("Порядок не сохранился — проверь свободное место и повтори"), isError = true)
+        }
+    }
+
 
     private fun saveProfile(profile: Profile) = viewModelScope.launch { persistProfile(profile) }
 
@@ -1028,24 +1303,27 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             throw cancelled
         } catch (error: Throwable) {
             Log.w("millida", "сборка не сохранилась: ${error.message}")
-            notice("Настройки сборки не сохранились — проверь свободное место и повтори", isError = true)
+            notice(tr("Настройки сборки не сохранились — проверь свободное место и повтори"), isError = true)
         }
     }
 
-    private suspend fun patchProfile(id: String, change: (Profile) -> Profile) {
-        try {
+    /** True once the change is on disk; a build that is gone or a failed write is false. */
+    private suspend fun patchProfile(id: String, change: (Profile) -> Profile): Boolean {
+        return try {
             withContext(Dispatchers.IO) {
                 profileWrites.withLock {
-                    val stored = container.profiles.load().firstOrNull { it.id == id } ?: return@withLock
+                    val stored = container.profiles.load().firstOrNull { it.id == id } ?: return@withLock false
                     val profiles = container.profiles.upsert(change(stored))
                     state.update { it.copy(profiles = profiles) }
+                    true
                 }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
             Log.w("millida", "сборка не сохранилась: ${error.message}")
-            notice("Настройки сборки не сохранились — проверь свободное место и повтори", isError = true)
+            notice(tr("Настройки сборки не сохранились — проверь свободное место и повтори"), isError = true)
+            false
         }
     }
 
@@ -1061,12 +1339,17 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         state.update { current -> current.copy(messages = current.messages.filterNot { it.id == id }) }
     }
 
-    fun setOfflineNick(nick: String) = state.update { it.copy(offlineNick = nick) }
-
+    /** An empty id hands the choice back to the automatic pick; the list keeps showing its default. */
     fun setRenderer(id: String) {
         prefs.rendererId = id
-        state.update { it.copy(rendererId = id) }
+        state.update { current ->
+            current.copy(
+                rendererId = id.ifEmpty { current.renderers.firstOrNull()?.id.orEmpty() },
+                rendererAuto = id.isEmpty(),
+            )
+        }
     }
+
 
     fun setSensitivity(value: Float) {
         prefs.lookSensitivity = value
@@ -1076,6 +1359,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun setMemoryOverride(mb: Int) {
         prefs.memoryOverrideMb = mb
         state.update { it.copy(memoryOverrideMb = mb) }
+    }
+
+    fun setRemoteUi(enabled: Boolean) {
+        prefs.remoteUi = enabled
+        state.update { it.copy(remoteUi = enabled) }
     }
 
     fun setSafeGraphics(enabled: Boolean) {
@@ -1125,7 +1413,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     /** The version filter lists only branches that have servers; without the list the filter is hidden, not broken. */
     fun loadServerVersions() = viewModelScope.launch {
-        runTask("Читаем версии серверов", silent = true) {
+        runTask(tr("Читаем версии серверов"), silent = true) {
             val versions = container.rating.versions().newestFirst()
             state.update { it.copy(serverVersions = versions) }
         }
@@ -1176,10 +1464,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun installBundledRuntime(force: Boolean = false) = viewModelScope.launch {
         if (!container.bundledRuntime) return@launch
         if (!force && RuntimeImport.installed(container.layout) != null) return@launch
-        runTask("Распаковываем рантайм — это один раз") {
+        runTask(tr("Распаковываем рантайм — это один раз")) {
             withContext(Dispatchers.IO) {
                 val source = container.openBundledRuntime()
-                    ?: throw IllegalStateException("встроенный рантайм не открылся")
+                    ?: throw IllegalStateException(tr("встроенный рантайм не открылся"))
                 source.use { stream ->
                     RuntimeImport.install(container.layout, stream) { name ->
                         state.update { it.copy(progressNote = name) }
@@ -1187,35 +1475,35 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 }
             }
             state.update { it.copy(importedRuntime = importedLabel()) }
-            notice("Рантайм готов — можно создавать сборку")
+            notice(tr("Рантайм готов — можно создавать сборку"))
         }
     }
 
     fun importRuntime(open: () -> java.io.InputStream?) = viewModelScope.launch {
-        runTask("Ставим рантайм из файла") {
+        runTask(tr("Ставим рантайм из файла")) {
             withContext(Dispatchers.IO) {
-                val stream = open() ?: throw IllegalStateException("файл не открылся")
+                val stream = open() ?: throw IllegalStateException(tr("файл не открылся"))
                 stream.use { source ->
-                    RuntimeImport.install(container.layout, source) { name ->
+                    RuntimeImport.install(container.layout, source, pinned = true) { name ->
                         state.update { it.copy(progressNote = name) }
                     }
                 }
             }
             state.update { it.copy(importedRuntime = importedLabel()) }
-            notice("Рантайм установлен — можно запускать сборку")
+            notice(tr("Рантайм установлен — можно запускать сборку"))
         }
     }
 
     fun dropRuntime() = viewModelScope.launch {
-        runTask("Удаляем рантайм") {
+        runTask(tr("Удаляем рантайм")) {
             RuntimeImport.clear(container.layout)
             state.update { it.copy(importedRuntime = null) }
-            notice("Рантайм из файла удалён")
+            notice(tr("Рантайм из файла удалён"))
         }
     }
 
     private suspend fun refreshVersions() {
-        runTask("Обновляем список версий", silent = true) {
+        runTask(tr("Обновляем список версий"), silent = true) {
             val manifest = container.resolver.manifest()
             state.update { it.copy(versions = manifest.releases().take(120)) }
         }
@@ -1229,7 +1517,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
      */
     private fun refreshRuntimeManifest() = viewModelScope.launch {
         try {
-            container.runtimeInstaller().manifest()
+            container.runtimeInstaller().cachedManifest()?.let { cached ->
+                state.update { it.copy(phoneVersions = PhoneVersions(cached.phoneVersions)) }
+            }
+            val fresh = container.runtimeInstaller().manifest()
+            state.update { it.copy(phoneVersions = PhoneVersions(fresh.phoneVersions)) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
@@ -1238,48 +1530,38 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     private suspend fun refreshRenderers() {
-        // The installed pack is the authority: it is what the game will actually
-        // load, so its own list comes first and the manifest only fills the gap.
-        val packed = RuntimeImport.renderers(container.layout)
-        if (packed.isNotEmpty()) {
-            val entries = packed.map { option ->
-                RuntimeManifest.RendererEntry(
-                    id = option.id,
-                    label = option.label,
-                    url = "",
-                    sha256 = "",
-                    library = option.library,
-                    eglLibrary = option.eglLibrary,
-                    nativeId = option.nativeId,
-                    shaders = option.shaders,
-                    environment = option.environment,
-                )
-            }
-            state.update { current ->
-                current.copy(
-                    renderers = entries,
-                    rendererId = current.rendererId.ifEmpty { entries.first().id },
-                )
-            }
-            return
-        }
-        try {
-            val manifest = container.runtimeInstaller().manifest()
-            state.update { current ->
-                current.copy(
-                    renderers = manifest.renderers,
-                    rendererId = current.rendererId.ifEmpty { manifest.renderers.firstOrNull()?.id.orEmpty() },
-                )
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (error: Exception) {
-            state.update { it.copy(renderers = emptyList()) }
+        // The list is what the game will actually load: the manifest's layer, and the
+        // pack's own only when the player pinned it or the manifest cannot be reached.
+        val published = if (RuntimeImport.pinned(container.layout)) null else manifestRenderers()
+        val all = published ?: RuntimeImport.renderers(container.layout).map { RendererCatalog.asEntry(it) }
+        // Zink + Turnip is offered on Adreno 6xx/7xx only.
+        val graphics = withContext(Dispatchers.Default) { GraphicsProbe.read(getApplication<Application>()) }
+        val entries = RendererCatalog.visibleOn(all, graphics)
+        state.update { current ->
+            current.copy(
+                renderers = entries,
+                rendererId = current.rendererId.ifEmpty { entries.firstOrNull()?.id.orEmpty() },
+            )
         }
     }
 
+    private suspend fun manifestRenderers(): List<RuntimeManifest.RendererEntry>? = try {
+        val declared = container.runtimeInstaller().manifest().renderers
+        val unpacked = declared.firstOrNull()?.let { File(container.layout.runtimes, it.folder) }
+        when {
+            declared.isEmpty() -> null
+            unpacked != null && unpacked.isDirectory -> RendererCatalog.offered(declared, unpacked, debugTurnipDirs(getApplication())).ifEmpty { declared }
+            else -> declared
+        }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Log.i("millida", "список рендереров из манифеста не получен: ${error.message}")
+        null
+    }
+
     private suspend fun refreshPortal() {
-        runTask("Читаем профиль Millida", silent = true) {
+        runTask(tr("Читаем профиль Millida"), silent = true) {
             val profile = container.portal.profile()
             val privacy = runCatching { container.portal.privacy() }.getOrNull()
             val hosted = runCatching { container.hosting.servers() }.getOrDefault(emptyList())
@@ -1288,27 +1570,29 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun togglePrivacy(field: String, value: Boolean) = viewModelScope.launch {
-        runTask("Сохраняем настройки приватности") {
+        runTask(tr("Сохраняем настройки приватности")) {
             val updated = container.portal.updatePrivacy(field, value)
             state.update { it.copy(privacy = updated) }
         }
     }
 
     override fun onCleared() {
+        stopWaitingForWifi()
+        downloadNotice.clear()
         ambient.close()
         container.telemetry.appExited()
         super.onCleared()
     }
 
     fun setDuoInvites(value: String) = viewModelScope.launch {
-        runTask("Сохраняем, кто может звать в эмоции вдвоём") {
+        runTask(tr("Сохраняем, кто может звать в эмоции вдвоём")) {
             val updated = container.portal.updateDuoInvites(value)
             state.update { it.copy(privacy = updated) }
         }
     }
 
     fun createProfile(name: String, gameVersion: String, loader: LoaderKind) = viewModelScope.launch {
-        runTask("Создаём сборку") {
+        runTask(tr("Создаём сборку")) {
             try {
                 createProfileNow(name, gameVersion, loader)
             } catch (error: Exception) {
@@ -1322,16 +1606,34 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * Installs the build's version; when the files Forge builds on the phone are gone,
+     * the loader is installed again once instead of being fetched from a server that
+     * never had them.
+     */
+    private suspend fun installWithLoader(build: Profile) = try {
+        container.installer.install(build.versionId) { stage -> publish(stage) }
+    } catch (missing: LoaderFilesMissing) {
+        val installer = container.loaderInstaller(build.loader) ?: throw missing
+        state.update { it.copy(progressNote = tr("Загрузчик собран не полностью — ставим его заново"), progress = 0f) }
+        if (installer is ForgeFamilyInstaller) {
+            installer.install(build.gameVersion, build.loaderVersion) { step -> publishLoader(build.loader, step) }
+        } else {
+            installer.install(build.gameVersion, build.loaderVersion)
+        }
+        container.installer.install(build.versionId) { stage -> publish(stage) }
+    }
+
     private suspend fun createProfileNow(name: String, gameVersion: String, loader: LoaderKind) {
         val id = container.profiles.newId(name)
         var versionId = gameVersion
         var loaderVersion = ""
         if (loader != LoaderKind.VANILLA) {
             val installer = container.loaderInstaller(loader)
-                ?: throw IllegalStateException("${loader.label} пока не ставится")
+                ?: throw IllegalStateException(tr("{label} пока не ставится", loader.label))
             val candidates = installer.versions(gameVersion)
             val chosen = candidates.firstOrNull { it.stable } ?: candidates.firstOrNull()
-                ?: throw IllegalStateException("${loader.label} не выходил для $gameVersion — выбери другую версию игры или другой загрузчик")
+                ?: throw IllegalStateException(tr("{label} не выходил для {gameVersion} — выбери другую версию игры или другой загрузчик", loader.label, gameVersion))
             loaderVersion = chosen.version
             versionId = if (installer is ForgeFamilyInstaller) {
                 installer.install(gameVersion, chosen.version) { step -> publishLoader(loader, step) }
@@ -1342,7 +1644,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
         val profile = Profile(
             id = id,
-            name = name.ifBlank { "Сборка $gameVersion" },
+            name = name.ifBlank { tr("Сборка {gameVersion}", gameVersion) },
             gameVersion = gameVersion,
             loader = loader,
             loaderVersion = loaderVersion,
@@ -1355,11 +1657,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             TelemetryType.BUILD_CREATE,
             EventData().put("mc", gameVersion).put("loader", loader.id).put("loaderVersion", loaderVersion.ifEmpty { "auto" }).build(),
         )
-        notice("Сборка «${profile.name}» создана")
+        notice(tr("Сборка «{name}» создана", profile.name))
     }
 
     fun deleteProfile(id: String) = viewModelScope.launch {
-        runTask("Удаляем сборку") {
+        runTask(tr("Удаляем сборку")) {
             val gone = state.value.profiles.firstOrNull { it.id == id }
             dropBuild(id)
             gone?.let {
@@ -1368,7 +1670,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     EventData().put("mc", it.gameVersion).put("loader", it.loader.id).build(),
                 )
             }
-            notice("Сборка удалена")
+            notice(tr("Сборка удалена"))
         }
     }
 
@@ -1399,11 +1701,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 container.packs.stashPlayerFiles(profile, slug)
                 dropBuild(profile.id)
             }
-            "$reason. Сборка удалена с телефона, а миры и твои файлы сохранены — они вернутся, когда установишь её снова"
+            tr("{reason}. Сборка удалена с телефона, а миры и твои файлы сохранены — они вернутся, когда установишь её снова", reason)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            "$reason. Сборку не удалось убрать: ${error.message}"
+            tr("{reason}. Сборку не удалось убрать: {message}", reason, error.message)
         }
     }
 
@@ -1462,7 +1764,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             ?: profiles.firstOrNull()
         if (profile == null) {
             open(Screen.HOME)
-            notice("Сначала создай сборку — в неё и зайдёт игра", isError = true)
+            notice(tr("Сначала создай сборку — в неё и зайдёт игра"), isError = true)
             return
         }
         play(profile, address)
@@ -1474,7 +1776,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             return
         }
         if (address.isBlank()) {
-            notice("У сервера нет адреса — выбери другой", isError = true)
+            notice(tr("У сервера нет адреса — выбери другой"), isError = true)
             return
         }
         if (isBedrockAddress(address)) {
@@ -1498,7 +1800,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 when (val plan = joinPlan(joinableBuilds(snapshot.profiles), snapshot.activeProfileId, wanted)) {
                     is JoinPlan.Launch -> joinServer(plan.build, address, name)
                     is JoinPlan.Switch -> {
-                        notice("Сервер на ${wanted.joinToString(", ")} — заходим сборкой «${plan.build.name}»")
+                        notice(tr("Сервер на {0} — заходим сборкой «{name}»", wanted.joinToString(", "), plan.build.name))
                         joinServer(plan.build, address, name)
                     }
                     else -> lobby.askJoin(
@@ -1526,7 +1828,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun createBuildAndJoin(version: String, address: String, serverName: String) {
         lobby.dismissJoin()
         val before = state.value.profiles.map { it.id }.toSet()
-        val buildName = serverName.trim().take(16).let { if (it.isEmpty()) "Сборка $version" else "$it $version" }
+        val buildName = serverName.trim().take(16).let { if (it.isEmpty()) tr("Сборка {version}", version) else "$it $version" }
         viewModelScope.launch {
             createProfile(buildName, version, LoaderKind.VANILLA).join()
             val made = state.value.profiles.firstOrNull { it.id !in before && it.gameVersion == version }
@@ -1550,7 +1852,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 else -> {
                     refreshBedrock()
                     open(Screen.BEDROCK)
-                    notice("Выбери, чем открывать Bedrock-серверы", tone = ToastTone.Info)
+                    notice(tr("Выбери, чем открывать Bedrock-серверы"), tone = ToastTone.Info)
                 }
             }
         }
@@ -1563,25 +1865,25 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun playOnBedrockEdition(address: String, name: String = "Millida") {
         val parsed = parseBedrockAddress(address)
         if (parsed == null) {
-            notice("Не разобрал адрес Bedrock: $address", isError = true)
+            notice(tr("Не разобрал адрес Bedrock: {address}", address), isError = true)
             return
         }
         when (playOnBedrock(getApplication(), name, parsed)) {
-            BedrockHandoff.CONNECTED -> notice("Открываю Bedrock: $parsed")
-            BedrockHandoff.ADDED -> notice("Сервер сохранён в Bedrock — открой в игре «Серверы»")
+            BedrockHandoff.CONNECTED -> notice(tr("Открываю Bedrock: {parsed}", parsed))
+            BedrockHandoff.ADDED -> notice(tr("Сервер сохранён в Bedrock — открой в игре «Серверы»"))
             BedrockHandoff.NOT_INSTALLED -> {
                 refreshBedrock()
                 open(Screen.BEDROCK)
-                notice("Официальный клиент не установлен", isError = true)
+                notice(tr("Официальный клиент не установлен"), isError = true)
             }
-            BedrockHandoff.FAILED -> notice("Bedrock-версия не открылась", isError = true)
+            BedrockHandoff.FAILED -> notice(tr("Bedrock-версия не открылась"), isError = true)
         }
     }
 
     fun installBedrockEdition() = openBedrockStore(getApplication())
 
     fun openBedrockEdition() {
-        if (!openBedrockApp(getApplication())) notice("Bedrock-версия не открылась", isError = true)
+        if (!openBedrockApp(getApplication())) notice(tr("Bedrock-версия не открылась"), isError = true)
     }
 
     fun bedrockReady(): Boolean = bedrockInstalled(getApplication())
@@ -1627,11 +1929,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val pending = state.value.millidaModOffer ?: return
         state.update { it.copy(millidaModOffer = null) }
         val installing = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            runTask("Ставим мод Millida") {
+            runTask(tr("Ставим мод Millida")) {
                 try {
                     installMillidaMod(pending.profile)
                 } catch (error: IOException) {
-                    throw IOException("Мод Millida не поставился (${error.message}) — игра запустится без него", error)
+                    throw IOException(tr("Мод Millida не поставился ({message}) — игра запустится без него", error.message), error)
                 }
             }
             loadCosmetics(pending.profile)
@@ -1652,6 +1954,148 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun cancelMillidaModOffer() {
         state.update { it.copy(millidaModOffer = null) }
     }
+
+    /**
+     * Mods the build's own mods require and the folder lacks, each with the catalogue
+     * version that fills the gap. Only libraries the launcher knows by their permanent
+     * project id are offered: a name taken from a mod's description is not a project to
+     * trust. The rest, and what was already tried for this build, is left to the loader.
+     */
+    private suspend fun installableMissingMods(profile: Profile): List<InstallableMod> {
+        val mods = File(container.profiles.directory(profile), "mods")
+        val tried = missingModsTried[profile.id].orEmpty()
+        val missing = withContext(Dispatchers.IO) {
+            when (profile.loader) {
+                LoaderKind.FABRIC -> ModDependencies.missing(mods)
+                LoaderKind.FORGE, LoaderKind.NEOFORGE -> ModCompat.missingForge(mods, profile.loader)
+                else -> emptyList()
+            }
+        }
+        return missing.take(MISSING_MODS_MAX).mapNotNull { mod ->
+            val project = mod.projectId?.takeUnless { it in tried } ?: return@mapNotNull null
+            val item = CatalogItem(projectId = project, source = CatalogSource.MODRINTH)
+            val version = try {
+                container.catalog.versions(item, profile.gameVersion, profile.loader).newestInstallable()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (unavailable: Exception) {
+                null
+            }
+            version?.let { InstallableMod(mod, it.copy(projectId = project)) }
+        }
+    }
+
+    /** Puts the libraries the build lacks in by itself (Fabric API and the like), then starts the game again. */
+    private fun installMissingMods(pending: PendingMissingMods) {
+        val installing = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            runTask(tr("Ставим недостающие моды")) {
+                val dir = container.profiles.directory(pending.profile)
+                val failed = ArrayList<String>()
+                for (mod in pending.mods) {
+                    missingModsTried[pending.profile.id] = missingModsTried[pending.profile.id].orEmpty() + mod.version.projectId
+                    try {
+                        container.catalog.install(mod.version, ContentKind.MOD, dir)
+                    } catch (error: IOException) {
+                        failed += mod.missing.name
+                    }
+                }
+                if (failed.isNotEmpty()) {
+                    throw IOException(tr("Не поставились: {0} — поставь их в каталоге сборки", failed.joinToString(", ")))
+                }
+            }
+            playJob = null
+            play(pending.profile, pending.serverAddress, memoryConfirmed = true, modAnswered = true)
+        }
+        playJob = installing
+        installing.start()
+    }
+
+    /** Switches off the mods that would stop the game and starts it. */
+    fun disableProblemMods() {
+        val pending = state.value.modProblems ?: return
+        state.update { it.copy(modProblems = null) }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                pending.problems.flatMap { it.disable }.distinct().forEach { jar ->
+                    val target = File(jar.parentFile, jar.name + DISABLED_SUFFIX)
+                    if (!target.exists()) jar.renameTo(target)
+                }
+            }
+            play(pending.profile, pending.serverAddress, memoryConfirmed = true, modAnswered = true, modsChecked = true)
+        }
+    }
+
+    fun playWithProblemMods() {
+        val pending = state.value.modProblems ?: return
+        state.update { it.copy(modProblems = null) }
+        play(pending.profile, pending.serverAddress, memoryConfirmed = true, modAnswered = true, modsChecked = true)
+    }
+
+    fun cancelModProblems() {
+        state.update { it.copy(modProblems = null) }
+    }
+
+    fun playOverCellular() {
+        val pending = state.value.cellularPlay ?: return
+        state.update { it.copy(cellularPlay = null) }
+        play(pending.profile, pending.serverAddress, memoryConfirmed = true, modAnswered = true, modsChecked = true, networkChecked = true)
+    }
+
+    fun cancelCellularPlay() {
+        state.update { it.copy(cellularPlay = null) }
+    }
+
+    private var wifiWait: android.net.ConnectivityManager.NetworkCallback? = null
+
+    /** The start goes on by itself once an unmetered network is up; another start or leaving the app cancels it. */
+    fun waitForWifiThenPlay() {
+        val pending = state.value.cellularPlay ?: return
+        state.update { it.copy(cellularPlay = null) }
+        stopWaitingForWifi()
+        val manager = getApplication<Application>().getSystemService(android.net.ConnectivityManager::class.java)
+        if (manager == null) {
+            notice(tr("Не получилось следить за сетью — запусти игру, когда подключишься к Wi-Fi"), isError = true)
+            return
+        }
+        val request = android.net.NetworkRequest.Builder()
+            .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+            .build()
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                val self = this
+                viewModelScope.launch(Dispatchers.Main) {
+                    if (wifiWait !== self) return@launch
+                    stopWaitingForWifi()
+                    notice(tr("Wi-Fi есть — начинаем загрузку"), tone = ToastTone.Info)
+                    play(pending.profile, pending.serverAddress, memoryConfirmed = true, modAnswered = true, modsChecked = true, networkChecked = true)
+                }
+            }
+        }
+        val registered = runCatching { manager.registerNetworkCallback(request, callback) }.isSuccess
+        if (!registered) {
+            notice(tr("Не получилось следить за сетью — запусти игру, когда подключишься к Wi-Fi"), isError = true)
+            return
+        }
+        wifiWait = callback
+        notice(tr("Начнём загрузку «{name}», как только появится Wi-Fi", pending.profile.name), tone = ToastTone.Info)
+    }
+
+    private fun stopWaitingForWifi() {
+        val callback = wifiWait ?: return
+        wifiWait = null
+        val manager = getApplication<Application>().getSystemService(android.net.ConnectivityManager::class.java)
+        runCatching { manager?.unregisterNetworkCallback(callback) }
+    }
+
+    private fun meteredNetwork(): Boolean = !unmeteredNetwork()
+
+    /** The game files a start would fetch; an estimate that fails counts as nothing to ask about. */
+
+    private suspend fun downloadEstimate(profile: Profile): Long =
+        runCatching { container.installer.missingBytes(profile.versionId) }
+            .recoverCatching { container.installer.missingBytes(profile.gameVersion) }
+            .getOrDefault(0L)
 
     fun finishOnboarding() {
         prefs.onboardingDone = true
@@ -1680,7 +2124,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
      * temporaries, thumbnails. Games, builds and worlds are never touched here.
      */
     fun measureCache() = viewModelScope.launch {
-        runTask("Считаем кэш", silent = true) {
+        runTask(tr("Считаем кэш"), silent = true) {
             val size = directorySize(getApplication<Application>().cacheDir) +
                 directorySize(container.layout.caches)
             state.update { it.copy(cacheBytes = size) }
@@ -1693,26 +2137,26 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
      * own file and none of them loses it.
      */
     fun scanDuplicates() = viewModelScope.launch {
-        runTask("Ищем одинаковые файлы") {
+        runTask(tr("Ищем одинаковые файлы")) {
             val report = container.dedupe.scan()
             state.update {
                 it.copy(duplicateBytes = report.reclaimable, duplicateGroups = report.groups.size)
             }
-            if (report.groups.isEmpty()) notice("Одинаковых файлов не нашлось", tone = ToastTone.Info)
+            if (report.groups.isEmpty()) notice(tr("Одинаковых файлов не нашлось"), tone = ToastTone.Info)
         }
     }
 
     fun runDedupe() = viewModelScope.launch {
-        runTask("Склеиваем одинаковые файлы") {
+        runTask(tr("Склеиваем одинаковые файлы")) {
             container.dedupe.collectGarbage()
             val report = container.dedupe.scan()
             val result = container.dedupe.run(report)
             state.update { it.copy(duplicateBytes = 0, duplicateGroups = 0) }
             notice(
                 if (result.failed > 0) {
-                    "Освободили место, но ${result.failed} файлов остались как были"
+                    tr("Освободили место, но {failed} файлов остались как были", result.failed)
                 } else {
-                    "Готово, склеено файлов: ${result.linked}"
+                    tr("Готово, склеено файлов: {linked}", result.linked)
                 },
                 isError = result.failed > 0,
             )
@@ -1720,18 +2164,18 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun clearCache() = viewModelScope.launch {
-        runTask("Чистим кэш") {
+        runTask(tr("Чистим кэш")) {
             getApplication<Application>().cacheDir.listFiles()?.forEach { it.deleteRecursively() }
             container.layout.caches.listFiles()?.forEach { it.deleteRecursively() }
             measureCache()
-            notice("Кэш очищен")
+            notice(tr("Кэш очищен"))
         }
     }
 
     // --- Косметика Millida: без неё скин и плащ видны только в лаунчере ---
 
     fun loadCosmetics(profile: Profile) = viewModelScope.launch {
-        runTask("Проверяем косметику", silent = true) {
+        runTask(tr("Проверяем косметику"), silent = true) {
             val state1 = container.millidaMod.state(profile)
             val diagnosis = container.millidaMod.diagnose(profile)
             state.update { it.copy(cosmetics = state1, skinDiagnosis = diagnosis) }
@@ -1739,11 +2183,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun installCosmetics(profile: Profile) = viewModelScope.launch {
-        runTask("Ставим косметику Millida") {
+        runTask(tr("Ставим косметику Millida")) {
             val result = installMillidaMod(profile)
             state.update { it.copy(cosmetics = result) }
             loadCosmetics(profile)
-            notice("Косметика в сборке: скин и плащ будут видны в игре")
+            notice(tr("Косметика в сборке: скин и плащ будут видны в игре"))
         }
     }
 
@@ -1756,6 +2200,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 container.millidaMod.intact(profile, mod),
                 declined,
                 container.millidaMod.updateDue(profile, mod),
+                MillidaModOffer.needsFabricApi(profile.loader.id) &&
+                    !MillidaModOffer.hasFabricApi(container.content.list(container.profiles.directory(profile), ContentKind.MOD)),
             )
         }
     } catch (cancelled: CancellationException) {
@@ -1767,7 +2213,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private fun updateMillidaModAndPlay(profile: Profile, serverAddress: String) {
         val updating = viewModelScope.launch(start = CoroutineStart.LAZY) {
-            runTask("Обновляем мод Millida") {
+            runTask(tr("Обновляем мод Millida")) {
                 try {
                     withContext(Dispatchers.IO) { container.millidaMod.rememberUpdate(profile) }
                 } catch (error: IOException) {
@@ -1776,7 +2222,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 try {
                     installMillidaMod(profile)
                 } catch (error: IOException) {
-                    throw IOException("Мод Millida не обновился (${error.message}) — игра запустится с прежней версией", error)
+                    throw IOException(tr("Мод Millida не обновился ({message}) — игра запустится с прежней версией", error.message), error)
                 }
             }
             loadCosmetics(profile)
@@ -1795,23 +2241,23 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         if (needsApi) {
             val item = CatalogItem(projectId = MillidaModOffer.FABRIC_API_PROJECT, source = CatalogSource.MODRINTH)
             val api = MillidaModOffer.pickFabricApi(container.catalog.versions(item, profile.gameVersion, profile.loader))
-                ?: throw IOException("моду нужен Fabric API, а под ${profile.gameVersion} его в каталоге нет")
+                ?: throw IOException(tr("моду нужен Fabric API, а под {gameVersion} его в каталоге нет", profile.gameVersion))
             container.catalog.install(api.copy(projectId = MillidaModOffer.FABRIC_API_PROJECT), ContentKind.MOD, dir)
         }
         return container.millidaMod.install(profile)
     }
 
     fun repairCosmetics(profile: Profile) = viewModelScope.launch {
-        runTask("Чиним скин в игре") {
+        runTask(tr("Чиним скин в игре")) {
             val result = container.millidaMod.repair(profile)
             state.update { it.copy(cosmetics = result) }
             loadCosmetics(profile)
-            notice("Готово, запусти сборку и проверь")
+            notice(tr("Готово, запусти сборку и проверь"))
         }
     }
 
     fun removeCosmetics(profile: Profile) = viewModelScope.launch {
-        runTask("Убираем косметику") {
+        runTask(tr("Убираем косметику")) {
             val result = container.millidaMod.remove(profile)
             state.update { it.copy(cosmetics = result) }
             loadCosmetics(profile)
@@ -1819,7 +2265,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setCosmeticsEnabled(profile: Profile, enabled: Boolean) = viewModelScope.launch {
-        runTask(if (enabled) "Включаем косметику" else "Выключаем косметику") {
+        runTask(if (enabled) tr("Включаем косметику") else tr("Выключаем косметику")) {
             val result = container.millidaMod.setEnabled(profile, enabled)
             state.update { it.copy(cosmetics = result) }
             loadCosmetics(profile)
@@ -1829,21 +2275,21 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // --- Свои серверы сборки ---
 
     fun addBuildServer(profile: Profile, name: String, address: String) = viewModelScope.launch {
-        runTask("Добавляем сервер") {
+        runTask(tr("Добавляем сервер")) {
             val list = container.serverList.add(container.profiles.directory(profile), name, address)
             state.update { it.copy(buildServers = list) }
         }
     }
 
     fun removeBuildServer(profile: Profile, address: String) = viewModelScope.launch {
-        runTask("Убираем сервер") {
+        runTask(tr("Убираем сервер")) {
             val list = container.serverList.remove(container.profiles.directory(profile), address)
             state.update { it.copy(buildServers = list) }
         }
     }
 
     fun pinBuildServer(profile: Profile, address: String) = viewModelScope.launch {
-        runTask("Закрепляем сервер") {
+        runTask(tr("Закрепляем сервер")) {
             val list = container.serverList.pin(container.profiles.directory(profile), address)
             state.update { it.copy(buildServers = list) }
         }
@@ -1856,7 +2302,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
      */
     fun pingServer(address: String, refresh: Boolean = false) = viewModelScope.launch {
         if (!refresh && state.value.serverStatuses.containsKey(address)) return@launch
-        runTask("Опрашиваем $address", silent = true) {
+        runTask(tr("Опрашиваем {address}", address), silent = true) {
             val status = container.serverStatuses.status(address, refresh)
             state.update { it.withPings(listOf(address), status?.let { answer -> mapOf(address to answer) }.orEmpty()) }
         }
@@ -1866,7 +2312,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun pingServers(addresses: List<String>, refresh: Boolean = false) = viewModelScope.launch {
         val wanted = addresses.filter { refresh || !state.value.serverStatuses.containsKey(it) }
         if (wanted.isEmpty()) return@launch
-        runTask("Опрашиваем серверы", silent = true) {
+        runTask(tr("Опрашиваем серверы"), silent = true) {
             val answers = container.serverStatuses.statuses(wanted, refresh)
             state.update { it.withPings(wanted, answers) }
         }
@@ -1875,7 +2321,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // --- Миры ---
 
     fun loadWorldBackups(profile: Profile, folder: String) = viewModelScope.launch {
-        runTask("Читаем копии мира", silent = true) {
+        runTask(tr("Читаем копии мира"), silent = true) {
             val list = container.worlds.backups(container.profiles.directory(profile), folder)
             state.update { current ->
                 current.copy(worldBackups = current.worldBackups.filterNot { it.folder == folder } + list)
@@ -1884,37 +2330,37 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun backupWorld(profile: Profile, folder: String) = viewModelScope.launch {
-        runTask("Делаем копию мира") {
+        runTask(tr("Делаем копию мира")) {
             container.worlds.backup(container.profiles.directory(profile), folder)
             loadWorldBackups(profile, folder)
-            notice("Копия мира готова")
+            notice(tr("Копия мира готова"))
         }
     }
 
     fun restoreWorld(profile: Profile, backupFile: String) = viewModelScope.launch {
-        runTask("Возвращаем мир из копии") {
+        runTask(tr("Возвращаем мир из копии")) {
             container.worlds.restoreBackup(container.profiles.directory(profile), backupFile)
             refreshBuild()
-            notice("Мир восстановлен")
+            notice(tr("Мир восстановлен"))
         }
     }
 
     fun deleteWorldBackup(profile: Profile, backupFile: String, folder: String) = viewModelScope.launch {
-        runTask("Удаляем копию") {
+        runTask(tr("Удаляем копию")) {
             container.worlds.deleteBackup(container.profiles.directory(profile), backupFile)
             loadWorldBackups(profile, folder)
         }
     }
 
     fun duplicateWorld(profile: Profile, folder: String) = viewModelScope.launch {
-        runTask("Копируем мир") {
+        runTask(tr("Копируем мир")) {
             container.worlds.duplicate(container.profiles.directory(profile), folder)
             refreshBuild()
         }
     }
 
     fun renameWorld(profile: Profile, folder: String, name: String) = viewModelScope.launch {
-        runTask("Переименовываем мир") {
+        runTask(tr("Переименовываем мир")) {
             container.worlds.rename(container.profiles.directory(profile), folder, name)
             refreshBuild()
         }
@@ -1927,7 +2373,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
      */
     fun exportWorldFile(profile: Profile, folder: String, target: File, onSuccess: (File) -> Unit): Job =
         viewModelScope.launch {
-            val done = runTask("Сохраняем мир файлом") {
+            val done = runTask(tr("Сохраняем мир файлом")) {
                 val destination = target.absoluteFile
                 val partial = File(destination.parentFile, destination.name + ".part")
                 dropStale(destination)
@@ -1935,12 +2381,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     partial.outputStream().use { stream ->
                         container.worlds.exportWorld(container.profiles.directory(profile), folder, stream)
                     }
-                    if (!partial.renameTo(destination)) throw IOException("файл мира не сохранился — проверь свободное место")
+                    if (!partial.renameTo(destination)) throw IOException(tr("файл мира не сохранился — проверь свободное место"))
                 } catch (failure: Throwable) {
                     partial.delete()
                     throw failure
                 }
-                notice("Мир сохранён")
+                notice(tr("Мир сохранён"))
             }
             if (done) onSuccess(target.absoluteFile)
         }
@@ -1950,15 +2396,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         resolver: android.content.ContentResolver,
         uri: android.net.Uri,
     ) = viewModelScope.launch {
-        runTask("Ставим мир из файла") {
+        runTask(tr("Ставим мир из файла")) {
             val name = lobby.displayName(resolver, uri)
                 ?.substringBeforeLast('.')
                 ?.takeIf { it.isNotBlank() }
-                ?: "Мир из файла"
-            val source = resolver.openInputStream(uri) ?: throw IOException("файл не открылся — выбери zip с миром")
+                ?: tr("Мир из файла")
+            val source = resolver.openInputStream(uri) ?: throw IOException(tr("файл не открылся — выбери zip с миром"))
             source.use { container.worlds.importWorld(container.profiles.directory(profile), it, name) }
             refreshBuild()
-            notice("Мир добавлен")
+            notice(tr("Мир добавлен"))
         }
     }
 
@@ -1988,7 +2434,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     /** Only the deleted frame leaves the list, so the all-builds gallery keeps the other builds' shots. */
     fun deleteShot(profileId: String, name: String, onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Удаляем снимок") {
+        val done = runTask(tr("Удаляем снимок")) {
             container.screenshots.delete(profileId, name)
             state.update { current ->
                 val left = current.shots.filterNot { it.profileId == profileId && it.name == name }
@@ -2005,7 +2451,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // --- Сборка: перенос, копия, группа, наиграно ---
 
     fun loadBuildMeta(profile: Profile) = viewModelScope.launch {
-        runTask("Читаем сведения о сборке", silent = true) {
+        runTask(tr("Читаем сведения о сборке"), silent = true) {
             state.update {
                 it.copy(
                     buildMeta = container.buildMeta.of(profile.id),
@@ -2016,48 +2462,48 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setBuildGroup(profile: Profile, group: String) = viewModelScope.launch {
-        runTask("Меняем группу") {
+        runTask(tr("Меняем группу")) {
             val meta = container.buildMeta.setGroup(profile.id, group)
             state.update { it.copy(buildMeta = meta) }
         }
     }
 
     fun duplicateBuild(profile: Profile, withContent: Boolean) = viewModelScope.launch {
-        runTask("Копируем сборку") {
+        runTask(tr("Копируем сборку")) {
             container.buildOps.duplicate(profile, withContent)
             reloadProfiles()
-            notice("Копия сборки готова")
+            notice(tr("Копия сборки готова"))
         }
     }
 
     fun planMigration(profile: Profile, gameVersion: String, loader: LoaderKind) = viewModelScope.launch {
         state.update { it.copy(migratePlan = null) }
-        runTask("Считаем перенос сборки") {
+        runTask(tr("Считаем перенос сборки")) {
             val plan = container.buildOps.migratePlan(profile, gameVersion, loader)
             state.update { it.copy(migratePlan = plan) }
         }
     }
 
     fun migrateBuild(profile: Profile, gameVersion: String, loader: LoaderKind) = viewModelScope.launch {
-        runTask("Переносим сборку") {
+        runTask(tr("Переносим сборку")) {
             container.buildOps.migrate(profile, gameVersion, loader)
             state.update { it.copy(migratePlan = null) }
             reloadProfiles()
-            notice("Сборка перенесена в копию, исходная осталась на месте")
+            notice(tr("Сборка перенесена в копию, исходная осталась на месте"))
         }
     }
 
     fun repairBuild(profile: Profile) = viewModelScope.launch {
-        runTask("Чиним сборку") {
+        runTask(tr("Чиним сборку")) {
             container.buildOps.repair(profile, container.installer) { stage -> publish(stage) }
-            notice("Сборка проверена")
+            notice(tr("Сборка проверена"))
         }
     }
 
     // --- Контент: обновления, зависимости, безопасность ---
 
     fun planContentUpdates(profile: Profile) = viewModelScope.launch {
-        runTask("Ищем обновления модов") {
+        runTask(tr("Ищем обновления модов")) {
             val plan = container.contentUpdates.plan(profile, container.profiles.directory(profile))
             state.update { it.copy(contentUpdatePlan = plan) }
         }
@@ -2065,7 +2511,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun applyContentUpdates(profile: Profile) = viewModelScope.launch {
         val plan = state.value.contentUpdatePlan ?: return@launch
-        runTask("Обновляем моды") {
+        runTask(tr("Обновляем моды")) {
             val outcomes = container.contentUpdates.applyAll(container.profiles.directory(profile), plan)
             val failed = outcomes.filterNot { it.ok }
             state.update {
@@ -2073,11 +2519,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             }
             refreshBuild()
             if (failed.isEmpty()) {
-                notice("Моды обновлены")
+                notice(tr("Моды обновлены"))
             } else {
                 notice(
-                    "Обновилось ${outcomes.size - failed.size} из ${outcomes.size}. Не вышло: " +
-                        "${failed.joinToString(", ") { it.candidate.title }} — нажми «Обновить всё» ещё раз",
+                    tr(
+                        "Обновилось {0} из {size}. Не вышло: {1} — нажми «Обновить всё» ещё раз",
+                        outcomes.size - failed.size,
+                        outcomes.size,
+                        failed.joinToString(", ") { it.candidate.title },
+                    ),
                     isError = true,
                 )
             }
@@ -2085,7 +2535,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun scanSafety(profile: Profile) = viewModelScope.launch {
-        runTask("Проверяем моды") {
+        runTask(tr("Проверяем моды")) {
             val report = container.contentSafety.scan(profile, container.profiles.directory(profile))
             state.update { it.copy(safetyReport = report) }
         }
@@ -2093,7 +2543,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     fun quarantineMods(profile: Profile) = viewModelScope.launch {
         val report = state.value.safetyReport ?: return@launch
-        runTask("Отключаем подозрительное") {
+        runTask(tr("Отключаем подозрительное")) {
             container.contentSafety.quarantine(container.profiles.directory(profile), report.toQuarantine())
             scanSafety(profile)
             refreshBuild()
@@ -2107,7 +2557,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
      * is answered from the package itself and not from the update channel.
      */
     fun openWhatsNewIfDue() = viewModelScope.launch {
-        runTask("Читаем, что нового", silent = true) {
+        runTask(tr("Читаем, что нового"), silent = true) {
             val current = BuildConfig.VERSION_CODE.toLong()
             val seen = prefs.whatsNewShownFor.toLongOrNull() ?: 0
             val manifest = runCatching { container.updates.manifest() }.getOrNull() ?: return@runTask
@@ -2125,7 +2575,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     /** The start-up check stays quiet; a check the player asked for says when the channel did not answer. */
     fun checkUpdate(manual: Boolean = false) = viewModelScope.launch {
+        if (!BuildConfig.SELF_UPDATE) {
+            if (manual) StoreLinks.openRuStore(getApplication())
+            return@launch
+        }
         try {
+
             val verdict = withContext(Dispatchers.IO) {
                 container.updates.check(
                     currentVersionCode = BuildConfig.VERSION_CODE.toLong(),
@@ -2186,11 +2641,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             gameAlive = GameProcess.alive(app),
         )
         if (moment != InstallMoment.Install) return
+        if (!UpdatePolicy.startsInstall(manual, silent = SelfInstaller.installsSilently(app))) return
         if (!SelfInstaller.canInstall(app)) {
             // never throw the player into settings uninvited
             if (manual) {
                 SelfInstaller.openInstallSettings(app)
-                notice("Разреши установку из лаунчера и нажми снова", isError = true)
+                notice(tr("Разреши установку из лаунчера и нажми снова"), isError = true)
             }
             return
         }
@@ -2198,14 +2654,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         if (SelfInstaller.install(app, container.updates.apkFile(release))) {
             state.update { it.copy(updateOffer = false) }
         } else {
-            notice("Система не открыла установку — повтори позже", isError = true)
+            notice(tr("Система не открыла установку — повтори позже"), isError = true)
         }
     }
 
     fun downloadUpdate() = viewModelScope.launch {
         val verdict = state.value.updateVerdict
         val release = (verdict as? UpdateVerdict.Available)?.release ?: return@launch
-        runTask("Качаем обновление") {
+        runTask(tr("Качаем обновление")) {
             backgroundJob?.join()
             if (readyUpdate?.versionCode != release.versionCode) {
                 container.updates.download(release) { transfer ->
@@ -2217,7 +2673,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 readyUpdate = release
             }
             if (GameProcess.alive(getApplication())) {
-                notice("Обновление скачано — поставится, когда выйдешь из игры")
+                notice(tr("Обновление скачано — поставится, когда выйдешь из игры"))
                 state.update { it.copy(updateOffer = false) }
             } else {
                 installReadyUpdate(manual = true)
@@ -2234,34 +2690,34 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // --- Облако сборок ---
 
     fun cloudStatus() = viewModelScope.launch {
-        runTask("Смотрим облако") {
+        runTask(tr("Смотрим облако")) {
             state.update { it.copy(cloudStatus = container.cloud.status()) }
         }
     }
 
     fun cloudPush() = viewModelScope.launch {
-        runTask("Выгружаем сборки") {
+        runTask(tr("Выгружаем сборки")) {
             val status = container.cloud.push()
             state.update { it.copy(cloudStatus = status) }
-            notice("Сборки выгружены в облако")
+            notice(tr("Сборки выгружены в облако"))
         }
     }
 
     fun cloudPull(only: List<String>? = null) = viewModelScope.launch {
-        runTask("Забираем сборки") {
+        runTask(tr("Забираем сборки")) {
             val report = container.cloud.pull(only)
             state.update { it.copy(cloudReport = report) }
             reloadProfiles()
             when {
                 report.failed.isNotEmpty() -> notice(
-                    "Не забралось ${report.failed.size}: ${report.failed.first()} — повтори",
+                    tr("Не забралось {size}: {0} — повтори", report.failed.size, report.failed.first()),
                     isError = true,
                 )
                 report.installed.isNotEmpty() || report.updated.isNotEmpty() ->
-                    notice("Добавлено: ${report.installed.size}, обновлено: ${report.updated.size}")
-                only != null -> notice("Этой сборки уже нет в облаке — нажми «Проверить»", isError = true)
-                report.skipped.isNotEmpty() -> notice("Новых нет — ${report.skipped.size} уже на телефоне")
-                else -> notice("В облаке пусто")
+                    notice(tr("Добавлено: {size}, обновлено: {size2}", report.installed.size, report.updated.size))
+                only != null -> notice(tr("Этой сборки уже нет в облаке — нажми «Проверить»"), isError = true)
+                report.skipped.isNotEmpty() -> notice(tr("Новых нет — {size} уже на телефоне", report.skipped.size))
+                else -> notice(tr("В облаке пусто"))
             }
         }
     }
@@ -2277,56 +2733,61 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun previewPack(code: String) = viewModelScope.launch {
-        runTask("Ищем пак по коду") {
+        runTask(tr("Ищем пак по коду")) {
             state.update { it.copy(packPreview = container.packs.packPreview(code)) }
         }
     }
 
     fun installPackByCode(code: String) = viewModelScope.launch {
-        runTask("Ставим пак") {
+        runTask(tr("Ставим пак")) {
             container.packs.installByCode(code) { step -> publishPack(step) }
             container.telemetry.track(TelemetryType.BUILD_IMPORT, EventData().put("source", "code").build())
             state.update { it.copy(packPreview = null) }
             reloadProfiles()
-            notice("Пак установлен")
+            notice(tr("Пак установлен"))
         }
     }
 
     fun installPackFile(source: java.io.File) = viewModelScope.launch {
-        runTask("Ставим модпак из файла") {
+        runTask(tr("Ставим модпак из файла")) {
             container.packs.installFile(source) { step -> publishPack(step) }
             container.telemetry.track(TelemetryType.BUILD_IMPORT, EventData().put("source", "file").build())
             reloadProfiles()
-            notice("Модпак установлен")
+            notice(tr("Модпак установлен"))
         }
     }
 
     fun sharePack(profile: Profile, summary: String = "", onDone: ((String) -> Unit)? = null) = viewModelScope.launch {
         var code = ""
-        val done = runTask("Готовим код сборки") {
+        val done = runTask(tr("Готовим код сборки")) {
             code = container.packs.share(profile, summary).code
             loadMyPacks()
         }
         if (!done) return@launch
-        if (onDone != null) onDone(code) else notice("Код сборки: $code")
+        if (onDone != null) onDone(code) else notice(tr("Код сборки: {code}", code))
     }
 
     /** A code handed out by mistake is taken back: the build no longer installs by it. */
     fun unsharePack(code: String) = viewModelScope.launch {
-        val done = runTask("Удаляем код сборки") { container.packs.unshare(code) }
+        val done = runTask(tr("Удаляем код сборки")) { container.packs.unshare(code) }
         if (!done) return@launch
         state.update { current -> current.copy(myPacks = current.myPacks.filterNot { it.code == code }) }
-        notice("Код $code удалён — по нему сборка больше не ставится")
+        notice(tr("Код {code} удалён — по нему сборка больше не ставится", code))
     }
 
     /** The old file is removed first, so a failed export can never pass for a finished one. */
-    fun exportPack(profile: Profile, target: java.io.File, onSuccess: (File) -> Unit = {}): Job =
+    fun exportPack(profile: Profile, target: java.io.File, curseForge: Boolean = false, onSuccess: (File) -> Unit = {}): Job =
         viewModelScope.launch {
             var exported: File? = null
-            val done = runTask("Сохраняем сборку файлом") {
+            val done = runTask(tr("Сохраняем сборку файлом")) {
                 dropStale(target)
-                exported = container.packs.exportMrpack(profile, target)
-                notice("Файл сборки готов: ${target.name}")
+                exported = if (curseForge) {
+                    container.packs.exportCurseForge(profile, target)
+                } else {
+                    container.packs.exportMrpack(profile, target)
+                }
+
+                notice(tr("Файл сборки готов: {name}", target.name))
             }
             val file = exported
             if (done && file != null) onSuccess(file)
@@ -2496,22 +2957,22 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     // --- Библиотека текстур ---
 
     fun loadTextures() = viewModelScope.launch {
-        runTask("Читаем библиотеку скинов", silent = true) {
+        runTask(tr("Читаем библиотеку скинов"), silent = true) {
             state.update { it.copy(textureLibrary = container.textures.list(TextureKind.SKIN)) }
         }
     }
 
     fun saveTexture(name: String, png: ByteArray, slim: Boolean, onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Сохраняем скин") {
+        val done = runTask(tr("Сохраняем скин")) {
             container.textures.save(TextureKind.SKIN, name, png, slim)
             loadTextures()
-            notice("Скин в библиотеке")
+            notice(tr("Скин в библиотеке"))
         }
         if (done) onDone()
     }
 
     fun deleteTexture(file: String, onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Удаляем скин") {
+        val done = runTask(tr("Удаляем скин")) {
             container.textures.delete(TextureKind.SKIN, file)
             loadTextures()
         }
@@ -2520,19 +2981,19 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     /** The catalogue hands out an address, not a file: it is fetched and checked like any other. */
     fun importSkinByUrl(url: String, name: String = "", onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Забираем скин по ссылке") {
+        val done = runTask(tr("Забираем скин по ссылке")) {
             val imported = container.skinImport.byUrl(url)
             saveImportedSkin(imported, name.ifEmpty { imported.name })
-            notice("Скин в библиотеке")
+            notice(tr("Скин в библиотеке"))
         }
         if (done) onDone()
     }
 
     fun importSkinByNick(nick: String, onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Ищем скин игрока") {
+        val done = runTask(tr("Ищем скин игрока")) {
             val imported = container.skinImport.byNick(nick)
             saveImportedSkin(imported, imported.name)
-            notice("Скин ${imported.name} в библиотеке")
+            notice(tr("Скин {name} в библиотеке", imported.name))
         }
         if (done) onDone()
     }
@@ -2581,6 +3042,33 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         prefs.soundVolume = state.value.soundVolume
     }
 
+    private val hudStore by lazy { HudStore(container.layout) }
+
+    fun loadControls() {
+        viewModelScope.launch {
+            val layout = withContext(Dispatchers.IO) { hudStore.load().layout }
+            state.update { it.copy(controls = layout) }
+        }
+    }
+
+    /** Changes the active layout and writes it at once: the game reads the file when it starts. */
+    fun editControls(change: (HudLayout) -> HudLayout) {
+        viewModelScope.launch {
+            val next = withContext(Dispatchers.IO) {
+                val profiles = hudStore.load()
+                val layout = change(profiles.layout)
+                runCatching { hudStore.save(profiles.withLayout(layout)) }
+                layout
+            }
+            state.update { it.copy(controls = next) }
+        }
+    }
+
+    fun setAutoJump(enabled: Boolean) {
+        prefs.autoJump = enabled
+        state.update { it.copy(autoJump = enabled) }
+    }
+
     fun setHaptics(enabled: Boolean) {
         prefs.haptics = enabled
         state.update { it.copy(haptics = enabled) }
@@ -2594,10 +3082,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun installBedrockBridge() = viewModelScope.launch {
         val bridge = BedrockBridge(container.layout.root)
         if (bridge.installed()) {
-            notice("Наш переводчик уже установлен")
+            notice(tr("Наш переводчик уже установлен"))
             return@launch
         }
-        runTask("Ставим переводчик Bedrock") {
+        runTask(tr("Ставим переводчик Bedrock")) {
             state.update { it.copy(bedrockBridgeProgress = 0.001f) }
             try {
                 bridge.install(container.downloader) { done ->
@@ -2609,12 +3097,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 state.update { it.copy(bedrockBridgeProgress = 0f) }
             }
             refreshBedrock()
-            notice("Переводчик готов: Bedrock-серверы открываются нашим клиентом")
+            notice(tr("Переводчик готов: Bedrock-серверы открываются нашим клиентом"))
         }
     }
 
     fun removeBedrockBridge() = viewModelScope.launch {
-        runTask("Убираем переводчик") {
+        runTask(tr("Убираем переводчик")) {
             val bridge = BedrockBridge(container.layout.root)
             BedrockProxyService.stop(getApplication())
             bridge.jar.delete()
@@ -2631,24 +3119,24 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun playBedrockThroughBridge(address: String, name: String = "Millida") {
         val parsed = parseBedrockAddress(address)
         if (parsed == null) {
-            notice("Не разобрал адрес Bedrock: $address", isError = true)
+            notice(tr("Не разобрал адрес Bedrock: {address}", address), isError = true)
             return
         }
         if (!BedrockBridge(container.layout.root).installed()) {
             open(Screen.BEDROCK)
-            notice("Сначала скачай наш переводчик Bedrock", isError = true)
+            notice(tr("Сначала скачай наш переводчик Bedrock"), isError = true)
             return
         }
         val profile = state.value.profiles.firstOrNull { it.id == state.value.activeProfileId }
             ?: state.value.profiles.firstOrNull()
         if (profile == null) {
             open(Screen.HOME)
-            notice("Сначала создай сборку: в неё и зайдёт игра", isError = true)
+            notice(tr("Сначала создай сборку: в неё и зайдёт игра"), isError = true)
             return
         }
         viewModelScope.launch {
             var ready = false
-            runTask("Поднимаем перевод протокола") {
+            runTask(tr("Поднимаем перевод протокола")) {
                 // A translator already running points at another server, and
                 // nothing can re-aim a started virtual machine.
                 BedrockProxyService.stop(getApplication())
@@ -2658,10 +3146,10 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             }
             if (!ready) {
                 BedrockProxyService.stop(getApplication())
-                notice("Переводчик не поднялся, журнал лежит в папке bedrock", isError = true)
+                notice(tr("Переводчик не поднялся, журнал лежит в папке bedrock"), isError = true)
                 return@launch
             }
-            notice("$name через наш клиент: ${parsed.host}")
+            notice(tr("{name} через наш клиент: {host}", name, parsed.host))
             play(profile, BedrockProxyService.localAddress())
         }
     }
@@ -2707,16 +3195,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun changeNickname() = viewModelScope.launch {
         val value = state.value.nicknameDraft.trim()
         if (value.length < 3) {
-            notice("Ник короче трёх знаков", isError = true)
+            notice(tr("Ник короче трёх знаков"), isError = true)
             return@launch
         }
         if (value == state.value.details?.nickname) return@launch
-        runTask("Меняем ник") {
+        runTask(tr("Меняем ник")) {
             val free = runCatching { container.portal.nicknameFree(value) }.getOrDefault(true)
-            if (!free) throw IllegalStateException("ник «$value» занят")
+            if (!free) throw IllegalStateException(tr("ник «{value}» занят", value))
             val details = container.portal.changeNickname(value)
             state.update { it.copy(details = details, nicknameDraft = details.nickname) }
-            notice("Ник теперь $value")
+            notice(tr("Ник теперь {value}", value))
         }
     }
 
@@ -2725,40 +3213,40 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
      * site for the address and hands the player over.
      */
     fun linkDiscord() = viewModelScope.launch {
-        runTask("Готовим привязку Discord") {
+        runTask(tr("Готовим привязку Discord")) {
             val url = container.portal.discordLinkUrl()
-            if (url.isEmpty()) throw IllegalStateException("сайт не выдал ссылку привязки")
+            if (url.isEmpty()) throw IllegalStateException(tr("сайт не выдал ссылку привязки"))
             state.update { it.copy(linkUrl = url) }
         }
     }
 
     fun linkTelegram() = viewModelScope.launch {
-        runTask("Готовим привязку Telegram") {
+        runTask(tr("Готовим привязку Telegram")) {
             val url = container.portal.telegramLinkUrl()
-            if (url.isEmpty()) throw IllegalStateException("сайт не выдал ссылку привязки")
+            if (url.isEmpty()) throw IllegalStateException(tr("сайт не выдал ссылку привязки"))
             state.update { it.copy(linkUrl = url) }
         }
     }
 
     fun unlinkDiscord() = viewModelScope.launch {
-        runTask("Отвязываем Discord") {
+        runTask(tr("Отвязываем Discord")) {
             container.portal.unlinkDiscord()
             loadAccountDetails()
         }
     }
 
     fun unlinkTelegram() = viewModelScope.launch {
-        runTask("Отвязываем Telegram") {
+        runTask(tr("Отвязываем Telegram")) {
             container.portal.unlinkTelegram()
             loadAccountDetails()
         }
     }
 
     fun revokeOtherSessions() = viewModelScope.launch {
-        runTask("Закрываем другие входы") {
+        runTask(tr("Закрываем другие входы")) {
             container.portal.revokeOtherSessions()
             loadAccountDetails()
-            notice("Другие входы закрыты")
+            notice(tr("Другие входы закрыты"))
         }
     }
 
@@ -2787,13 +3275,13 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun uploadSkin(bytes: ByteArray, slim: Boolean, name: String, onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Ставим скин") { applyMillidaSkin(bytes, slim, name) }
+        val done = runTask(tr("Ставим скин")) { applyMillidaSkin(bytes, slim, name) }
         if (done) onDone()
     }
 
     /** A catalogue or link skin goes through the checked import first, then on like an uploaded file. */
     fun wearSkinUrl(url: String, name: String, slim: Boolean?, onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Ставим скин") {
+        val done = runTask(tr("Ставим скин")) {
             val imported = container.skinImport.byUrl(url)
             val arms = slim ?: slimArms(imported.bytes) ?: false
             applyMillidaSkin(imported.bytes, arms, name.ifEmpty { imported.name })
@@ -2803,11 +3291,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun applyMillidaSkin(bytes: ByteArray, slim: Boolean, name: String) {
         if (bytes.size > SKIN_LIMIT) {
-            throw IllegalStateException("Файл больше 512 КБ — возьми обычный скин 64×64")
+            throw IllegalStateException(tr("Файл больше 512 КБ — возьми обычный скин 64×64"))
         }
         val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
         container.wardrobe.applyTexture("skin", encoded, slim, name)
-        notice("Скин применён")
+        notice(tr("Скин применён"))
         loadSkins()
     }
 
@@ -2843,7 +3331,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private suspend fun licenceToken(): String {
         val account = state.value.account
         if (account == null || account.kind != AccountKind.MICROSOFT) {
-            throw IllegalStateException("Выбери аккаунт Microsoft, чтобы менять скин лицензии")
+            throw IllegalStateException(tr("Выбери аккаунт Microsoft, чтобы менять скин лицензии"))
         }
         return microsoftSession(account, navigate = false).accessToken
     }
@@ -2852,11 +3340,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun setSkinModel(slim: Boolean) = viewModelScope.launch {
         val current = state.value.gameProfile
         if (current == null || current.skinUrl.isEmpty()) {
-            notice("Сначала поставь скин", isError = true)
+            notice(tr("Сначала поставь скин"), isError = true)
             return@launch
         }
         if (current.slim == slim) return@launch
-        runTask(if (slim) "Ставим тонкие руки" else "Ставим классическую модель") {
+        runTask(if (slim) tr("Ставим тонкие руки") else tr("Ставим классическую модель")) {
             val bytes = container.downloader.bytes(current.skinUrl)
             val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
             container.wardrobe.applyTexture("skin", encoded, slim, "millida-mobile")
@@ -2865,16 +3353,16 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun applyWardrobeItem(id: String, onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Надеваем") {
+        val done = runTask(tr("Надеваем")) {
             container.wardrobe.applyWardrobe(id)
-            notice("Надето")
+            notice(tr("Надето"))
             loadSkins()
         }
         if (done) onDone()
     }
 
     fun removeWardrobeItem(id: String, onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Убираем из гардероба") {
+        val done = runTask(tr("Убираем из гардероба")) {
             container.wardrobe.removeWardrobe(id)
             loadSkins()
         }
@@ -2882,9 +3370,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun applyCape(id: String, onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Надеваем плащ") {
+        val done = runTask(tr("Надеваем плащ")) {
             container.wardrobe.applyCape(id)
-            notice("Плащ надет")
+            notice(tr("Плащ надет"))
             loadSkins()
         }
         if (done) onDone()
@@ -2892,21 +3380,21 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     /** An empty texture is the server's way to take the cape off the Millida profile. */
     fun takeOffCape(onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Снимаем плащ") {
+        val done = runTask(tr("Снимаем плащ")) {
             container.wardrobe.applyTexture("cape", "", false, "")
-            notice("Плащ снят")
+            notice(tr("Плащ снят"))
             loadSkins()
         }
         if (done) onDone()
     }
 
     fun claimReward(code: String, onDone: () -> Unit = {}) = viewModelScope.launch {
-        val done = runTask("Забираем награду") {
+        val done = runTask(tr("Забираем награду")) {
             val reward = container.wardrobe.claim(code)
             state.update { current ->
                 current.copy(rewards = current.rewards.map { if (it.code == reward.code) reward else it })
             }
-            notice("Плащ «${reward.title.ifEmpty { code }}» в гардеробе", tone = ToastTone.Info)
+            notice(tr("Плащ «{0}» в гардеробе", reward.title.ifEmpty { code }), tone = ToastTone.Info)
             loadSkins()
         }
         if (done) onDone()
@@ -2920,20 +3408,39 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * From the game screen of a vanilla build that drew a black screen: the build takes the
+     * version a phone plays well, which is installed on the way, and the game starts again.
+     */
+    fun switchVersionAndPlay(profileId: String, version: String) = viewModelScope.launch {
+        val build = container.profiles.load().firstOrNull { it.id == profileId } ?: return@launch
+        // Only a build without a loader: a build with mods and packs stays as its author made it.
+        if (build.loader != LoaderKind.VANILLA || build.gameVersion == version) return@launch
+        val switched = build.copy(gameVersion = version, versionId = version)
+        val profiles = container.profiles.upsert(switched)
+        state.update { it.copy(profiles = profiles) }
+        // A second game cannot start while the first one's process is still going.
+        withTimeoutOrNull(GAME_PROCESS_WAIT_MS) {
+            while (GameProcess.alive(getApplication())) delay(200)
+        }
+        play(switched)
+    }
+
     fun play(
         profile: Profile,
         serverAddress: String = "",
         memoryConfirmed: Boolean = false,
         modAnswered: Boolean = false,
+        modsChecked: Boolean = false,
+        networkChecked: Boolean = false,
     ) {
         if (playJob?.isActive == true) {
-            notice("Игра уже готовится", isError = true)
+            notice(tr("Игра уже готовится"), isError = true)
             return
         }
         val session = state.value.account
         if (session == null) {
-            open(Screen.ACCOUNT)
-            notice("Сначала войди в аккаунт или укажи ник для оффлайн-входа", isError = true)
+            state.update { it.copy(loginGate = true) }
             return
         }
         if (!memoryConfirmed) {
@@ -2946,7 +3453,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         if (!modAnswered) {
             val asking = viewModelScope.launch(start = CoroutineStart.LAZY) {
                 val declined = profile.id in prefs.millidaModDeclined
-                val action = withTimeoutOrNull(MOD_OFFER_CHECK_MS) { millidaModAction(profile, declined) }
+                val action = try {
+                    withTimeoutOrNull(MOD_OFFER_CHECK_MS) { millidaModAction(profile, declined) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Log.w("millida", "проверка мода Millida перед запуском: ${error.message}")
+                    null
+                }
                 playJob = null
                 when (action) {
                     LaunchModAction.OFFER ->
@@ -2960,21 +3474,77 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             asking.start()
             return
         }
+        if (!modsChecked) {
+            val checking = viewModelScope.launch(start = CoroutineStart.LAZY) {
+                val missing = try {
+                    withTimeoutOrNull(MISSING_MODS_CHECK_MS) { installableMissingMods(profile) }.orEmpty()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Log.w("millida", "проверка модов перед запуском: ${error.message}")
+                    emptyList()
+                }
+                if (missing.isNotEmpty()) {
+                    installMissingMods(PendingMissingMods(profile, serverAddress, missing))
+                    return@launch
+                }
+                val problems = withTimeoutOrNull(MISSING_MODS_CHECK_MS) {
+                    withContext(Dispatchers.IO) {
+                        ModCompat.problems(File(container.profiles.directory(profile), "mods"), profile.gameVersion, profile.loader)
+                    }
+                }.orEmpty()
+                playJob = null
+                if (problems.isEmpty()) {
+                    play(profile, serverAddress, memoryConfirmed = true, modAnswered = true, modsChecked = true)
+                } else {
+                    state.update { it.copy(modProblems = PendingModProblems(profile, serverAddress, problems)) }
+                }
+            }
+            playJob = checking
+            checking.start()
+            return
+        }
+        if (!networkChecked) {
+            val measuring = viewModelScope.launch(start = CoroutineStart.LAZY) {
+                val bytes = if (meteredNetwork()) {
+                    try {
+                        withTimeoutOrNull(DOWNLOAD_ESTIMATE_MS) { withContext(Dispatchers.IO) { downloadEstimate(profile) } } ?: 0L
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        Log.w("millida", "оценка загрузки перед запуском: ${error.message}")
+                        0L
+                    }
+                } else {
+                    0L
+                }
+                playJob = null
+                if (CellularDownload.needsConsent(bytes)) {
+                    state.update { it.copy(cellularPlay = PendingCellular(profile, serverAddress, bytes)) }
+                } else {
+                    play(profile, serverAddress, memoryConfirmed = true, modAnswered = true, modsChecked = true, networkChecked = true)
+                }
+            }
+            playJob = measuring
+            measuring.start()
+            return
+        }
+        wifiWait?.let { stopWaitingForWifi() }
 
         playJob = viewModelScope.launch {
-            runTask("Готовим игру") {
+            runTask(tr("Готовим игру")) {
                 var launchStage = "prepare"
                 try {
                     state.update { it.copy(preparingGame = true) }
                     launchStage = "session"
-                    val resolvedSession = gameSession()
-                        ?: throw IllegalStateException("сессия не получена — войди в аккаунт заново")
+                    val resolvedSession = gameSession(joiningServer = serverAddress.isNotBlank())
+                        ?: throw IllegalStateException(tr("сессия не получена — войди в аккаунт заново"))
 
                     launchStage = "pack"
                     val admission = admitPack(profile) ?: return@runTask
                     val build = if (withContext(Dispatchers.IO) { container.packs.ownLaunchLost(profile) }) {
                         launchStage = "repair"
-                        state.update { it.copy(progressNote = "Сборка распакована не полностью — ставим её заново", progress = 0f) }
+                        state.update { it.copy(progressNote = tr("Сборка распакована не полностью — ставим её заново"), progress = 0f) }
                         withContext(Dispatchers.IO) {
                             container.packs.update(profile, onProgress = { step -> publishPack(step) })
                         }.also { reloadProfiles() }
@@ -2984,18 +3554,21 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     val packLaunch = PackLaunches.trusted(container.profiles.directory(build))
                     if (packLaunch == null && PackLaunches.unusable(container.profiles.directory(build))) {
                         throw IllegalStateException(
-                            "у «${build.name}» свой запуск, но лаунчер не смог его прочитать — переустанови сборку из каталога, а если не поможет, напиши в поддержку",
+                            tr("у «{name}» свой запуск, но лаунчер не смог его прочитать — переустанови сборку из каталога, а если не поможет, напиши в поддержку", build.name),
                         )
                     }
                     launchStage = "install"
-                    val version = container.installer.install(build.versionId) { stage -> publish(stage) }
+                    val version = installWithLoader(build)
                     val javaMajor = packLaunch?.javaMajor ?: version.javaMajor
                     VideoSettings.applySafeDefaults(
                         gameDir = container.profiles.directory(build),
                         force = prefs.safeGraphics,
+                        frameCap = if (prefs.highRefresh) FrameCap.forDisplay(displayRefreshRates()) else null,
                     )
+                    VideoSettings.setOptions(container.profiles.directory(build), mapOf("autoJump" to prefs.autoJump.toString()))
+                    VideoSettings.setLanguageIfUnset(container.profiles.directory(build), net.millida.launcher.core.i18n.I18n.code)
                     val blocked = PhoneBlockedMods.disableIn(File(container.profiles.directory(build), "mods"))
-                    if (blocked.isNotEmpty()) notice("Отключены моды, которые на телефоне не работают. " + blocked.joinToString("; "))
+                    if (blocked.isNotEmpty()) notice(tr("Отключены моды, которые на телефоне не работают. {0}", blocked.joinToString("; ")))
 
                     launchStage = "memory"
                     val memory = container.deviceMemory()
@@ -3005,12 +3578,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     plan.warning?.let { notice(it, isError = true) }
                     if (!plan.canLaunch) {
                         throw IllegalStateException(
-                            plan.warning ?: "не хватает свободной памяти для запуска",
+                            plan.warning ?: tr("не хватает свободной памяти для запуска"),
                         )
                     }
 
                     launchStage = "runtime"
-                    state.update { it.copy(progressNote = "Ставим виртуальную машину Java и рендерер", progress = 0f) }
+                    state.update { it.copy(progressNote = tr("Ставим виртуальную машину Java и рендерер"), progress = 0f) }
                     val runtime = RuntimeImport.installed(container.layout, javaMajor)
                         ?: container.runtimeInstaller().install(
                         javaMajor = javaMajor,
@@ -3024,7 +3597,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                                 } else {
                                     0f
                                 },
-                                progressNote = "Рантайм: ${transfer.current}",
+                                progressNote = tr("Рантайм: {current}", transfer.current),
                             )
                         }
                     }
@@ -3055,9 +3628,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     )
                     stampPlayed(build.id)
                     getApplication<Application>().startActivity(intent)
+                    if (BuildConfig.TEST_HOOKS) packTest?.let { Log.i("millida-test", "PACKTEST $it launched") }
                     state.update { it.copy(progressNote = "") }
                     if (admission.watch) watchPackAccess(build, admission.slug)
                 } catch (error: Exception) {
+                    if (BuildConfig.TEST_HOOKS) packTest?.let { Log.i("millida-test", "PACKTEST $it launch-fail $launchStage ${error.message?.take(160)}") }
                     container.telemetry.gameLaunchFailed(launchFacts(profile), launchStage, error, null)
                     throw error
                 }
@@ -3086,6 +3661,21 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
             modpack = modpack,
             renderer = profile.rendererId.ifEmpty { state.value.rendererId }.ifEmpty { null },
         )
+    }
+
+    /** The cached list applies at once; the server is asked at most once an hour, and a failure keeps the cache. */
+    private fun refreshPhoneBlocked() {
+        val cached = prefs.phoneBlocked
+        cached?.let { PhoneBlocked.set(it.ids) }
+        PhoneBlocked.setStats(prefs.phonePackStats)
+        viewModelScope.launch(Dispatchers.IO) {
+            val fresh = PhoneBlocked.refresh(cached, System.currentTimeMillis()) { HubClient(container.millidaAuth).phoneBlocked() }
+            if (fresh != null && fresh !== cached) {
+                prefs.phoneBlocked = fresh
+                prefs.phonePackStats = PhoneBlocked.allStats()
+                PhoneBlocked.set(fresh.ids)
+            }
+        }
     }
 
     private suspend fun admitPack(profile: Profile): PackAdmission? = try {
@@ -3120,17 +3710,18 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         job.cancel()
         viewModelScope.launch {
             job.join()
-            notice("Запуск отменён", tone = ToastTone.Info)
+            notice(tr("Запуск отменён"), tone = ToastTone.Info)
         }
     }
 
-    fun loginMillida() {
+    /** [inline] keeps the code on the sign-in screen that asked for it, as the desktop's Login does, instead of the dialog. */
+    fun loginMillida(inline: Boolean = false) {
         loginJob?.cancel()
         loginJob = viewModelScope.launch {
-            runTask("Вход через Millida") {
+            runTask(MILLIDA_LOGIN_TASK) {
                 val init = container.millidaAuth.startLogin()
                 state.update {
-                    it.copy(loginPrompt = LoginPrompt(init.userCode, init.verifyUrl, AccountKind.MILLIDA))
+                    it.copy(loginPrompt = LoginPrompt(init.userCode, init.verifyUrl, AccountKind.MILLIDA, inline))
                 }
                 val deadline = System.currentTimeMillis() + init.expiresInSec * 1000L
                 while (System.currentTimeMillis() < deadline) {
@@ -3138,31 +3729,43 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     if (container.millidaAuth.pollLogin(init.deviceCode)) {
                         state.update { it.copy(millidaSignedIn = true) }
                         val session = container.millidaAuth.gameSession()
+                        val returning = prefs.millidaEver
+                        prefs.millidaEver = true
                         saveAccount(AccountKind.MILLIDA, session)
+                        val stepDue = FirstRunGameStep.due(
+                            returning = returning,
+                            state = prefs.firstRun,
+                            hasGame = state.value.accounts.any { FirstRunGameStep.isGameAccount(it.kind) },
+                        )
+                        if (stepDue) prefs.firstRun = FirstRunGameStep.PENDING
                         state.update {
                             it.copy(
                                 loginPrompt = null,
                                 sessionExpired = it.sessionExpired.takeUnless { kind -> kind == AccountKind.MILLIDA },
+                                gameStep = stepDue,
+                                loginGate = false,
+                                guestAllowed = LoginGate.guestAllowed(prefs.millidaEver),
                             )
                         }
-                        notice("Вошли как ${session.nick}")
+                        notice(tr("Вход выполнен: {nick}", session.nick))
                         refreshPortal()
                         return@runTask
                     }
                 }
                 state.update { it.copy(loginPrompt = null) }
-                notice("Код входа истёк — попробуй снова", isError = true)
+                notice(tr("Код входа истёк — попробуй снова"), isError = true)
             }
         }
     }
 
-    fun loginMicrosoft() {
+    /** [inline] keeps the code in the panel that asked for it, as the desktop's account window does, instead of the dialog. */
+    fun loginMicrosoft(inline: Boolean = false) {
         loginJob?.cancel()
         loginJob = viewModelScope.launch {
-            runTask("Вход через Microsoft") {
+            runTask(MICROSOFT_LOGIN_TASK) {
                 val prompt = container.microsoftAuth.startDeviceFlow()
                 state.update {
-                    it.copy(loginPrompt = LoginPrompt(prompt.userCode, prompt.verificationUri, AccountKind.MICROSOFT))
+                    it.copy(loginPrompt = LoginPrompt(prompt.userCode, prompt.verificationUri, AccountKind.MICROSOFT, inline))
                 }
                 val deadline = System.currentTimeMillis() + prompt.expiresInSec * 1000L
                 while (System.currentTimeMillis() < deadline) {
@@ -3178,26 +3781,153 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                                     sessionExpired = it.sessionExpired.takeUnless { kind -> kind == AccountKind.MICROSOFT },
                                 )
                             }
-                            notice("Вошли как ${poll.session.nick}")
+                            notice(tr("Вошли как {nick}", poll.session.nick))
                             return@runTask
                         }
                     }
                 }
                 state.update { it.copy(loginPrompt = null) }
-                notice("Код Microsoft истёк — попробуй снова", isError = true)
+                notice(tr("Код Microsoft истёк — попробуй снова"), isError = true)
             }
         }
     }
 
-    fun useOffline() = viewModelScope.launch {
-        val nick = state.value.offlineNick.trim()
-        if (!OfflineAuth.validNick(nick)) {
-            notice("Ник — от 3 до 16 знаков: латиница, цифры и подчёркивание", isError = true)
-            return@launch
+    fun signIn(kind: AccountKind) {
+        when (kind) {
+            AccountKind.MICROSOFT -> loginMicrosoft()
+            AccountKind.MILLIDA, AccountKind.OFFLINE -> loginMillida()
         }
-        runTask("Сохраняем аккаунт") {
+    }
+
+    /** Returns whether the nick was taken, so the panel that asked closes only on success. */
+    fun addOffline(typed: String): Boolean {
+        if (!BuildConfig.OFFLINE_LOGIN || !BuildConfig.GUEST_LOGIN) return false
+        val nick = typed.trim()
+
+        if (!OfflineAuth.validNick(nick)) {
+            notice(tr("Ник: латиница, цифры и _, от 3 до 16 символов"), isError = true)
+            return false
+        }
+        viewModelScope.launch {
+            runTask(tr("Сохраняем аккаунт")) {
+                saveAccount(AccountKind.OFFLINE, OfflineAuth.session(nick))
+                notice(tr("Аккаунт создан: {nick}", nick))
+            }
+        }
+        return true
+    }
+
+    /** Debug builds only: `adb shell am start ... --es debugNick Tester` lets a test phone into the lobby without a Millida account. */
+    fun debugSignInOffline(nick: String) {
+        if (!BuildConfig.TEST_HOOKS || !OfflineAuth.validNick(nick)) return
+        finishOnboarding()
+        viewModelScope.launch {
             saveAccount(AccountKind.OFFLINE, OfflineAuth.session(nick))
-            notice("Играем как $nick, только на серверах Millida")
+            state.update { it.copy(loginGate = false, gameStep = false) }
+        }
+    }
+
+    private var packTest: String? = null
+
+    /**
+     * Debug builds only (DebugPackTestReceiver): installs a catalogue pack and starts it, one line per step in
+     * logcat tag `millida-test`. [pack] is a Millida slug, `modrinth:<slug>` or `curseforge:<id>`.
+     */
+    fun debugPackTest(pack: String, nick: String) {
+        if (!BuildConfig.TEST_HOOKS) return
+        val say = { text: String -> Log.i("millida-test", "PACKTEST $pack $text"); Unit }
+        // A blank nick keeps the account already signed in (a Millida account opens the catalogue).
+        if (nick.isNotBlank() && !OfflineAuth.validNick(nick)) return say("install-fail bad nick")
+        if (nick.isNotBlank() && state.value.account?.nick != nick) {
+            finishOnboarding()
+            saveAccount(AccountKind.OFFLINE, OfflineAuth.session(nick))
+            state.update { it.copy(loginGate = false, gameStep = false) }
+        }
+        packTest = pack
+        val failed = { error: Throwable -> say("install-fail ${error.javaClass.simpleName}: ${error.message?.take(160)?.replace('\n', ' ')}"); true }
+        val installed = { build: Profile ->
+            say("install-ok ${build.id} ${build.gameVersion} ${build.loader.id}")
+            state.update { it.copy(activeProfileId = build.id) }
+            play(build, memoryConfirmed = true, modAnswered = true, modsChecked = true, networkChecked = true)
+        }
+        val source = pack.substringBefore(':', "").lowercase()
+        val id = pack.substringAfter(':')
+        if (source == "version") {
+            // `version:<mc>[:fabric]` — a plain build of that version, to time a bare start.
+            val mc = id.substringBefore(':')
+            val loader = LoaderKind.entries.firstOrNull { it.id == id.substringAfter(':', "vanilla") } ?: LoaderKind.VANILLA
+            viewModelScope.launch {
+                runCatching {
+                    val name = "test-$mc-${loader.id}"
+                    container.profiles.load().firstOrNull { it.name == name } ?: run {
+                        createProfileNow(name, mc, loader)
+                        container.profiles.load().first { it.name == name }
+                    }
+                }.onSuccess { installed(it) }.onFailure { failed(it) }
+            }
+            return
+        }
+        if (source == "modrinth" || source == "curseforge") {
+            val cf = source == "curseforge"
+            catalogModel.installModpack(
+                CatalogItem(projectId = id, slug = id, title = id, source = if (cf) CatalogSource.CURSEFORGE else CatalogSource.MODRINTH),
+                onFailure = failed,
+                onInstalled = installed,
+            )
+        } else {
+            // A pack already on the phone starts as a player's second tap would, so repeat runs time a warm start.
+            viewModelScope.launch {
+                container.packs.installedCatalogPack(container.profiles.load(), pack)?.let {
+                    say("install-ok warm")
+                    return@launch installed(it)
+                }
+                val started = catalogModel.runModpack(MillidaShelfModel.key(pack), pack, failed, installed) { onStep ->
+                    container.packs.installCatalogPack(pack, null, onStep)
+                }
+                if (!started) say("install-fail busy")
+            }
+        }
+    }
+
+    /**
+     * The desktop's tap on a licence that lost its sign-in: the stored one is tried
+     * again first, and only a refusal sends the player through Microsoft anew.
+     */
+    fun recheckLicence(account: Account) {
+        selectAccount(account)
+        notice(tr("Проверяем лицензию Microsoft…"), tone = ToastTone.Info)
+        viewModelScope.launch {
+            val alive = try {
+                withContext(Dispatchers.IO) { microsoftSession(account, navigate = false) }
+                true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                false
+            }
+            if (alive) {
+                state.update { it.copy(sessionExpired = it.sessionExpired.takeUnless { kind -> kind == AccountKind.MICROSOFT }) }
+                notice(tr("Активный аккаунт: {nick}", account.nick))
+            } else {
+                notice(tr("Вход по лицензии слетел — подтверди аккаунт Microsoft заново"), isError = true)
+                loginMicrosoft()
+            }
+        }
+    }
+
+    /** The desktop's quickStart: a returning player plays under a fresh offline «PlayerNNNN» without signing in again. */
+    fun playAsGuest() {
+        if (!LoginGate.guestAllowed(prefs.millidaEver)) {
+            notice(tr("Сначала войди в аккаунт Millida — это нужно один раз"), isError = true)
+            return
+        }
+        viewModelScope.launch {
+            runTask(tr("Сохраняем аккаунт")) {
+                val session = OfflineAuth.session(LoginGate.guestNick())
+                saveAccount(AccountKind.OFFLINE, session)
+                state.update { it.copy(loginGate = false) }
+                notice(tr("Вошли как {nick}", session.nick))
+            }
         }
     }
 
@@ -3219,9 +3949,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         prefs.activeAccountId = active?.id.orEmpty()
         state.update {
             val kept = if (millida) clearMillidaData(it).copy(millidaSignedIn = false) else it
-            kept.copy(accounts = remaining, account = active)
+            kept.copy(accounts = remaining, account = active, loginGate = LoginGate.afterRemoval(remaining))
         }
-        notice("Аккаунт удалён")
         }
     }
 
@@ -3232,18 +3961,48 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 
     /** Throws with a message for the player when the account has to sign in again. */
-    private suspend fun gameSession(): GameSession? {
+    private suspend fun gameSession(joiningServer: Boolean = false): GameSession? {
         val account = state.value.account ?: return null
+        // The store build plays on a Minecraft licence only.
+        if (!BuildConfig.OFFLINE_LOGIN && account.kind != AccountKind.MICROSOFT) {
+            throw IllegalStateException(tr("В этой версии игра запускается только с лицензией Minecraft — войди через Microsoft"))
+        }
         return when (account.kind) {
-            AccountKind.OFFLINE -> OfflineAuth.session(account.nick)
+            AccountKind.OFFLINE -> if (carriesMillida(account)) millidaOrOffline(account) else OfflineAuth.session(account.nick)
             AccountKind.MILLIDA -> try {
                 container.millidaAuth.gameSession()
-            } catch (unauthorized: Unauthorized) {
-                throw signInAgain(AccountKind.MILLIDA)
+            } catch (error: IOException) {
+                // Single-player and local worlds do not need our session: an expired sign-in or an
+                // unreachable api.millida.net must not block the launch. Joining a server still does.
+                if (!joiningServer && account.nick.isNotBlank()) {
+                    notice(tr("Вход Millida недоступен — играем офлайн"))
+                    return OfflineAuth.session(account.nick)
+                }
+                if (error is Unauthorized) throw signInAgain(AccountKind.MILLIDA)
+                throw error
             }
 
             AccountKind.MICROSOFT -> microsoftSession(account)
         }
+    }
+
+    /**
+     * An offline nick that is exactly the Millida profile name plays on the Millida
+     * session (desktop launchAuthKind): the name is held by that account on the server,
+     * so servers with Millida sign-in let it in. Any other nick stays plain offline.
+     */
+    private fun carriesMillida(account: Account): Boolean {
+        val current = state.value
+        return current.millidaSignedIn && current.accounts.any { it.kind == AccountKind.MILLIDA && it.nick == account.nick }
+    }
+
+    // An offline account never asks to sign in again: without the Millida session it still plays offline.
+    private suspend fun millidaOrOffline(account: Account): GameSession = try {
+        container.millidaAuth.gameSession().takeIf { it.nick == account.nick } ?: OfflineAuth.session(account.nick)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: IOException) {
+        OfflineAuth.session(account.nick)
     }
 
     /**
@@ -3291,14 +4050,14 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     if (current.isNullOrEmpty()) throw IllegalStateException(OFFLINE_TEXT)
                     // Without a network only a single-player world opens, and that
                     // needs no fresh token.
-                    notice("Нет сети — вход Microsoft не обновился, по сети играть не выйдет", isError = true)
+                    notice(tr("Нет сети — вход Microsoft не обновился, по сети играть не выйдет"), isError = true)
                     return@withLock GameSession(account.nick, account.uuid, current, account.xuid)
                 }
                 val alive = current?.takeIf { it.isNotEmpty() && !rejected && microsoftTokenAlive(account) }
                     ?: throw IllegalStateException(
-                        error.message?.trim()?.takeIf { it.isNotEmpty() } ?: "Microsoft не ответил — повтори запуск через минуту",
+                        error.message?.trim()?.takeIf { it.isNotEmpty() } ?: tr("Microsoft не ответил — повтори запуск через минуту"),
                     )
-                notice("Вход Microsoft не обновился — играем со старым, он ещё действует", tone = ToastTone.Info)
+                notice(tr("Вход Microsoft не обновился — играем со старым, он ещё действует"), tone = ToastTone.Info)
                 return@withLock GameSession(account.nick, account.uuid, alive, account.xuid)
             }
             storeMicrosoftTokens(account, ready)
@@ -3327,9 +4086,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private suspend fun signInAgain(kind: AccountKind, navigate: Boolean = true): IllegalStateException {
         if (kind == AccountKind.MILLIDA) millidaReady()
         state.update { it.copy(sessionExpired = kind) }
-        if (navigate) withContext(Dispatchers.Main) { open(Screen.ACCOUNT) }
-        val service = if (kind == AccountKind.MICROSOFT) "Microsoft" else "Millida"
-        return IllegalStateException("Вход $service истёк — войди заново")
+        if (navigate && !state.value.loginGate) withContext(Dispatchers.Main) { open(Screen.ACCOUNT) }
+        return IllegalStateException(tr("Вход {0} истёк — войди заново", signInService(kind)))
     }
 
     private fun saveAccount(kind: AccountKind, session: GameSession): Account {
@@ -3343,7 +4101,9 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         )
         val accounts = container.accounts.upsert(account)
         prefs.activeAccountId = account.id
-        state.update { it.copy(accounts = accounts, account = account) }
+        val stepDone = FirstRunGameStep.isGameAccount(kind) && prefs.firstRun == FirstRunGameStep.PENDING
+        if (stepDone) prefs.firstRun = FirstRunGameStep.DONE
+        state.update { it.copy(accounts = accounts, account = account, gameStep = it.gameStep && !stepDone) }
         return account
     }
 
@@ -3361,7 +4121,31 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         manager.defaultDisplay.getRealMetrics(metrics)
         val width = maxOf(metrics.widthPixels, metrics.heightPixels)
         val height = minOf(metrics.widthPixels, metrics.heightPixels)
-        return (if (width > 0) width else 1280) to (if (height > 0) height else 720)
+        val screen = (if (width > 0) width else 1280) to (if (height > 0) height else 720)
+        return GameResolution.window(screen.first, screen.second, prefs.resolutionPercent)
+    }
+
+    /** Every rate the display can switch to; the game window asks for the fastest one when allowed. */
+    private fun displayRefreshRates(): List<Float> {
+        val manager = getApplication<Application>().getSystemService(android.hardware.display.DisplayManager::class.java)
+        val display = manager?.getDisplay(android.view.Display.DEFAULT_DISPLAY) ?: return emptyList()
+        return display.supportedModes.map { it.refreshRate }
+    }
+
+    fun setResolutionPercent(percent: Int) {
+        prefs.resolutionPercent = percent
+        state.update { it.copy(resolutionPercent = prefs.resolutionPercent) }
+    }
+
+    fun gamepadMap(): GamepadMap = prefs.gamepadMap
+
+    fun saveGamepadMap(map: GamepadMap) {
+        prefs.gamepadMap = map
+    }
+
+    fun setHighRefresh(enabled: Boolean) {
+        prefs.highRefresh = enabled
+        state.update { it.copy(highRefresh = enabled) }
     }
 
     /** A pack reports its own steps; they reach the player the same way. */
@@ -3376,12 +4160,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private fun publishLoader(loader: LoaderKind, step: ForgeInstallStep) {
         val (note, fraction) = when (step) {
-            ForgeInstallStep.Installer -> "${loader.label}: скачиваем установщик" to 0f
+            ForgeInstallStep.Installer -> tr("{label}: скачиваем установщик", loader.label) to 0f
             is ForgeInstallStep.Libraries ->
-                "${loader.label}: библиотеки ${step.done} из ${step.total}" to fractionOf(step.done, step.total)
-            ForgeInstallStep.Client -> "${loader.label}: клиент игры" to 0f
+                tr("{label}: библиотеки {done} из {total}", loader.label, step.done, step.total) to fractionOf(step.done, step.total)
+            ForgeInstallStep.Client -> tr("{label}: клиент игры", loader.label) to 0f
             is ForgeInstallStep.Processors ->
-                "${loader.label}: собираем клиент, шаг ${minOf(step.done + 1, step.total)} из ${step.total}" to
+                tr("{label}: собираем клиент, шаг {0} из {total}", loader.label, minOf(step.done + 1, step.total), step.total) to
                     fractionOf(step.done, step.total)
         }
         state.update { it.copy(progressNote = note, progress = fraction) }
@@ -3393,31 +4177,31 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     private fun publish(stage: InstallStage) {
         when (stage) {
             is InstallStage.Meta -> state.update {
-                it.copy(progressNote = "Читаем описание версии ${stage.versionId}", progress = 0f)
+                it.copy(progressNote = tr("Читаем описание версии {versionId}", stage.versionId), progress = 0f)
             }
 
             is InstallStage.Client -> state.update {
                 it.copy(
-                    progressNote = "Клиент игры",
+                    progressNote = tr("Клиент игры"),
                     progress = ratio(stage.progress.doneBytes, stage.progress.totalBytes),
                 )
             }
 
             is InstallStage.Libraries -> state.update {
                 it.copy(
-                    progressNote = "Библиотеки: ${stage.progress.doneFiles} из ${stage.progress.totalFiles}",
+                    progressNote = tr("Библиотеки: {doneFiles} из {totalFiles}", stage.progress.doneFiles, stage.progress.totalFiles),
                     progress = ratio(stage.progress.doneFiles.toLong(), stage.progress.totalFiles.toLong()),
                 )
             }
 
             is InstallStage.Assets -> state.update {
                 it.copy(
-                    progressNote = "Ресурсы: ${stage.progress.doneFiles} из ${stage.progress.totalFiles}",
+                    progressNote = tr("Ресурсы: {doneFiles} из {totalFiles}", stage.progress.doneFiles, stage.progress.totalFiles),
                     progress = ratio(stage.progress.doneFiles.toLong(), stage.progress.totalFiles.toLong()),
                 )
             }
 
-            InstallStage.Done -> state.update { it.copy(progressNote = "Файлы игры готовы", progress = 1f) }
+            InstallStage.Done -> state.update { it.copy(progressNote = tr("Файлы игры готовы"), progress = 1f) }
         }
     }
 
@@ -3432,8 +4216,15 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
-            notice(error.message ?: "не получилось", isError = true)
+            notice(error.message ?: tr("не получилось"), isError = true)
         }
+    }
+
+    /** The phone's cleaner closed the game in the background: say once how to stop it. */
+    private fun adviseBatterySettings() {
+        if (prefs.cleanerHintShown) return
+        prefs.cleanerHintShown = true
+        notice(tr("Телефон закрыл игру в фоне. Разреши Millida работу без ограничений в настройках батареи"), tone = ToastTone.Info)
     }
 
     internal fun notice(
@@ -3480,7 +4271,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
-            notice(error.message ?: "не получилось: $label", isError = true)
+            notice(error.message?.takeIf { it.isNotBlank() } ?: tr("не получилось: {label}", label) + " (" + error.javaClass.simpleName + ")", isError = true)
             false
         } finally {
             withContext(kotlinx.coroutines.NonCancellable) {
@@ -3506,8 +4297,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val ticket = issueTicket(area)
         state.update { it.copy(loading = it.loading + area) }
         try {
-            withContext(Dispatchers.IO) { block(ticket) }
+            withContext(Dispatchers.IO) { kotlinx.coroutines.withTimeout(AREA_LOAD_TIMEOUT_MS) { block(ticket) } }
             ticket.commit { it.copy(errors = it.errors - area, loadedAreas = it.loadedAreas + area) }
+        } catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
+            Log.w("millida", "загрузка ${area.name} не уложилась в ${AREA_LOAD_TIMEOUT_MS / 1000} с")
+            ticket.commit { it.copy(errors = it.errors + (area to tr("Сервер долго не отвечает — нажми «Повторить»")), loadedAreas = it.loadedAreas + area) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
@@ -3540,14 +4334,42 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     /** Reads the sign-in from the vault and keeps [UiState.millidaSignedIn] in step with it. */
     private suspend fun millidaReady(): Boolean {
         val signedIn = withContext(Dispatchers.IO) { container.millidaAuth.signedIn() }
+        var lost = false
         state.update {
+            lost = it.millidaSignedIn && !signedIn
             when {
                 it.millidaSignedIn == signedIn -> it
                 signedIn -> it.copy(millidaSignedIn = true)
                 else -> clearMillidaData(it).copy(millidaSignedIn = false)
             }
         }
+        if (lost) {
+            withContext(Dispatchers.IO) { leaveToLogin() }
+            notice(tr("Сессия истекла — войди заново"), isError = true)
+        }
         return signedIn
+    }
+
+    /**
+     * The desktop's logoutToLogin: the Millida rows go with their session, or the next
+     * start would open a signed-in shell with no token behind it. Licences and offline
+     * nicks stay, they carry their own sign-in.
+     */
+    private fun leaveToLogin() {
+        val current = state.value
+        var remaining = current.accounts
+        for (row in current.accounts.filter { it.kind == AccountKind.MILLIDA }) remaining = container.accounts.remove(row.id)
+        val active = current.account?.takeIf { kept -> remaining.any { it.id == kept.id } } ?: remaining.firstOrNull()
+        prefs.activeAccountId = active?.id.orEmpty()
+        state.update {
+            it.copy(
+                accounts = remaining,
+                account = active,
+                loginGate = true,
+                gameStep = false,
+                sessionExpired = it.sessionExpired.takeUnless { kind -> kind == AccountKind.MILLIDA },
+            )
+        }
     }
 
     /** Everything read under one Millida account: none of it may reach the next one. */
@@ -3571,7 +4393,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     private fun dropStale(target: File) {
         if (target.exists() && !target.delete()) {
-            throw IOException("старый файл ${target.name} не удалился — освободи место и повтори")
+            throw IOException(tr("старый файл {name} не удалился — освободи место и повтори", target.name))
         }
     }
 
@@ -3589,6 +4411,12 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         const val LOST_GAME_REPORT_LINES = 120
         /** A slow catalogue must not hold the start: past this the game goes on without the question. */
         const val MOD_OFFER_CHECK_MS = 3_000L
+        const val MISSING_MODS_CHECK_MS = 8_000L
+        const val DOWNLOAD_ESTIMATE_MS = 6_000L
+        const val DOWNLOAD_NOTICE_DELAY_MS = 2_000L
+        const val DOWNLOAD_NOTICE_STEP_MS = 1_000L
+
+        const val MISSING_MODS_MAX = 8
         const val COUNTERS_PERIOD_MS = 30_000L
         /** The desktop beats every 45 s while its window is on screen (src/App.tsx). */
         const val GUEST_BEAT_MS = 45_000L
@@ -3598,7 +4426,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     }
 }
 
-private const val OFFLINE_TEXT = "Нет сети — проверь подключение и нажми «Повторить»"
+private val OFFLINE_TEXT: String get() = tr("Нет сети — проверь подключение и нажми «Повторить»")
 
 private val MILLIDA_AREAS = setOf(Area.FRIENDS, Area.CABINET, Area.ACCOUNT)
 
@@ -3620,11 +4448,15 @@ private fun Throwable.isUnauthorized(): Boolean = causes().any { it is Unauthori
 private fun Throwable.isOffline(): Boolean =
     causes().any { it is UnknownHostException || it is SocketException || it is SocketTimeoutException }
 
+private const val AREA_LOAD_TIMEOUT_MS = 25_000L
+private const val GAME_PROCESS_WAIT_MS = 8_000L
+
 internal fun loadErrorText(error: Throwable): String = when {
-    error.isUnauthorized() -> "Вход Millida истёк — войди заново"
-    error.isOffline() -> OFFLINE_TEXT
+    error.isUnauthorized() -> tr("Вход Millida истёк — войди заново")
+    error.causes().any { it is UnknownHostException || it is java.net.ConnectException } -> OFFLINE_TEXT
+    error.isOffline() -> tr("Связь оборвалась — нажми «Повторить», докачаем")
     else -> error.message?.trim()?.takeIf { it.isNotEmpty() }?.replaceFirstChar { it.uppercase() }
-        ?: "Не загрузилось — нажми «Повторить»"
+        ?: tr("Не загрузилось — нажми «Повторить»")
 }
 
 /** Site sections a phone installs into a build, and the catalogue tab each one opens. */

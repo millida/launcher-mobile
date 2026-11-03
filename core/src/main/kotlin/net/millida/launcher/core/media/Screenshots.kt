@@ -6,6 +6,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 
+import net.millida.launcher.core.i18n.tr
 data class Screenshot(
     val profileId: String,
     val name: String,
@@ -62,30 +63,30 @@ class Screenshots(private val layout: GameLayout) {
 
     @Throws(IOException::class)
     fun describe(profileId: String, name: String): Screenshot =
-        card(profileId, resolve(profileId, name)) ?: throw IOException("Скриншот не найден: $name")
+        card(profileId, resolve(profileId, name)) ?: throw IOException(tr("Скриншот не найден: {name}", name))
 
     @Throws(IOException::class)
     fun delete(profileId: String, name: String): Boolean {
         val target = resolve(profileId, name)
         if (!target.isFile) return false
-        if (!target.delete()) throw IOException("Не удалось удалить скриншот: $name")
+        if (!target.delete()) throw IOException(tr("Не удалось удалить скриншот: {name}", name))
         return true
     }
 
     @Throws(IOException::class)
     fun rename(profileId: String, name: String, newName: String): Screenshot {
         val source = resolve(profileId, name)
-        if (!source.isFile) throw IOException("Скриншот не найден: $name")
+        if (!source.isFile) throw IOException(tr("Скриншот не найден: {name}", name))
         val target = File(source.parentFile, pngName(newName))
         if (target.name == source.name) return describe(profileId, name)
-        if (target.exists()) throw IOException("Скриншот с именем ${target.name} уже есть")
-        if (!source.renameTo(target)) throw IOException("Не удалось переименовать скриншот")
-        return card(profileId, target) ?: throw IOException("Скриншот не найден: ${target.name}")
+        if (target.exists()) throw IOException(tr("Скриншот с именем {name} уже есть", target.name))
+        if (!source.renameTo(target)) throw IOException(tr("Не удалось переименовать скриншот"))
+        return card(profileId, target) ?: throw IOException(tr("Скриншот не найден: {name}", target.name))
     }
 
     @Throws(IOException::class)
     fun folder(profileId: String): File {
-        if (profileId.isBlank()) throw IOException("Не указана сборка")
+        if (profileId.isBlank()) throw IOException(tr("Не указана сборка"))
         return File(SafePath.join(layout.profiles, profileId), FOLDER)
     }
 
@@ -105,7 +106,7 @@ class Screenshots(private val layout: GameLayout) {
     @Throws(IOException::class)
     private fun resolve(profileId: String, name: String): File {
         val file = SafePath.join(folder(profileId), name)
-        if (file.name != name || !isPng(name)) throw IOException("Это не скриншот: $name")
+        if (file.name != name || !isPng(name)) throw IOException(tr("Это не скриншот: {name}", name))
         return file
     }
 
@@ -127,7 +128,7 @@ class Screenshots(private val layout: GameLayout) {
     private fun pngName(raw: String): String {
         val cleaned = SafePath.fileName(raw.trim())
         val base = if (isPng(cleaned)) cleaned.dropLast(EXTENSION.length) else cleaned
-        if (base.isBlank() || base == "file") throw IOException("Пустое имя скриншота")
+        if (base.isBlank() || base == "file") throw IOException(tr("Пустое имя скриншота"))
         return base + EXTENSION
     }
 

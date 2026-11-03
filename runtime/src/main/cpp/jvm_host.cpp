@@ -29,6 +29,7 @@ using CreateJavaVm = jint (*)(JavaVM**, JNIEnv**, void*);
 constexpr jint kJniVersion18 = 0x00010008;
 
 constexpr size_t kPathLimit = 1024;
+constexpr char kModTokenOption[] = "-Dmillida.token=";
 constexpr int kBacktraceLimit = 48;
 constexpr size_t kReportLimit = 16384;
 constexpr size_t kAlternateStackSize = 65536;
@@ -458,7 +459,11 @@ bool jvm_start(const char* java_home,
     args.ignoreUnrecognized = JNI_TRUE;
 
     for (const std::string& option : options) {
-        session_log("[millida] jvm option %s", option.c_str());
+        if (option.rfind(kModTokenOption, 0) == 0) {
+            session_log("[millida] jvm option %s***", kModTokenOption);
+        } else {
+            session_log("[millida] jvm option %s", option.c_str());
+        }
     }
 
     JNIEnv* env = nullptr;

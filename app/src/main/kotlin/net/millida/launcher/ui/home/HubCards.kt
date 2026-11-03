@@ -29,6 +29,7 @@ import net.millida.launcher.core.hub.Hub
 import net.millida.launcher.core.hub.HubMode
 import net.millida.launcher.core.hub.ModeArt
 import net.millida.launcher.core.hub.ModeArts
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MBadge
 import net.millida.launcher.ui.MButtonSize
 import net.millida.launcher.ui.MCard
@@ -181,11 +182,11 @@ internal fun OneBlockBanner(online: Int?, onPlay: () -> Unit, modifier: Modifier
                 .background(colors.surface2),
         ) {
             OneBlockArt(withRig = true)
-            Box(Modifier.padding(8.dp)) { HubTagBadge(HubTag.OWN, "Наш сервер") }
+            Box(Modifier.padding(8.dp)) { HubTagBadge(HubTag.OWN, tr("Наш сервер")) }
         }
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MPrimaryButton(text = "Играть", onClick = onPlay, icon = MIcons.play, size = MButtonSize.Medium)
+            MPrimaryButton(text = tr("Играть"), onClick = onPlay, icon = MIcons.play, size = MButtonSize.Medium)
             Spacer(Modifier.width(12.dp))
             Hub.onlineLabel(online)?.let { OnlineLine(it) }
         }

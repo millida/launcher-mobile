@@ -24,6 +24,7 @@ import net.millida.launcher.core.hosting.HOSTING_PERMISSIONS
 import net.millida.launcher.core.hosting.HostingApiKey
 import net.millida.launcher.core.hosting.HostingSftp
 import net.millida.launcher.core.hosting.HostingShare
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.forServer
 import net.millida.launcher.ui.MBottomSheet
 import net.millida.launcher.ui.MButtonRow
@@ -47,10 +48,10 @@ import net.millida.launcher.ui.millida
 
 private val ALL_PERMISSIONS: Set<String> = HOSTING_PERMISSIONS.map { it.first }.toSet()
 
-private val ROLE_PRESETS: List<Pair<String, Set<String>>> = listOf(
-    "Модератор" to setOf("console", "players"),
-    "Помощник" to setOf("control", "console", "players", "world", "backups"),
-    "Админ" to ALL_PERMISSIONS,
+private val ROLE_PRESETS: List<Pair<String, Set<String>>> get() = listOf(
+    tr("Модератор") to setOf("console", "players"),
+    tr("Помощник") to setOf("control", "console", "players", "world", "backups"),
+    tr("Админ") to ALL_PERMISSIONS,
 )
 
 private val DEFAULT_SHARE: Set<String> = setOf("control", "console")
@@ -92,11 +93,11 @@ fun HostingAccessTab(serverId: String, tools: HostingToolsModel) {
         if (owner) {
             item(key = "shares-head") {
                 ToolsHead(
-                    title = "Кому открыт сервер",
-                    subtitle = state?.shares?.takeIf { it.isNotEmpty() }?.let { "Людей: ${it.size}" },
+                    title = tr("Кому открыт сервер"),
+                    subtitle = state?.shares?.takeIf { it.isNotEmpty() }?.let { tr("Людей: {size}", it.size) },
                     action = {
                         MPrimaryButton(
-                            "Дать доступ",
+                            tr("Дать доступ"),
                             onClick = { shareEdit = ShareEdit.New },
                             icon = MIcons.plus,
                             size = MButtonSize.Small,
@@ -109,7 +110,7 @@ fun HostingAccessTab(serverId: String, tools: HostingToolsModel) {
                 shares == null && state?.error == null -> items(2, key = { "shares-skeleton-$it" }) { MSkeletonRow() }
                 shares == null -> Unit
                 shares.isEmpty() -> item(key = "shares-empty") {
-                    MListRow(title = "Пока только ты", subtitle = "Друг зайдёт в панель со своими правами", icon = MIcons.users)
+                    MListRow(title = tr("Пока только ты"), subtitle = tr("Друг зайдёт в панель со своими правами"), icon = MIcons.users)
                 }
                 else -> items(shares, key = { "share:" + it.userId }) { share ->
                     MListRow(
@@ -123,11 +124,11 @@ fun HostingAccessTab(serverId: String, tools: HostingToolsModel) {
             }
             item(key = "keys-head") {
                 ToolsHead(
-                    title = "Ключи API",
-                    subtitle = "Для ботов и скриптов",
+                    title = tr("Ключи API"),
+                    subtitle = tr("Для ботов и скриптов"),
                     action = {
                         MSecondaryButton(
-                            "Создать",
+                            tr("Создать"),
                             onClick = { keySheet = true },
                             icon = MIcons.key,
                             size = MButtonSize.Small,
@@ -140,11 +141,11 @@ fun HostingAccessTab(serverId: String, tools: HostingToolsModel) {
                 keys == null && state?.error == null -> items(1, key = { "keys-skeleton-$it" }) { MSkeletonRow() }
                 keys == null -> Unit
                 keys.isEmpty() -> item(key = "keys-empty") {
-                    MListRow(title = "Ключей нет", subtitle = "Ключ даёт боту доступ без пароля", icon = MIcons.key)
+                    MListRow(title = tr("Ключей нет"), subtitle = tr("Ключ даёт боту доступ без пароля"), icon = MIcons.key)
                 }
                 else -> items(keys, key = { "key:" + it.id }) { key ->
                     MListRow(
-                        title = key.name.ifBlank { "Ключ" },
+                        title = key.name.ifBlank { tr("Ключ") },
                         modifier = Modifier.animateItem(),
                         subtitle = keySubtitle(key),
                         icon = MIcons.key,
@@ -153,7 +154,7 @@ fun HostingAccessTab(serverId: String, tools: HostingToolsModel) {
                                 MIcons.trash,
                                 onClick = { revoking = key },
                                 enabled = tools.key(serverId, "access:key:${key.id}") !in busy,
-                                label = "Отозвать ключ ${key.name}",
+                                label = tr("Отозвать ключ {name}", key.name),
                             )
                         },
                     )
@@ -162,14 +163,14 @@ fun HostingAccessTab(serverId: String, tools: HostingToolsModel) {
         } else if (access != null) {
             item(key = "guest") {
                 MListRow(
-                    title = "Доступами управляет владелец",
-                    subtitle = "У тебя: ${rightsSummary(access.permissions)}",
+                    title = tr("Доступами управляет владелец"),
+                    subtitle = tr("У тебя: {0}", rightsSummary(access.permissions)),
                     icon = MIcons.lock,
                 )
             }
         }
         if (canFiles) {
-            item(key = "sftp-head") { ToolsHead(title = "SFTP", subtitle = "Файлы сервера из любой программы") }
+            item(key = "sftp-head") { ToolsHead(title = "SFTP", subtitle = tr("Файлы сервера из любой программы")) }
             val sftp = state?.sftp
             if (sftp == null && state?.error == null) {
                 item(key = "sftp-skeleton") { MSkeleton(height = 120.dp) }
@@ -225,9 +226,9 @@ fun HostingAccessTab(serverId: String, tools: HostingToolsModel) {
 
     removing?.let { share ->
         MConfirmDialog(
-            title = "Забрать доступ?",
-            text = "${shareName(share)} больше не откроет панель сервера",
-            confirm = "Забрать",
+            title = tr("Забрать доступ?"),
+            text = tr("{0} больше не откроет панель сервера", shareName(share)),
+            confirm = tr("Забрать"),
             onConfirm = {
                 removing = null
                 tools.removeShare(serverId, share)
@@ -238,9 +239,9 @@ fun HostingAccessTab(serverId: String, tools: HostingToolsModel) {
 
     revoking?.let { key ->
         MConfirmDialog(
-            title = "Отозвать ключ?",
-            text = "Бот с ключом «${key.name}» сразу потеряет доступ",
-            confirm = "Отозвать",
+            title = tr("Отозвать ключ?"),
+            text = tr("Бот с ключом «{name}» сразу потеряет доступ", key.name),
+            confirm = tr("Отозвать"),
             onConfirm = {
                 revoking = null
                 tools.revokeApiKey(serverId, key)
@@ -251,9 +252,9 @@ fun HostingAccessTab(serverId: String, tools: HostingToolsModel) {
 
     if (closingSftp) {
         MConfirmDialog(
-            title = "Отозвать доступ по SFTP?",
-            text = "Все подключённые программы отключатся",
-            confirm = "Отозвать",
+            title = tr("Отозвать доступ по SFTP?"),
+            text = tr("Все подключённые программы отключатся"),
+            confirm = tr("Отозвать"),
             onConfirm = {
                 closingSftp = false
                 tools.revokeSftp(serverId)
@@ -266,15 +267,15 @@ fun HostingAccessTab(serverId: String, tools: HostingToolsModel) {
     val sftpPassword = state?.sftpPassword
     when {
         freshKey != null -> ToolsSecretDialog(
-            title = "Ключ создан",
+            title = tr("Ключ создан"),
             secret = freshKey,
-            onCopy = { copySecret("Ключ", freshKey) },
+            onCopy = { copySecret(tr("Ключ"), freshKey) },
             onDone = { tools.dismissSecret() },
         )
         sftpPassword != null -> ToolsSecretDialog(
-            title = "Пароль SFTP",
+            title = tr("Пароль SFTP"),
             secret = sftpPassword,
-            onCopy = { copySecret("Пароль", sftpPassword) },
+            onCopy = { copySecret(tr("Пароль"), sftpPassword) },
             onDone = { tools.dismissSecret() },
         )
     }
@@ -284,13 +285,13 @@ fun HostingAccessTab(serverId: String, tools: HostingToolsModel) {
     }
 }
 
-private fun shareName(share: HostingShare): String = share.nickname.ifBlank { share.email.ifBlank { "Участник" } }
+private fun shareName(share: HostingShare): String = share.nickname.ifBlank { share.email.ifBlank { tr("Участник") } }
 
 private fun rightsSummary(permissions: List<String>): String {
     val known = permissions.filter { it in ALL_PERMISSIONS }
     return when {
-        known.isEmpty() -> "без прав"
-        known.toSet() == ALL_PERMISSIONS -> "полный доступ"
+        known.isEmpty() -> tr("без прав")
+        known.toSet() == ALL_PERMISSIONS -> tr("полный доступ")
         known.size == 1 -> HOSTING_PERMISSIONS.first { it.first == known.first() }.second
         else -> toolsRightsCount(known.size)
     }
@@ -299,7 +300,7 @@ private fun rightsSummary(permissions: List<String>): String {
 private fun keySubtitle(key: HostingApiKey): String {
     val used = toolsMoment(key.lastUsedAt)
     val prefix = if (key.prefix.isNotBlank()) "${key.prefix}…" else ""
-    val usage = if (used.isEmpty()) "ещё не использован" else "использован $used"
+    val usage = if (used.isEmpty()) tr("ещё не использован") else tr("использован {used}", used)
     return listOf(prefix, usage).filter { it.isNotEmpty() }.joinToString(" · ")
 }
 
@@ -318,25 +319,25 @@ private fun SftpCard(
     MCard {
         if (active) {
             val until = toolsMoment(sftp.expiresAt)
-            CredentialRow("Хост", sftp.host, onCopy)
-            CredentialRow("Порт", sftp.port.takeIf { it > 0 }?.toString().orEmpty(), onCopy)
-            CredentialRow("Логин", sftp.login, onCopy)
+            CredentialRow(tr("Хост"), sftp.host, onCopy)
+            CredentialRow(tr("Порт"), sftp.port.takeIf { it > 0 }?.toString().orEmpty(), onCopy)
+            CredentialRow(tr("Логин"), sftp.login, onCopy)
             if (until.isNotEmpty()) {
                 Spacer(Modifier.height(4.dp))
-                Text("Действует до $until", style = MillidaType.small, color = colors.fgSubtle)
+                Text(tr("Действует до {until}", until), style = MillidaType.small, color = colors.fgSubtle)
             }
         } else {
-            Text("Доступ не выдан", style = MillidaType.rowTitle, color = colors.fg)
+            Text(tr("Доступ не выдан"), style = MillidaType.rowTitle, color = colors.fg)
             Spacer(Modifier.height(2.dp))
-            Text("Пароль покажем один раз", style = MillidaType.small, color = colors.fgSubtle)
+            Text(tr("Пароль покажем один раз"), style = MillidaType.small, color = colors.fgSubtle)
         }
         Spacer(Modifier.height(12.dp))
         MButtonRow {
             if (!full && !active) {
-                ToolsLockButton("Выдать доступ", onLocked)
+                ToolsLockButton(tr("Выдать доступ"), onLocked)
             } else {
                 MSecondaryButton(
-                    if (active) "Новый пароль" else "Выдать доступ",
+                    if (active) tr("Новый пароль") else tr("Выдать доступ"),
                     onClick = onIssue,
                     icon = MIcons.key,
                     size = MButtonSize.Small,
@@ -344,7 +345,7 @@ private fun SftpCard(
                 )
             }
             if (active) {
-                MTextButton("Отозвать", onClick = onRevoke, enabled = !working, color = colors.danger)
+                MTextButton(tr("Отозвать"), onClick = onRevoke, enabled = !working, color = colors.danger)
             }
         }
     }
@@ -370,7 +371,7 @@ private fun CredentialRow(label: String, value: String, onCopy: (String, String)
             overflow = TextOverflow.Ellipsis,
         )
         if (value.isNotBlank()) {
-            MIconButton(MIcons.copy, onClick = { onCopy(label, value) }, label = "Скопировать: $label")
+            MIconButton(MIcons.copy, onClick = { onCopy(label, value) }, label = tr("Скопировать: {label}", label))
         }
     }
 }
@@ -397,26 +398,26 @@ private fun ShareSheet(
     var permissions by remember(existing) {
         mutableStateOf(existing?.permissions?.filter { it in ALL_PERMISSIONS }?.toSet() ?: DEFAULT_SHARE)
     }
-    MBottomSheet(onDismiss = onDismiss, title = existing?.let { shareName(it) } ?: "Дать доступ") {
+    MBottomSheet(onDismiss = onDismiss, title = existing?.let { shareName(it) } ?: tr("Дать доступ")) {
         if (existing == null) {
             MField(
                 value = login,
                 onValueChange = { login = it },
-                placeholder = "Ник или почта в Millida",
+                placeholder = tr("Ник или почта в Millida"),
                 imeAction = ImeAction.Done,
             )
             Spacer(Modifier.height(16.dp))
         }
-        MSectionTitle("РОЛЬ")
+        MSectionTitle(tr("РОЛЬ"))
         Spacer(Modifier.height(8.dp))
         RolePicker(permissions) { permissions = it }
         Spacer(Modifier.height(16.dp))
-        MSectionTitle("ПРАВА")
+        MSectionTitle(tr("ПРАВА"))
         Spacer(Modifier.height(8.dp))
         ToolsPermissionChips(permissions) { id -> permissions = if (id in permissions) permissions - id else permissions + id }
         Spacer(Modifier.height(18.dp))
         MPrimaryButton(
-            if (existing == null) "Дать доступ" else "Сохранить",
+            if (existing == null) tr("Дать доступ") else tr("Сохранить"),
             onClick = { onSubmit(login, permissions + existing?.permissions.orEmpty().filterNot { it in ALL_PERMISSIONS }) },
             modifier = Modifier.fillMaxWidth(),
             enabled = permissions.isNotEmpty() && (existing != null || login.isNotBlank()),
@@ -425,7 +426,7 @@ private fun ShareSheet(
         if (existing != null) {
             Spacer(Modifier.height(8.dp))
             MTextButton(
-                "Забрать доступ",
+                tr("Забрать доступ"),
                 onClick = onRemove,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !working,
@@ -439,20 +440,20 @@ private fun ShareSheet(
 private fun KeySheet(working: Boolean, onDismiss: () -> Unit, onCreate: (String, Set<String>) -> Unit) {
     var name by remember { mutableStateOf("") }
     var permissions by remember { mutableStateOf(DEFAULT_SHARE) }
-    MBottomSheet(onDismiss = onDismiss, title = "Новый ключ API") {
+    MBottomSheet(onDismiss = onDismiss, title = tr("Новый ключ API")) {
         MField(
             value = name,
             onValueChange = { name = it.take(KEY_NAME_MAX) },
-            placeholder = "Название, например «бот Discord»",
+            placeholder = tr("Название, например «бот Discord»"),
             imeAction = ImeAction.Done,
         )
         Spacer(Modifier.height(16.dp))
-        MSectionTitle("ЧТО РАЗРЕШЕНО")
+        MSectionTitle(tr("ЧТО РАЗРЕШЕНО"))
         Spacer(Modifier.height(8.dp))
         ToolsPermissionChips(permissions) { id -> permissions = if (id in permissions) permissions - id else permissions + id }
         Spacer(Modifier.height(18.dp))
         MPrimaryButton(
-            "Создать ключ",
+            tr("Создать ключ"),
             onClick = { onCreate(name, permissions) },
             modifier = Modifier.fillMaxWidth(),
             enabled = name.isNotBlank() && permissions.isNotEmpty(),

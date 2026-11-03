@@ -32,6 +32,7 @@ import net.millida.launcher.Area
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.Screen
 import net.millida.launcher.UiState
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.Screenshot
 import net.millida.launcher.ui.media.ShotTile
 import net.millida.launcher.ui.media.ShotViewer
@@ -65,7 +66,7 @@ fun ScreenshotsScreen(state: UiState, model: LauncherViewModel, modifier: Modifi
             .background(colors.bg),
     ) {
         MTopBar(
-            title = "Снимки",
+            title = tr("Снимки"),
             onBack = { model.back() },
             subtitle = if (shots.isEmpty()) null else shotsCount(maxOf(state.shotsTotal, shots.size)),
             divider = lifted,
@@ -93,8 +94,8 @@ fun ScreenshotsScreen(state: UiState, model: LauncherViewModel, modifier: Modifi
                 shots.isEmpty() -> item(key = "shots-empty", span = { GridItemSpan(maxLineSpan) }) {
                     MEmptyState(
                         icon = MIcons.camera,
-                        title = "Снимков пока нет",
-                        actionText = "Играть",
+                        title = tr("Снимков пока нет"),
+                        actionText = tr("Играть"),
                         onAction = { model.open(Screen.HOME) },
                         actionIcon = MIcons.play,
                     )
@@ -139,7 +140,7 @@ internal fun ShotsGallery(
     var shown by remember { mutableIntStateOf(GALLERY_PAGE) }
 
     if (shots.isEmpty()) {
-        MEmptyState(icon = MIcons.camera, title = "Снимков пока нет")
+        MEmptyState(icon = MIcons.camera, title = tr("Снимков пока нет"))
         return
     }
 
@@ -154,7 +155,7 @@ internal fun ShotsGallery(
         }
         if (shots.size > shown) {
             MSecondaryButton(
-                "Показать ещё",
+                tr("Показать ещё"),
                 onClick = { shown += GALLERY_PAGE },
                 modifier = Modifier.fillMaxWidth(),
                 icon = MIcons.chevronDown,

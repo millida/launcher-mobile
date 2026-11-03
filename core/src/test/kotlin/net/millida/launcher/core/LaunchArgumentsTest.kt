@@ -116,8 +116,8 @@ class LaunchArgumentsTest {
 
     @Test
     fun `при нехватке памяти запуск запрещён`() {
-        val tight = MemoryTuning.plan(DeviceMemory(3072, 1000), LoaderKind.FABRIC, 10)
-        assertFalse("на 1000 МБ свободной памяти запускать нельзя", tight.canLaunch)
+        val tight = MemoryTuning.plan(DeviceMemory(2048, 600), LoaderKind.FABRIC, 10)
+        assertFalse("на 2 ГБ телефоне с 600 МБ свободной памяти запускать нельзя", tight.canLaunch)
         assertTrue("причина обязана быть текстом для человека", !tight.warning.isNullOrBlank())
 
         val roomy = MemoryTuning.plan(DeviceMemory(8192, 4800), LoaderKind.FABRIC, 10)

@@ -3,6 +3,7 @@ package net.millida.launcher.core.packs
 import net.millida.launcher.core.catalog.MillidaFile
 import net.millida.launcher.core.catalog.MillidaItem
 
+import net.millida.launcher.core.i18n.tr
 /** Where a newer version of a build is asked for. */
 enum class PackUpdateRoute { MODRINTH, CURSEFORGE, MILLIDA_CATALOG, MILLIDA_MIRROR, MILLIDA_CODE }
 
@@ -40,7 +41,7 @@ object PackUpdates {
         return PackUpdateOffer(
             route = route,
             packId = origin.id,
-            from = origin.versionName.ifBlank { origin.versionId.ifBlank { "установленная" } },
+            from = origin.versionName.ifBlank { origin.versionId.ifBlank { tr("установленная") } },
             to = newestName.ifBlank { newestId },
             versionId = newestId,
         )
@@ -53,7 +54,7 @@ object PackUpdates {
         return PackUpdateOffer(
             route = PackUpdateRoute.MILLIDA_CATALOG,
             packId = origin.id,
-            from = origin.versionName.ifBlank { "установленная" },
+            from = origin.versionName.ifBlank { tr("установленная") },
             to = published,
             versionId = "",
         )

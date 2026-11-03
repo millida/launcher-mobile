@@ -3,6 +3,7 @@ package net.millida.launcher.core
 import java.io.File
 import java.io.IOException
 
+import net.millida.launcher.core.i18n.tr
 object SafePath {
     private val ILLEGAL_CHARS = charArrayOf('\\', '/', ':', '*', '?', '"', '<', '>', '|')
 
@@ -20,13 +21,13 @@ object SafePath {
     @Throws(IOException::class)
     fun join(base: File, relative: String): File {
         if (relative.startsWith("/") || relative.startsWith("\\") || relative.contains(":")) {
-            throw IOException("путь отклонён как абсолютный: $relative")
+            throw IOException(tr("путь отклонён как абсолютный: {relative}", relative))
         }
         val target = File(base, relative)
         val baseReal = base.canonicalPath + File.separator
         val targetReal = target.canonicalPath
         if (targetReal != base.canonicalPath && !targetReal.startsWith(baseReal)) {
-            throw IOException("путь выходит за пределы папки: $relative")
+            throw IOException(tr("путь выходит за пределы папки: {relative}", relative))
         }
         return target
     }

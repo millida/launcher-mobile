@@ -76,6 +76,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+import net.millida.launcher.core.i18n.tr
 private val HOLE_PAD = 8.dp
 private val HOLE_RING = 2.dp
 private val CARD_GAP = 16.dp
@@ -317,14 +318,14 @@ fun TourOverlay(steps: List<TourStep>, index: Int, onStep: (Int) -> Unit, onClos
             Text(step.text, style = MillidaType.body, color = colors.fgMuted)
             Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                MTextButton("Пропустить", onClick = onClose)
+                MTextButton(tr("Пропустить"), onClick = onClose)
                 Spacer(Modifier.weight(1f))
                 if (at > 0) {
-                    MSecondaryButton("Назад", onClick = { onStep(at - 1) }, size = MButtonSize.Small)
+                    MSecondaryButton(tr("Назад"), onClick = { onStep(at - 1) }, size = MButtonSize.Small)
                     Spacer(Modifier.size(8.dp))
                 }
                 MPrimaryButton(
-                    text = if (last) "Готово" else "Далее",
+                    text = if (last) tr("Готово") else tr("Далее"),
                     onClick = { if (last) onClose() else onStep(at + 1) },
                     size = MButtonSize.Small,
                 )
@@ -339,7 +340,7 @@ private fun TourBar(count: Int, at: Int) {
     Row(
         Modifier
             .fillMaxWidth()
-            .semantics { contentDescription = "Шаг ${at + 1} из $count" },
+            .semantics { contentDescription = tr("Шаг {0} из {count}", at + 1, count) },
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         repeat(count) { segment ->

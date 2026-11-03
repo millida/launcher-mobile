@@ -49,4 +49,18 @@ object UpdatePolicy {
      * always asks, and the flag must not be touched.
      */
     fun canSkipUserAction(sdk: Int): Boolean = sdk >= 31
+
+    /** The system honours "no user action" only for an installer that declares this permission. */
+    const val SILENT_UPDATE_PERMISSION = "android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION"
+
+    /** Whether the system will install the update without asking the player. */
+    fun installsSilently(sdk: Int, declaredPermissions: Collection<String>): Boolean =
+        canSkipUserAction(sdk) && SILENT_UPDATE_PERMISSION in declaredPermissions
+
+    /**
+     * An install the system will ask about is started by the player's own tap only: its
+     * confirmation must not open by itself over whatever he is doing. The download that
+     * ran in the background then waits for that tap, and the tap installs at once.
+     */
+    fun startsInstall(manual: Boolean, silent: Boolean): Boolean = manual || silent
 }

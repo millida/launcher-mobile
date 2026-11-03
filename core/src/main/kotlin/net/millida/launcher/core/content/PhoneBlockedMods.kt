@@ -1,5 +1,6 @@
 package net.millida.launcher.core.content
 
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.profile.DISABLED_SUFFIX
 import java.io.File
 
@@ -11,9 +12,13 @@ import java.io.File
 object PhoneBlockedMods {
 
     /** Mod id to the reason shown to the player. */
-    val KNOWN: Map<String, String> = mapOf(
-        "flashback" to "Flashback: запись повторов работает только на ПК",
-        "axiom" to "Axiom: редактор мира работает только на ПК",
+    val KNOWN: Map<String, String> get() = mapOf(
+        "flashback" to tr("Flashback: запись повторов работает только на ПК"),
+        "axiom" to tr("Axiom: редактор мира работает только на ПК"),
+        // 13.10.2026: «Distant Horizons critical setup error: One or more libraries are either
+        // in-accessible…» — 8 телефонов за полдня; «Sable linking with Rapier natives» — 5.
+        "distanthorizons" to tr("Distant Horizons: его библиотеки есть только для ПК"),
+        "sable" to tr("Sable: физика на библиотеках, которых нет для телефона"),
     )
 
     fun blocked(modId: String): String? = KNOWN[modId.lowercase()]

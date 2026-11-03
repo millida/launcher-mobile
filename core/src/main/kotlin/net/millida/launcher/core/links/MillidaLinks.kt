@@ -54,7 +54,6 @@ object MillidaLinks {
         "data-packs",
         "maps",
         "addons",
-        "cheats",
         "skins",
         "capes",
     )

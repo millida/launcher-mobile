@@ -1,5 +1,8 @@
 package net.millida.launcher.core.friends
 
+import net.millida.launcher.core.i18n.tr
+
+import net.millida.launcher.core.i18n.trPlural
 /**
  * What a friend event may do to the player: ring, show quietly or stay away.
  * Kinds, levels, storage keys and defaults are the desktop ones
@@ -30,17 +33,6 @@ fun Map<NotifyKind, NotifyLevel>.levelOf(kind: NotifyKind): NotifyLevel = this[k
 fun Map<NotifyKind, NotifyLevel>.shown(kind: NotifyKind): Boolean = levelOf(kind) != NotifyLevel.OFF
 
 fun Map<NotifyKind, NotifyLevel>.audible(kind: NotifyKind): Boolean = levelOf(kind) == NotifyLevel.SOUND
-
-fun ruPlural(count: Long, one: String, few: String, many: String): String {
-    val tens = count % 100
-    val units = count % 10
-    return when {
-        tens in 11L..14L -> many
-        units == 1L -> one
-        units in 2L..4L -> few
-        else -> many
-    }
-}
 
 enum class PresenceKind { PLAY, ONLINE }
 
@@ -94,21 +86,25 @@ object PresenceNotify {
     }
 
     fun title(list: List<Friend>): String {
-        val names = list.map { it.nickname.ifEmpty { "Друг" } }
+        val names = list.map { it.nickname.ifEmpty { tr("Друг") } }
         if (names.size == 1) return names[0]
         val shown = names.take(MAX_NAMED).joinToString(", ")
-        return if (names.size > MAX_NAMED) shown + " и ещё " + (names.size - MAX_NAMED) else shown
+        return if (names.size > MAX_NAMED) tr("{0} и ещё {1}", shown, names.size - MAX_NAMED) else shown
     }
 
     fun text(list: List<Friend>, kind: PresenceKind): String {
         if (list.size > 1) {
-            val word = ruPlural(list.size.toLong(), "друг", "друга", "друзей")
-            return "${list.size} $word" + if (kind == PresenceKind.PLAY) " в игре" else " в сети"
+            val n = list.size
+            return if (kind == PresenceKind.PLAY) {
+                trPlural(n, tr("{0} друг в игре", n), tr("{0} друга в игре", n), tr("{0} друзей в игре", n))
+            } else {
+                trPlural(n, tr("{0} друг в сети", n), tr("{0} друга в сети", n), tr("{0} друзей в сети", n))
+            }
         }
-        if (kind == PresenceKind.ONLINE) return "В сети"
+        if (kind == PresenceKind.ONLINE) return tr("В сети")
         val friend = list[0]
         val where = listOf(friend.serverName, friend.serverIp, friend.build).firstOrNull { !it.isNullOrEmpty() }.orEmpty()
-        return if (where.isNotEmpty()) "Играет · $where" else "Зашёл в игру"
+        return if (where.isNotEmpty()) tr("Играет · {where}", where) else tr("Зашёл в игру")
     }
 
     private fun fresh(memo: Map<String, Long>, userId: String, at: Long): Boolean {

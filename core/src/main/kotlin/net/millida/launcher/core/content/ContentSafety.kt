@@ -3,6 +3,8 @@ package net.millida.launcher.core.content
 import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.catalog.ContentKind
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.core.profile.ContentFile
 import net.millida.launcher.core.profile.Profile
 import net.millida.launcher.core.profile.ProfileContent
@@ -14,13 +16,15 @@ import java.io.IOException
  * hand-built jar is legitimately unknown - and saying otherwise would teach the
  * player to skip the whole report.
  */
-enum class SafetyVerdict(val label: String, val rank: Int) {
-    BROKEN("Не читается", 0),
-    SUSPICIOUS("Подозрительный", 1),
-    WRONG_LOADER("Другой загрузчик", 2),
-    WRONG_GAME_VERSION("Другая версия игры", 3),
-    UNKNOWN("Без описания", 4),
-    OK("Обычный мод", 5),
+enum class SafetyVerdict(private val labelKey: String, val rank: Int) {
+    BROKEN(trKey("Не читается"), 0),
+    SUSPICIOUS(trKey("Подозрительный"), 1),
+    WRONG_LOADER(trKey("Другой загрузчик"), 2),
+    WRONG_GAME_VERSION(trKey("Другая версия игры"), 3),
+    UNKNOWN(trKey("Без описания"), 4),
+    OK(trKey("Обычный мод"), 5),;
+
+    val label: String get() = tr(labelKey)
 }
 
 data class ModVerdict(
@@ -80,7 +84,7 @@ class ContentSafety(
                 content.setEnabled(profileDir, verdict.file, false)
                 disabled += verdict.file.name
             } catch (error: IOException) {
-                failed[verdict.file.name] = error.message ?: "не удалось отключить файл"
+                failed[verdict.file.name] = error.message ?: tr("не удалось отключить файл")
             }
         }
         return QuarantineReport(disabled, failed)
@@ -107,15 +111,15 @@ class ContentSafety(
         }
 
         if (facts.fitsGameVersion(profile.gameVersion) == false) {
-            reasons.add(0, "Мод собран под ${facts.gameVersionRange}, а сборка на ${profile.gameVersion}")
+            reasons.add(0, tr("Мод собран под {gameVersionRange}, а сборка на {gameVersion}", facts.gameVersionRange, profile.gameVersion))
             return ModVerdict(file, SafetyVerdict.WRONG_GAME_VERSION, reasons, facts)
         }
 
         if (kind == ContentKind.MOD && !facts.hasModMetadata) {
             val why = if (facts.shape == ArchiveShape.MOD) {
-                "В файле нет описания мода — проверь, откуда он"
+                tr("В файле нет описания мода — проверь, откуда он")
             } else {
-                "Это не мод: загрузчик такой файл не подхватит"
+                tr("Это не мод: загрузчик такой файл не подхватит")
             }
             reasons.add(0, why)
             return ModVerdict(file, SafetyVerdict.UNKNOWN, reasons, facts)
@@ -125,12 +129,12 @@ class ContentSafety(
     }
 
     private fun brokenReason(facts: ContentFacts): String =
-        facts.unreadable.ifBlank { "Файл не открывается как архив" }
-            .let { "Файл не годится для сборки: $it" }
+        facts.unreadable.ifBlank { tr("Файл не открывается как архив") }
+            .let { tr("Файл не годится для сборки: {it}", it) }
 
     private fun wrongLoaderReason(profile: Profile, facts: ContentFacts): String {
         val built = facts.loaderLabel()
         val wanted = profile.loader.label
-        return "Файл собран под $built, а сборка на $wanted"
+        return tr("Файл собран под {built}, а сборка на {wanted}", built, wanted)
     }
 }

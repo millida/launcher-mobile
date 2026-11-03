@@ -40,4 +40,17 @@ class VideoSettingsTest {
         assertEquals("дальность игрока не трогаем", "12", kept["renderDistance"])
         assertEquals("недостающий ключ дописан", "false", kept["clouds"])
     }
+
+    @Test
+    fun `язык игры берётся из лаунчера и не перезаписывает выбор игрока`() {
+        val fresh = folder.newFolder()
+        assertEquals("нет файла — язык лаунчера", true, VideoSettings.setLanguageIfUnset(fresh, "uk"))
+        assertEquals("lang:uk_ua", java.io.File(fresh, "options.txt").readLines().single { it.startsWith("lang:") })
+        val own = folder.newFolder()
+        java.io.File(own, "options.txt").writeText("lang:de_de\nfov:70")
+        assertEquals("свой язык игрока остаётся", false, VideoSettings.setLanguageIfUnset(own, "ru"))
+        assertEquals("lang:de_de", java.io.File(own, "options.txt").readLines().first())
+        assertEquals("ru_ru", VideoSettings.gameLang("ru"))
+        assertEquals("en_us", VideoSettings.gameLang("en"))
+    }
 }

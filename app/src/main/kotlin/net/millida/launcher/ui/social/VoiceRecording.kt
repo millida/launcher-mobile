@@ -15,6 +15,7 @@ import net.millida.launcher.core.friends.VoiceNotes
 import java.io.File
 import java.io.IOException
 
+import net.millida.launcher.core.i18n.tr
 /** A finished take: the file stays until the upload has read it, then [discard] removes it. */
 class VoiceTake(private val file: File, val durationMs: Long, val peaks: List<Int>) {
     fun read(): ByteArray = file.readBytes()
@@ -59,7 +60,7 @@ class VoiceRecorder private constructor(
      * player's own mistake rather than a broken phone.
      */
     fun stop(): VoiceTake {
-        if (finished) throw VoiceRecordFailure("Запись уже закончена")
+        if (finished) throw VoiceRecordFailure(tr("Запись уже закончена"))
         finished = true
         sampler.cancel()
         val duration = elapsed().coerceAtMost(VoiceNotes.MAX_MS)
@@ -73,7 +74,7 @@ class VoiceRecorder private constructor(
         }
         if (!stopped || duration < VoiceNotes.MIN_MS) {
             file.delete()
-            throw VoiceRecordFailure("Слишком коротко — держи запись дольше", tooShort = true)
+            throw VoiceRecordFailure(tr("Слишком коротко — держи запись дольше"), tooShort = true)
         }
         return VoiceTake(file, duration, VoiceNotes.envelope(levels))
     }
@@ -120,7 +121,7 @@ class VoiceRecorder private constructor(
             } catch (failed: Exception) {
                 recorder.release()
                 file.delete()
-                throw VoiceRecordFailure("Микрофон не включился — его могла занять другая программа или звонок", failed)
+                throw VoiceRecordFailure(tr("Микрофон не включился — его могла занять другая программа или звонок"), failed)
             }
             return VoiceRecorder(recorder, file, scope, onLevel)
         }

@@ -2,11 +2,16 @@ package net.millida.launcher.core.runtime
 
 import java.io.File
 
+import net.millida.launcher.core.i18n.tr
 enum class GpuFamily {
     ADRENO,
     MALI,
+
+    /** The Rogue driver line (GE8xxx, GM9xxx); B-Series and later run another driver. */
+    POWERVR_ROGUE,
     POWERVR,
     XCLIPSE,
+    MALEOON,
     OTHER,
     UNKNOWN,
     ;
@@ -19,15 +24,17 @@ enum class GpuFamily {
                 name.isBlank() && maker.isBlank() -> UNKNOWN
                 "adreno" in name || "qualcomm" in maker -> ADRENO
                 "mali" in name || maker == "arm" -> MALI
+                "powervr rogue" in name -> POWERVR_ROGUE
                 "powervr" in name || "imagination" in maker -> POWERVR
                 "xclipse" in name -> XCLIPSE
+                "maleoon" in name -> MALEOON
                 else -> OTHER
             }
         }
     }
 }
 
-data class DeviceGraphics(val gpu: GpuFamily, val vulkan11: Boolean) {
+data class DeviceGraphics(val gpu: GpuFamily, val vulkan11: Boolean, val glRenderer: String? = null) {
     companion object {
         val UNKNOWN = DeviceGraphics(GpuFamily.UNKNOWN, vulkan11 = false)
     }
@@ -73,6 +80,16 @@ object GamePipeline {
     /** MobileGlues serves the core-profile pipeline of 1.17 and later, not the fixed-function GL of older versions. */
     fun runsOnMobileGlues(gameVersion: String, releaseTime: String): Boolean =
         after(gameVersion, releaseTime, LAST_BEFORE_MOBILEGLUES, LAST_BEFORE_MOBILEGLUES_RELEASED)
+
+    /**
+     * 26.3-snapshot-5 moved rendering to RenderPearl: shaders are compiled through ShaderC with
+     * explicit locations and the terrain is drawn by multi-draw. Krypton draws nothing there.
+     */
+    fun isRenderPearl(gameVersion: String, releaseTime: String): Boolean =
+        after(gameVersion, releaseTime, LAST_BEFORE_RENDERPEARL, LAST_BEFORE_RENDERPEARL_RELEASED)
+
+    private const val LAST_BEFORE_RENDERPEARL = "26.2"
+    private const val LAST_BEFORE_RENDERPEARL_RELEASED = "2026-07-16T13:59:30"
 
     /** Releases numbered by year (26.1 and later) and their snapshots (26w14a). */
     fun isYearRelease(gameVersion: String): Boolean {
@@ -123,6 +140,33 @@ object RendererCatalog {
         environment = mapOf("LIBGL_ES" to "3"),
     )
 
+    /**
+     * Zink over the Turnip Vulkan driver (Mesa) instead of the phone's own. Manual choice only:
+     * the automatic choice never takes it until a phone has shown a frame with it.
+     */
+    const val ZINK_TURNIP_ID = "zink-turnip"
+    const val TURNIP_LIBRARY = "libvulkan_freedreno.so"
+    private const val LINKER_HOOK = "liblinkerhook.so"
+
+    val zinkTurnip = RendererOption(
+        id = ZINK_TURNIP_ID,
+        label = "Zink + Turnip (Adreno)",
+        library = ZINK_LIBRARY,
+        eglLibrary = ZINK_EGL,
+        nativeId = "opengles3_desktopgl_zink_kopper",
+        environment = mapOf("LIBGL_ES" to "3"),
+    )
+
+    fun isTurnip(entry: RuntimeManifest.RendererEntry): Boolean = entry.id == ZINK_TURNIP_ID
+
+    /** Where a Turnip build may come from: the pack's own folder, then the extra folders (debug builds). */
+    fun turnipSource(rendererDir: File, extraDirs: List<File> = emptyList()): File? =
+        (listOf(rendererDir) + extraDirs).map { File(it, TURNIP_LIBRARY) }.firstOrNull { it.isFile }
+
+    /** The Turnip entry shows only on Adreno 6xx/7xx, the generations the driver is built for. */
+    fun visibleOn(entries: List<RuntimeManifest.RendererEntry>, graphics: DeviceGraphics): List<RuntimeManifest.RendererEntry> =
+        if (RendererChoice.turnipFits(graphics)) entries else entries.filterNot { isTurnip(it) }
+
     fun withDiscovered(declared: List<RendererOption>, rendererDir: File?): List<RendererOption> {
         if (rendererDir == null || declared.isEmpty()) return declared
         if (declared.any { it.library.contains("glxshim") } || !zinkPresent(rendererDir)) return declared
@@ -132,11 +176,17 @@ object RendererCatalog {
     fun offered(
         declared: List<RuntimeManifest.RendererEntry>,
         rendererDir: File,
+        turnipDirs: List<File> = emptyList(),
     ): List<RuntimeManifest.RendererEntry> {
         val present = declared.filter { it.library.isEmpty() || File(rendererDir, it.library).isFile }
-        if (present.isEmpty() || present.any { RendererKind.of(it) == RendererKind.ZINK }) return present
-        if (!zinkPresent(rendererDir)) return present
-        return present + asEntry(zink, component = rendererDir.name)
+        if (present.isEmpty()) return present
+        val withZink = when {
+            present.any { RendererKind.of(it) == RendererKind.ZINK } || !zinkPresent(rendererDir) -> present
+            else -> present + asEntry(zink, component = rendererDir.name)
+        }
+        if (withZink.any { isTurnip(it) } || !zinkPresent(rendererDir)) return withZink
+        if (!File(rendererDir, LINKER_HOOK).isFile || turnipSource(rendererDir, turnipDirs) == null) return withZink
+        return withZink + asEntry(zinkTurnip, component = rendererDir.name)
     }
 
     fun asEntry(option: RendererOption, component: String = ""): RuntimeManifest.RendererEntry =
@@ -168,19 +218,44 @@ sealed interface RendererVerdict {
 }
 
 /**
- * On Mali, Krypton Wrapper hangs on the Blaze3D versions, and Zink over the
- * system Vulkan driver is what runs them there. A renderer named in the
- * settings wins unless it cannot start this version at all; then the automatic
- * choice runs the game and the player is told, since refusing would block a
- * version another renderer in the pack starts fine.
+ * No renderer in the pack suits every GPU and every version, so the automatic
+ * choice goes by what is known to draw there. A renderer named in the settings
+ * wins unless it cannot start this version at all; then the automatic choice
+ * runs the game and the player is told, since refusing would block a version
+ * another renderer in the pack starts fine.
  */
 object RendererChoice {
 
     /**
      * [failedAtInit] names renderers that crashed this build before its first
      * frame: the automatic choice passes over them while another one fits.
-     * [sodium] is set when the build carries Sodium or one of its forks.
+     * [sodium] is set when the build carries Sodium or one of its forks, [sdl]
+     * when the game opens its window through SDL3 instead of the GLFW layer.
      */
+    /** How many other renderers than [chosenId] fit this game and have not failed it: zero means a repeat starts the same one. */
+    fun alternatives(
+        gameVersion: String,
+        releaseTime: String,
+        graphics: DeviceGraphics,
+        offered: List<RuntimeManifest.RendererEntry>,
+        chosenId: String,
+        failedAtInit: Set<String>,
+        sodium: Boolean = false,
+        sdl: Boolean = false,
+    ): Int {
+        val game = Game(
+            blaze3d = GamePipeline.isBlaze3d(gameVersion, releaseTime),
+            mobileGlues = GamePipeline.runsOnMobileGlues(gameVersion, releaseTime),
+            yearRelease = GamePipeline.isYearRelease(gameVersion),
+            renderPearl = GamePipeline.isRenderPearl(gameVersion, releaseTime),
+            sodium = sodium,
+            sdl = sdl,
+        )
+        return offered.count {
+            it.id != chosenId && it.id !in failedAtInit && !RendererCatalog.isTurnip(it) && problem(it, game, graphics) == null
+        }
+    }
+
     fun choose(
         gameVersion: String,
         releaseTime: String,
@@ -189,52 +264,68 @@ object RendererChoice {
         requested: String,
         failedAtInit: Set<String> = emptySet(),
         sodium: Boolean = false,
+        sdl: Boolean = false,
     ): RendererVerdict {
         val game = Game(
             blaze3d = GamePipeline.isBlaze3d(gameVersion, releaseTime),
             mobileGlues = GamePipeline.runsOnMobileGlues(gameVersion, releaseTime),
             yearRelease = GamePipeline.isYearRelease(gameVersion),
+            renderPearl = GamePipeline.isRenderPearl(gameVersion, releaseTime),
             sodium = sodium,
+            sdl = sdl,
         )
-        val fitting = offered.filter { problem(it, game, graphics) == null }
+        // Zink + Turnip is for a hand-picked start only, until a phone has shown a frame with it.
+        val fitting = offered.filter { problem(it, game, graphics) == null && !RendererCatalog.isTurnip(it) }
         val suitable = fitting.filterNot { it.id in failedAtInit }.ifEmpty { fitting }
 
         val named = offered.firstOrNull { requested.isNotEmpty() && it.id == requested }
+        if (named != null && RendererCatalog.isTurnip(named) && problem(named, game, graphics) == null) {
+            return RendererVerdict.Use(named, tr("выбран в настройках (драйвер Turnip)"))
+        }
         if (named != null) {
             val problem = problem(named, game, graphics)
-                ?: return RendererVerdict.Use(named, "выбран в настройках")
+                ?: return RendererVerdict.Use(named, tr("выбран в настройках"))
             val instead = automatic(suitable, game, graphics, retry = failedAtInit.isNotEmpty())
                 ?: return RendererVerdict.Refused(
-                    "${label(named)} не запустит $gameVersion: $problem. " +
-                        "Подходящего рендерера в пакете рантайма нет — обнови пакет рантайма.",
+                    tr("{0} не запустит {gameVersion}: {problem}. ", label(named), gameVersion, problem) +
+                        tr("Подходящего рендерера в пакете рантайма нет — обнови пакет рантайма."),
                 )
             return RendererVerdict.Use(
                 instead.renderer,
-                "${label(named)} из настроек не подходит: ${instead.reason}",
-                "${label(named)} не запустит $gameVersion: $problem. Запускаем на ${label(instead.renderer)}.",
+                tr("{0} из настроек не подходит: {reason}", label(named), instead.reason),
+                tr("{0} не запустит {gameVersion}: {problem}. Запускаем на {1}.", label(named), gameVersion, problem, label(instead.renderer)),
             )
         }
 
         if (suitable.isEmpty()) {
             val reasons = offered.joinToString("; ") { "${label(it)} — ${problem(it, game, graphics)}" }
             return RendererVerdict.Refused(
-                "Для $gameVersion на этом телефоне нет подходящего рендерера" +
-                    (if (reasons.isEmpty()) "" else " ($reasons)") +
-                    ". Возьми версию до 1.21.4 или обнови пакет рантайма.",
+                if (reasons.isEmpty()) {
+                    tr("Для {gameVersion} на этом телефоне нет подходящего рендерера. Возьми версию до 1.21.4 или обнови пакет рантайма.", gameVersion)
+                } else {
+                    tr("Для {gameVersion} на этом телефоне нет подходящего рендерера ({reasons}). Возьми версию до 1.21.4 или обнови пакет рантайма.", gameVersion, reasons)
+                },
             )
         }
 
-        val chosen = automatic(suitable, game, graphics, retry = failedAtInit.isNotEmpty()) ?: RendererVerdict.Use(suitable.first(), "по умолчанию")
+        val chosen = automatic(suitable, game, graphics, retry = failedAtInit.isNotEmpty()) ?: RendererVerdict.Use(suitable.first(), tr("по умолчанию"))
         val usual = automatic(fitting, game, graphics)?.renderer
         if (usual == null || usual.id == chosen.renderer.id) return chosen
         return chosen.copy(
-            reason = "${label(usual)} упал при запуске этой сборки",
-            note = "${label(usual)} в прошлый раз не запустил эту сборку — запускаем на ${label(chosen.renderer)}. " +
-                "Чтобы вернуть ${label(usual)}, выбери его в настройках.",
+            reason = tr("{0} упал при запуске этой сборки", label(usual)),
+            note = tr("{0} в прошлый раз не запустил эту сборку — запускаем на {1}. ", label(usual), label(chosen.renderer)) +
+                tr("Чтобы вернуть {0}, выбери его в настройках.", label(usual)),
         )
     }
 
-    private class Game(val blaze3d: Boolean, val mobileGlues: Boolean, val sodium: Boolean, val yearRelease: Boolean)
+    private class Game(
+        val blaze3d: Boolean,
+        val mobileGlues: Boolean,
+        val sodium: Boolean,
+        val yearRelease: Boolean,
+        val sdl: Boolean,
+        val renderPearl: Boolean = false,
+    )
 
     /**
      * Sodium compiles its terrain shaders as desktop GLSL with implicit type
@@ -249,34 +340,88 @@ object RendererChoice {
     ): RendererVerdict.Use? {
         if (game.sodium) {
             suitable.firstOrNull { RendererKind.of(it) == RendererKind.MOBILEGLUES }?.let {
-                return RendererVerdict.Use(it, "в сборке Sodium: его шейдеры собирает MobileGlues")
+                return RendererVerdict.Use(it, tr("в сборке Sodium: его шейдеры собирает MobileGlues"))
             }
         }
-        // Seven days of launches (share that reached play, Mali): 26.x Zink 62% (8761) against
-        // Krypton 26% (2532); 1.21.5-1.21.11 Zink 21% (5811) against Krypton 50% (2032).
-        // Adreno: Krypton on every version, Zink 3-39%.
+        // Three days of 1.10.x on 26.3: a black screen for 65% of the players (727 of 1124),
+        // against 7-8% on 26.2 and 1.21.11; on Krypton it is every GPU, Adreno 610 among them.
+        if (game.renderPearl) {
+            suitable.firstOrNull { RendererKind.of(it) == RendererKind.MOBILEGLUES }?.let {
+                return RendererVerdict.Use(it, tr("версия 26.3 и новее: MobileGlues"))
+            }
+        }
+        // The Rogue driver draws integer vertex attributes wrong, and the game's shaders use
+        // them since 1.17: the world and the text come out black. GL4ES 1.1.4 feeds them as
+        // floats; Krypton hands them over as they are. From 1.21.5 on GL4ES cannot run the
+        // game, and MobileGlues, which rewrites the shaders, is what draws there.
+        if (graphics.gpu == GpuFamily.POWERVR_ROGUE && game.mobileGlues) {
+            val wanted = if (game.blaze3d) RendererKind.MOBILEGLUES else RendererKind.GL4ES
+            suitable.firstOrNull { RendererKind.of(it) == wanted }?.let {
+                return RendererVerdict.Use(it, tr("PowerVR Rogue: Krypton рисует мир чёрным с 1.17"))
+            }
+        }
+        // Krypton draws 26.x wrong on Maleoon and aborts 26.3 there on a GL call it lacks.
+        if (graphics.gpu == GpuFamily.MALEOON && game.yearRelease) {
+            suitable.firstOrNull { RendererKind.of(it) == RendererKind.MOBILEGLUES }?.let {
+                return RendererVerdict.Use(it, tr("Maleoon и версия 26.x: MobileGlues"))
+            }
+        }
+        // Ten days to 27.10, crashes per launch. Xclipse: 1.21 Krypton 50% (769), MobileGlues 35% (284);
+        // 26.x Krypton 49% (397), MobileGlues 20% (191). PowerVR on 26.x: Krypton 46%, MobileGlues 25%.
+        if ((graphics.gpu == GpuFamily.XCLIPSE && game.blaze3d) ||
+            (graphics.gpu == GpuFamily.POWERVR && game.yearRelease)
+        ) {
+            suitable.firstOrNull { RendererKind.of(it) == RendererKind.MOBILEGLUES }?.let {
+                return RendererVerdict.Use(it, tr("Xclipse и PowerVR на новых версиях: MobileGlues"))
+            }
+        }
+        // Four days of 1.9.27-1.9.29 on Mali, 26.x, crashes per launch. Through SDL3: MobileGlues
+        // 8% (2595), Krypton 55% (264), Zink 91% (1628, all but five before the first frame).
+        // Through the GLFW layer: MobileGlues 29% (1697), Krypton 47% (195). Zink is no longer
+        // offered on Mali at all (see problem()), so MobileGlues takes 26.x whatever opens the window.
         if (game.blaze3d && game.yearRelease && graphics.gpu == GpuFamily.MALI) {
-            suitable.firstOrNull { RendererKind.of(it) == RendererKind.ZINK }?.let {
-                return RendererVerdict.Use(it, "Mali и версия 26.x: Zink через Vulkan")
+            suitable.firstOrNull { RendererKind.of(it) == RendererKind.MOBILEGLUES }?.let {
+                return RendererVerdict.Use(it, tr("Mali и версия 26.x: MobileGlues"))
             }
         }
         // After a failed start (crash at init or a black screen) on 1.17+, MobileGlues
         // (OpenGL 4.0 over GLES, Zalith's main renderer) is the first fallback.
         if (retry && game.mobileGlues) {
             suitable.firstOrNull { RendererKind.of(it) == RendererKind.MOBILEGLUES }?.let {
-                return RendererVerdict.Use(it, "прошлый рендерер не дал кадра: MobileGlues")
+                return RendererVerdict.Use(it, tr("прошлый рендерер не дал кадра: MobileGlues"))
             }
         }
-        return suitable.firstOrNull()?.let { RendererVerdict.Use(it, "по умолчанию") }
+        return suitable.firstOrNull()?.let { RendererVerdict.Use(it, tr("по умолчанию")) }
     }
 
+    /** Turnip is built for Adreno 6xx and 7xx; the family alone is not enough, the model number decides. */
+    fun turnipFits(graphics: DeviceGraphics): Boolean =
+        graphics.gpu == GpuFamily.ADRENO && ADRENO_6_7.containsMatchIn(graphics.glRenderer.orEmpty())
+
     private fun problem(entry: RuntimeManifest.RendererEntry, game: Game, graphics: DeviceGraphics): String? =
+        if (RendererCatalog.isTurnip(entry)) {
+            if (turnipFits(graphics)) null else tr("Turnip собран для Adreno 6xx и 7xx")
+        } else regularProblem(entry, game, graphics)
+
+    private fun regularProblem(entry: RuntimeManifest.RendererEntry, game: Game, graphics: DeviceGraphics): String? =
         when (RendererKind.of(entry)) {
-            RendererKind.GL4ES -> if (game.blaze3d) "GL4ES тянет версии только до 1.21.4" else null
-            RendererKind.ZINK -> if (!graphics.vulkan11) "Zink работает через Vulkan 1.1, а телефон его не даёт" else null
-            RendererKind.MOBILEGLUES -> if (!game.mobileGlues) "MobileGlues тянет версии только с 1.17" else null
+            RendererKind.GL4ES -> if (game.blaze3d) tr("GL4ES тянет версии только до 1.21.4") else null
+            RendererKind.ZINK -> when {
+                !graphics.vulkan11 -> tr("Zink работает через Vulkan 1.1, а телефон его не даёт")
+                graphics.gpu == GpuFamily.POWERVR_ROGUE -> tr("Zink не запускается на драйвере Vulkan у PowerVR Rogue")
+                // 1628 launches of 26.x on Mali in four days, 91% died before the first frame.
+                graphics.gpu == GpuFamily.MALI -> tr("Zink на Mali не доходит до картинки")
+                // Redmi Note 13 (Adreno 610), 26.10: Zink died within 15 s on 1.20.1 and on 26.3.
+                graphics.gpu == GpuFamily.ADRENO && ADRENO_6.containsMatchIn(graphics.glRenderer.orEmpty()) ->
+                    tr("Zink на Adreno 6xx не доходит до картинки")
+                else -> null
+            }
+            RendererKind.MOBILEGLUES -> if (!game.mobileGlues) tr("MobileGlues тянет версии только с 1.17") else null
             RendererKind.KRYPTON, RendererKind.OTHER -> null
         }
+
+    private val ADRENO_6 = Regex("(?i)adreno[^0-9]*6\\d\\d")
+    private val ADRENO_6_7 = Regex("(?i)adreno[^0-9]*[67]\\d\\d")
 
     private fun label(entry: RuntimeManifest.RendererEntry): String = entry.label.ifEmpty { entry.id }
 }
@@ -291,11 +436,32 @@ object RendererChoice {
 object RendererFallback {
 
     fun crashedAtInit(rendererKind: RendererKind, crashText: String): Boolean =
-        (rendererKind == RendererKind.ZINK || rendererKind == RendererKind.MOBILEGLUES) &&
-            INIT_STEP in crashText && GL_ERROR.containsMatchIn(crashText) ||
+        // LWJGL aborts the Java machine when the game calls a GL entry point the layer did
+        // not give it; the same build needs a layer that has it, whichever one failed.
+        MISSING_GL_FUNCTION in crashText ||
+            rendererKind in CHOSEN_OVER_KRYPTON && INIT_STEP in crashText && GL_ERROR.containsMatchIn(crashText) ||
+            // Krypton on Mali gives 1.18-1.21 a framebuffer the game refuses, at start or in the
+            // world (102 players in a week, all Mali); MobileGlues builds it.
+            rendererKind == RendererKind.KRYPTON && FRAMEBUFFER_UNSUPPORTED in crashText ||
             // Minecraft 26.2 on Zink dies with a report that has no description beyond this
             // line (361 of 1461 starts in a week of telemetry, none on 26.1 or 26.3).
             rendererKind == RendererKind.ZINK && UNEXPECTED_ERROR in crashText
+
+    /**
+     * An abort inside the Java machine takes the whole game process with it, so nothing
+     * after the crash can write the failure down. The start leaves this record instead,
+     * and the next start reads the log it points at.
+     */
+    fun pendingStart(entry: String, rendererKind: RendererKind, logName: String): String =
+        listOf(rendererKind.name, logName, entry).joinToString(FIELD)
+
+    /** The entry to remember as failed when the start [pending] describes died in its renderer, else null. */
+    fun diedAtInit(pending: String, logTail: (logName: String) -> String): String? {
+        val parts = pending.split(FIELD, limit = 3)
+        if (parts.size != 3 || parts[1].isEmpty() || parts[2].isEmpty()) return null
+        val kind = RendererKind.entries.firstOrNull { it.name == parts[0] } ?: return null
+        return parts[2].takeIf { crashedAtInit(kind, logTail(parts[1])) }
+    }
 
     /**
      * A black screen is not a crash: the game runs, no frame ever comes, and the player
@@ -313,7 +479,13 @@ object RendererFallback {
         }.toSet()
 
     private const val SEPARATOR = "\n"
+    private const val FIELD = "\u001F"
+    const val MISSING_GL_FUNCTION = "No context is current or a function that is not available in the current context was called"
     private const val INIT_STEP = "Description: Initializing game"
     private const val UNEXPECTED_ERROR = "Description: Unexpected error"
-    private val GL_ERROR = Regex("""IllegalStateException: OpenGL error \d+""")
+    private const val FRAMEBUFFER_UNSUPPORTED = "RuntimeException: GL_FRAMEBUFFER_UNSUPPORTED"
+    private val GL_ERROR = Regex("""IllegalStateException: OpenGL error \d+|RuntimeException: GL_FRAMEBUFFER_\w+""")
+
+    /** Renderers the automatic choice takes instead of Krypton somewhere: a failure of theirs sends the build back. */
+    private val CHOSEN_OVER_KRYPTON = setOf(RendererKind.ZINK, RendererKind.MOBILEGLUES, RendererKind.GL4ES)
 }

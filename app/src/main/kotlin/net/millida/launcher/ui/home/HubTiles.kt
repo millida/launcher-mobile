@@ -95,7 +95,14 @@ private fun rememberHubTileSpecs(
 }
 
 @Composable
-private fun HubTileCard(spec: HubTileSpec, modifier: Modifier, height: Dp, overflow: Dp = TILE_OVERFLOW) {
+private fun HubTileCard(
+    spec: HubTileSpec,
+    modifier: Modifier,
+    height: Dp,
+    overflow: Dp = TILE_OVERFLOW,
+    titleLines: Int = 1,
+    compactBand: Boolean = false,
+) {
     MHeroCard(
         title = spec.copy.title,
         modifier = modifier.tourTarget(spec.target),
@@ -106,6 +113,8 @@ private fun HubTileCard(spec: HubTileSpec, modifier: Modifier, height: Dp, overf
         ribbon = spec.copy.ribbon,
         alert = spec.copy.alert,
         onClick = spec.onClick,
+        titleMaxLines = if (spec.copy.subtitle == null) titleLines else 1,
+        compactBand = compactBand,
         art = { TileArtImage(spec.art) },
     )
 }
@@ -137,7 +146,10 @@ internal fun HubTiles(
 /**
  * The landscape lobby's left edge, the desktop's `.lobby-left`: the three
  * tiles stacked [width] wide, each [height] tall with the picture's heads
- * [overflow] over its top edge.
+ * [overflow] over its top edge. The caption band is the desktop's slim one,
+ * the title alone on one line: on a phone the tile is much lower than on the
+ * desktop, and a two-line band with a subtitle covered the characters up to
+ * their chins.
  */
 @Composable
 internal fun HubTileColumn(
@@ -158,6 +170,8 @@ internal fun HubTileColumn(
         modifier.width(width),
         verticalArrangement = Arrangement.spacedBy(gap),
     ) {
-        tiles.forEach { tile -> HubTileCard(tile, Modifier, height = height, overflow = overflow) }
+        tiles.forEach { tile ->
+            HubTileCard(tile, Modifier, height = height, overflow = overflow, compactBand = true)
+        }
     }
 }

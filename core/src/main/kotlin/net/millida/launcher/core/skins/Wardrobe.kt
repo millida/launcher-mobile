@@ -12,6 +12,7 @@ import kotlinx.serialization.json.put
 import net.millida.launcher.core.account.MillidaAuth
 import java.io.IOException
 
+import net.millida.launcher.core.i18n.tr
 /**
  * The skin is what other players see, so it belongs to the account and not to a
  * build: the same wardrobe follows the player between the phone and the desktop
@@ -198,8 +199,8 @@ class WardrobeClient(
 
     suspend fun claim(code: String): Reward {
         val answer = auth.authorized("/launcher/rewards/$code/claim", "POST", buildJsonObject { })
-        val reward = reward(answer) ?: throw IOException("сервер не вернул награду — обнови список и попробуй ещё раз")
-        if (!reward.claimed) throw IOException("плащ «${reward.title.ifEmpty { code }}» не выдан — обнови список и попробуй ещё раз")
+        val reward = reward(answer) ?: throw IOException(tr("сервер не вернул награду — обнови список и попробуй ещё раз"))
+        if (!reward.claimed) throw IOException(tr("плащ «{0}» не выдан — обнови список и попробуй ещё раз", reward.title.ifEmpty { code }))
         return reward
     }
 

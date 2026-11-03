@@ -1,42 +1,44 @@
 package net.millida.launcher.core.rating
 
+import net.millida.launcher.core.i18n.tr
+
 /** The rating's facets as the desktop launcher names them (src/screens/Servers.tsx, src/state/servers.ts). */
 object ServerFilters {
     val SORTS: List<RatingSort> = listOf(RatingSort.RATING, RatingSort.ONLINE, RatingSort.NAME, RatingSort.NEW)
 
-    val CATEGORIES: List<Pair<String, String>> = listOf(
-        "" to "Все",
-        "SURVIVAL" to "Выживание",
-        "ANARCHY" to "Анархия",
-        "MINIGAMES" to "Мини-игры",
-        "MMORPG" to "РПГ",
-        "VANILLA" to "Ванилла",
-        "MODDED" to "Моды",
+    val CATEGORIES: List<Pair<String, String>> get() = listOf(
+        "" to tr("Все"),
+        "SURVIVAL" to tr("Выживание"),
+        "ANARCHY" to tr("Анархия"),
+        "MINIGAMES" to tr("Мини-игры"),
+        "MMORPG" to tr("РПГ"),
+        "VANILLA" to tr("Ванилла"),
+        "MODDED" to tr("Моды"),
         "SKYBLOCK" to "SkyBlock",
-        "CREATIVE" to "Креатив",
+        "CREATIVE" to tr("Креатив"),
         "PVP" to "PvP",
     )
 
-    val ONLINE: List<Pair<String, String>> = listOf(
-        "" to "Любой онлайн",
-        LIVE to "Сейчас есть игроки",
-        "20" to "От 20 игроков",
-        "100" to "От 100 игроков",
+    val ONLINE: List<Pair<String, String>> get() = listOf(
+        "" to tr("Любой онлайн"),
+        LIVE to tr("Сейчас есть игроки"),
+        "20" to tr("От 20 игроков"),
+        "100" to tr("От 100 игроков"),
     )
 
     const val LIVE = "live"
 
     fun sortLabel(sort: RatingSort): String = when (sort) {
-        RatingSort.RATING -> "По рейтингу"
-        RatingSort.ONLINE -> "По онлайну"
-        RatingSort.NAME -> "По названию"
-        RatingSort.NEW -> "Сначала новые"
+        RatingSort.RATING -> tr("По рейтингу")
+        RatingSort.ONLINE -> tr("По онлайну")
+        RatingSort.NAME -> tr("По названию")
+        RatingSort.NEW -> tr("Сначала новые")
     }
 
     fun licenseLabel(license: LicenseFilter): String = when (license) {
-        LicenseFilter.ANY -> "Любая лицензия"
-        LicenseFilter.CRACKED -> "Без лицензии"
-        LicenseFilter.LICENSE -> "Только лицензия"
+        LicenseFilter.ANY -> tr("Любая лицензия")
+        LicenseFilter.CRACKED -> tr("Без лицензии")
+        LicenseFilter.LICENSE -> tr("Только лицензия")
     }
 
     fun categoryLabel(code: String): String? = CATEGORIES.firstOrNull { it.first == code }?.second

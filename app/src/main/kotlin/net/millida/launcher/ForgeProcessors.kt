@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.SafePath
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.ForgePlanFile
 import net.millida.launcher.core.loader.ForgeProcessorPlan
 import net.millida.launcher.core.loader.ForgeProcessorRunner
@@ -58,7 +59,7 @@ internal fun readProcessorStatus(lines: List<String>): ProcessorStatus {
             "ok" -> finished = true
             "fail" -> {
                 finished = true
-                failure = line.removePrefix("fail").trim().ifEmpty { "без описания" }
+                failure = line.removePrefix("fail").trim().ifEmpty { tr("без описания") }
             }
         }
     }
@@ -83,7 +84,7 @@ class AndroidProcessorRunner(
         val java = try {
             runtime()
         } catch (error: IOException) {
-            throw IOException("для установки загрузчика нужен пакет рантайма: ${error.message}", error)
+            throw IOException(tr("для установки загрузчика нужен пакет рантайма: {message}", error.message), error)
         }
         val work = File(File(layout.caches, "loaders"), "${plan.versionId}-run").apply {
             deleteRecursively()
@@ -124,8 +125,8 @@ class AndroidProcessorRunner(
         while (!ForgeProcessorService.start(context, job)) {
             if (System.currentTimeMillis() > deadline) {
                 throw IOException(
-                    "установка загрузчика ждала, пока лаунчер откроют: Android не даёт начать её в свёрнутом приложении. " +
-                        "Открой лаунчер и повтори установку",
+                    tr("установка загрузчика ждала, пока лаунчер откроют: Android не даёт начать её в свёрнутом приложении. ") +
+                        tr("Открой лаунчер и повтори установку"),
                 )
             }
             delay(BACKGROUND_RETRY_MS)
@@ -147,8 +148,8 @@ class AndroidProcessorRunner(
             if (state.finished) {
                 state.failure?.let {
                     throw IOException(
-                        "установщик загрузчика остановился на шаге ${state.done + 1} из ${state.total}: $it. " +
-                            "Журнал: ${log.name}",
+                        tr("установщик загрузчика остановился на шаге {0} из {total}: {it}. ", state.done + 1, state.total, it) +
+                            tr("Журнал: {name}", log.name),
                     )
                 }
                 return
@@ -159,12 +160,17 @@ class AndroidProcessorRunner(
             if (!alive && (seenAlive || waited > START_WAIT_MS)) {
                 val step = if (state.current.isEmpty()) "" else " (${state.current})"
                 throw IOException(
-                    "установщик загрузчика закрылся на шаге ${state.done + 1} из ${state.total.takeIf { it > 0 } ?: total}$step — " +
-                        "скорее всего, не хватило памяти. Закрой другие приложения и повтори. Журнал: ${log.name}",
+                    tr(
+                        "установщик загрузчика закрылся на шаге {0} из {1}{step} — скорее всего, не хватило памяти. Закрой другие приложения и повтори. Журнал: {name}",
+                        state.done + 1,
+                        state.total.takeIf { it > 0 } ?: total,
+                        step,
+                        log.name,
+                    ),
                 )
             }
             if (waited > RUN_LIMIT_MS) {
-                throw IOException("установщик загрузчика не закончил за ${RUN_LIMIT_MS / 60_000} минут — повтори установку")
+                throw IOException(tr("установщик загрузчика не закончил за {0} минут — повтори установку", RUN_LIMIT_MS / 60_000))
             }
             delay(POLL_MS)
         }
@@ -279,11 +285,11 @@ class ForgeProcessorService : Service() {
             )
         } catch (error: Throwable) {
             Log.e(TAG, "установщик не запустился: ${error.message}", error)
-            appendFailure(status, "виртуальная машина Java не запустилась: ${error.message}")
+            appendFailure(status, tr("виртуальная машина Java не запустилась: {message}", error.message))
             false
         }
         if (!ok && !readProcessorStatus(status.readLinesOrEmpty()).finished) {
-            appendFailure(status, "виртуальная машина Java не запустилась")
+            appendFailure(status, tr("виртуальная машина Java не запустилась"))
         }
         stopSelf()
     }
@@ -311,15 +317,15 @@ class ForgeProcessorService : Service() {
     private fun prepareChannel() {
         val manager = getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Установка загрузчика", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(CHANNEL_ID, tr("Установка загрузчика"), NotificationManager.IMPORTANCE_LOW)
                 .also { it.setShowBadge(false) },
         )
     }
 
     private fun notification(): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Ставим загрузчик")
-            .setContentText("Собираем клиент — это займёт пару минут")
+            .setContentTitle(tr("Ставим загрузчик"))
+            .setContentText(tr("Собираем клиент — это займёт пару минут"))
             .setSmallIcon(net.millida.launcher.runtime.R.drawable.ic_stat_millida)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -359,7 +365,7 @@ class ForgeProcessorService : Service() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && refused is ForegroundServiceStartNotAllowedException) {
                     return false
                 }
-                throw IOException("служба установщика не запустилась: ${refused.message}", refused)
+                throw IOException(tr("служба установщика не запустилась: {message}", refused.message), refused)
             }
         }
 

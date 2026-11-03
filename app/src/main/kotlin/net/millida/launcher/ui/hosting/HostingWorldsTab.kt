@@ -21,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import net.millida.launcher.HostingToolsModel
 import net.millida.launcher.core.hosting.HostingWorld
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.forServer
 import net.millida.launcher.ui.MBadge
 import net.millida.launcher.ui.MButtonRow
@@ -58,6 +59,8 @@ fun HostingWorldsTab(serverId: String, tools: HostingToolsModel) {
     var switching by remember { mutableStateOf<HostingWorld?>(null) }
     var regenerate by remember { mutableStateOf(false) }
     var locked by remember { mutableStateOf<String?>(null) }
+    val backups = rememberHostingBackups(serverId, tools)
+    val backupPicks = rememberHostingBackupPicks(serverId)
 
     val pickArchive = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) tools.uploadWorld(serverId, uri)
@@ -67,7 +70,10 @@ fun HostingWorldsTab(serverId: String, tools: HostingToolsModel) {
     }
 
     if (access != null && !access.can("world")) {
-        ToolsList { item(key = "no-rights") { ToolsNoRights() } }
+        ToolsList {
+            item(key = "no-rights") { ToolsNoRights() }
+            hostingBackupItems(serverId, tools, backups, backupPicks)
+        }
     } else {
         ToolsList {
             if (ownTransfer != null) {
@@ -76,24 +82,24 @@ fun HostingWorldsTab(serverId: String, tools: HostingToolsModel) {
             item(key = "head") {
                 MCard {
                     ToolsHead(
-                        title = "Миры сервера",
-                        subtitle = if (running) "Останови сервер, чтобы загрузить или пересоздать мир" else null,
+                        title = tr("Миры сервера"),
+                        subtitle = if (running) tr("Останови сервер, чтобы загрузить или пересоздать мир") else null,
                     )
                     Spacer(Modifier.height(12.dp))
                     MButtonRow {
                         if (full) {
                             MSecondaryButton(
-                                "Загрузить",
+                                tr("Загрузить"),
                                 onClick = { pickArchive.launch(arrayOf("*/*")) },
                                 enabled = ownTransfer == null,
                                 icon = MIcons.upload,
                                 size = MButtonSize.Small,
                             )
                         } else {
-                            ToolsLockButton("Загрузить") { locked = "Загрузка своего мира" }
+                            ToolsLockButton(tr("Загрузить")) { locked = tr("Загрузка своего мира") }
                         }
                         MSecondaryButton(
-                            "Скачать",
+                            tr("Скачать"),
                             onClick = { pickTarget.launch(worldFileName(access?.slug.orEmpty())) },
                             enabled = ownTransfer == null,
                             icon = MIcons.download,
@@ -110,7 +116,7 @@ fun HostingWorldsTab(serverId: String, tools: HostingToolsModel) {
                 }
                 list == null -> items(2, key = { "skeleton-$it" }) { MSkeletonRow() }
                 list.isEmpty() -> item(key = "empty") {
-                    MEmptyState(icon = MIcons.map, title = "Мир появится после первого запуска")
+                    MEmptyState(icon = MIcons.map, title = tr("Мир появится после первого запуска"))
                 }
                 else -> {
                     if (error != null) {
@@ -125,13 +131,13 @@ fun HostingWorldsTab(serverId: String, tools: HostingToolsModel) {
                             icon = if (world.dimension) MIcons.flame else MIcons.grassBlock,
                             trailing = when {
                                 world.active -> {
-                                    { MBadge("Активен", colors.accentText, colors.accentSoft, icon = MIcons.check) }
+                                    { MBadge(tr("Активен"), colors.accentText, colors.accentSoft, icon = MIcons.check) }
                                 }
                                 world.dimension -> null
                                 else -> {
                                     {
                                         MSecondaryButton(
-                                            "Включить",
+                                            tr("Включить"),
                                             onClick = { switching = world },
                                             size = MButtonSize.Small,
                                             loading = switchingNow,
@@ -147,23 +153,26 @@ fun HostingWorldsTab(serverId: String, tools: HostingToolsModel) {
                 MCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Пересоздать мир", style = MillidaType.rowTitle, color = colors.fg)
+                            Text(tr("Пересоздать мир"), style = MillidaType.rowTitle, color = colors.fg)
                             Spacer(Modifier.height(2.dp))
-                            Text("Моды и настройки останутся", style = MillidaType.small, color = colors.fgSubtle)
+                            Text(tr("Моды и настройки останутся"), style = MillidaType.small, color = colors.fgSubtle)
                         }
                         Spacer(Modifier.width(12.dp))
-                        MDangerButton("Пересоздать", onClick = { regenerate = true }, enabled = !regenerating)
+                        MDangerButton(tr("Пересоздать"), onClick = { regenerate = true }, enabled = !regenerating)
                     }
                 }
             }
+            hostingBackupItems(serverId, tools, backups, backupPicks)
         }
     }
 
+    HostingBackupDialogs(serverId, tools, backups, backupPicks)
+
     switching?.let { world ->
         MConfirmDialog(
-            title = "Включить «${world.name}»?",
-            text = "Применится после перезапуска",
-            confirm = "Включить",
+            title = tr("Включить «{name}»?", world.name),
+            text = tr("Применится после перезапуска"),
+            confirm = tr("Включить"),
             danger = false,
             onConfirm = {
                 switching = null
@@ -176,21 +185,21 @@ fun HostingWorldsTab(serverId: String, tools: HostingToolsModel) {
     if (regenerate) {
         var backup by remember { mutableStateOf(true) }
         MDialog(
-            title = "Пересоздать мир?",
+            title = tr("Пересоздать мир?"),
             onDismiss = { regenerate = false },
             body = {
                 Text(
-                    "Текущий мир удалится безвозвратно. Моды, плагины и настройки останутся",
+                    tr("Текущий мир удалится безвозвратно. Моды, плагины и настройки останутся"),
                     style = MillidaType.body,
                     color = colors.fgMuted,
                 )
                 Spacer(Modifier.height(8.dp))
-                MSwitchRow("Сначала сохранить копию", null, backup) { backup = it }
+                MSwitchRow(tr("Сначала сохранить копию"), null, backup) { backup = it }
             },
             actions = {
-                MTextButton("Отмена", onClick = { regenerate = false })
+                MTextButton(tr("Отмена"), onClick = { regenerate = false })
                 MDangerButton(
-                    "Пересоздать",
+                    tr("Пересоздать"),
                     onClick = {
                         regenerate = false
                         tools.regenerateWorld(serverId, backup)
@@ -207,8 +216,8 @@ fun HostingWorldsTab(serverId: String, tools: HostingToolsModel) {
 }
 
 private fun worldSubtitle(world: HostingWorld): String {
-    val size = if (world.sizeMb > 0) toolsBytes(world.sizeMb * 1024 * 1024) else "пусто"
-    return if (world.dimension) "$size · измерение" else size
+    val size = if (world.sizeMb > 0) toolsBytes(world.sizeMb * 1024 * 1024) else tr("пусто")
+    return if (world.dimension) tr("{size} · измерение", size) else size
 }
 
 private fun worldFileName(slug: String): String {

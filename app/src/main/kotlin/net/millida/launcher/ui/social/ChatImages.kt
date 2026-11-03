@@ -16,6 +16,7 @@ import java.net.URI
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+import net.millida.launcher.core.i18n.tr
 /** The chat upload travels as base64 inside JSON, and the server caps that body at 3 MB. */
 private const val MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 private const val MAX_SOURCE_BYTES = 40L * 1024 * 1024
@@ -47,12 +48,12 @@ internal fun isOwnMediaUrl(url: String?): Boolean {
 internal suspend fun readChatImage(context: Context, uri: Uri): ByteArray = withContext(Dispatchers.IO) {
     val resolver = context.contentResolver
     val declared = runCatching { resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } }.getOrNull() ?: -1L
-    if (declared > MAX_SOURCE_BYTES) throw IOException("Картинка больше 40 МБ — выбери поменьше")
+    if (declared > MAX_SOURCE_BYTES) throw IOException(tr("Картинка больше 40 МБ — выбери поменьше"))
     val raw = resolver.openInputStream(uri)?.use { it.readBytes() }
-        ?: throw IOException("Картинка не открылась — выбери другую")
-    if (raw.isEmpty()) throw IOException("Файл пустой — выбери другую картинку")
+        ?: throw IOException(tr("Картинка не открылась — выбери другую"))
+    if (raw.isEmpty()) throw IOException(tr("Файл пустой — выбери другую картинку"))
     if (raw.size <= MAX_UPLOAD_BYTES && serverTakesAsIs(raw)) return@withContext raw
-    shrink(raw) ?: throw IOException("Эту картинку не получилось сжать — выбери другую")
+    shrink(raw) ?: throw IOException(tr("Эту картинку не получилось сжать — выбери другую"))
 }
 
 private fun serverTakesAsIs(raw: ByteArray): Boolean = chatPictureType(raw) != null

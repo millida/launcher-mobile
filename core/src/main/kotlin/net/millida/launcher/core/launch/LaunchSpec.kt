@@ -16,7 +16,10 @@ data class LaunchRequest(
     val extraJvmArgs: List<String> = emptyList(),
     val extraGameArgs: List<String> = emptyList(),
     val authlibInjector: File? = null,
+    /** `-Dauthlibinjector.yggdrasil.prefetched=...`, see AuthlibMetadata: the agent then asks for nothing itself. */
+    val authlibPrefetched: String? = null,
     val quickPlayServer: String? = null,
+    val millidaToken: String? = null,
     val launcherName: String = "millida-mobile",
     val launcherVersion: String = "1.0",
 )
@@ -29,6 +32,17 @@ data class LaunchSpec(
     val gameDir: File,
 ) {
     fun classpathString(): String = classpath.joinToString(":") { it.absolutePath }
+}
+
+object MillidaModToken {
+    const val ARGUMENT_PREFIX = "-Dmillida.token="
+    private const val HIDDEN = "***"
+
+    fun isArgument(argument: String): Boolean = argument.startsWith(ARGUMENT_PREFIX)
+
+    fun argument(token: String?): String? = token?.trim()?.takeIf { it.isNotEmpty() }?.let { ARGUMENT_PREFIX + it }
+
+    fun redact(argument: String): String = if (isArgument(argument)) ARGUMENT_PREFIX + HIDDEN else argument
 }
 
 /**
@@ -57,10 +71,13 @@ class LaunchSpecBuilder(private val layout: GameLayout) {
         val version = request.version
         val classpath = ArrayList<File>()
         version.libraries.forEach { classpath += layout.library(it.path) }
-        classpath += layout.versionJar(version.jarVersionId)
+        val clientJar = layout.versionJar(version.jarVersionId)
+        classpath += clientJar
 
         val assetsRoot = layout.assets
-        val nativesDir = File(layout.runtimes, "natives")
+        // The game reads this folder at start whatever it holds: 360 aborts of 166 installs (19-26.10.2026)
+        // were a NoSuchFileException on it after an interrupted unpack or a cleaned cache.
+        val nativesDir = File(layout.runtimes, "natives").also { it.mkdirs() }
         val placeholders = mapOf(
             "auth_player_name" to request.session.nick,
             "auth_uuid" to request.session.uuid,
@@ -94,14 +111,17 @@ class LaunchSpecBuilder(private val layout: GameLayout) {
         request.authlibInjector?.let { jar ->
             if (request.session.yggdrasil.isNotEmpty()) {
                 jvmArgs += "-javaagent:${jar.absolutePath}=${request.session.yggdrasil}"
+                request.authlibPrefetched?.let { jvmArgs += it }
             }
         }
         // The native path is left to the runtime layer on purpose: it knows the
         // folder the libraries actually live in, and a later copy of the same
         // property would win over it inside the virtual machine.
-        jvmArgs += resolveJvmArguments(version.jvmArguments, placeholders)
+        jvmArgs += ignoringClientJar(resolveJvmArguments(version.jvmArguments, placeholders), clientJar.name)
         loggingArgument(version)?.let { jvmArgs += it }
         jvmArgs += request.extraJvmArgs
+        jvmArgs.removeAll { MillidaModToken.isArgument(it) }
+        MillidaModToken.argument(request.millidaToken)?.let { jvmArgs += it }
 
         val gameArgs = ArrayList<String>(resolveGameArguments(version.gameArguments, placeholders))
         if (gameArgs.none { it == "--gameDir" }) {
@@ -131,6 +151,19 @@ class LaunchSpecBuilder(private val layout: GameLayout) {
         val config = layout.logConfig(file.id)
         if (!config.isFile) return null
         return logging.argument.replace("\${path}", config.absolutePath)
+    }
+
+    /**
+     * Forge and NeoForge run the game from their own patched jars and tell their
+     * bootstrap to skip the vanilla jar on the class path by the name the official
+     * launcher stores it under, `<version id>.jar`. Here that jar keeps the vanilla
+     * id, so its real name joins the list: left in, it is loaded as a second module
+     * with the game's packages, and the modules fail to resolve.
+     */
+    private fun ignoringClientJar(arguments: List<String>, clientJar: String): List<String> = arguments.map { argument ->
+        if (!argument.startsWith(IGNORE_LIST)) return@map argument
+        val skipped = argument.removePrefix(IGNORE_LIST).split(',')
+        if (skipped.any { it.isNotEmpty() && clientJar.startsWith(it) }) argument else "$argument,$clientJar"
     }
 
     /**
@@ -198,5 +231,9 @@ class LaunchSpecBuilder(private val layout: GameLayout) {
             out = out.replace("\${$key}", value)
         }
         return out
+    }
+
+    private companion object {
+        const val IGNORE_LIST = "-DignoreList="
     }
 }

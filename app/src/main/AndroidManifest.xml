@@ -43,6 +43,7 @@
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
+        android:localeConfig="@xml/locales_config"
         android:largeHeap="true"
         android:supportsRtl="false"
         android:theme="@style/Theme.Millida">
@@ -53,13 +54,9 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode|density|smallestScreenSize"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
-            android:screenOrientation="fullUser"
+            android:screenOrientation="${launcherOrientation}"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Millida">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
             <!--
               The site's "Играть" and "Установить в Millida Launcher" buttons open
               millida:// addresses. Of the https links to millida.net only pack
@@ -84,6 +81,104 @@
                 <data android:pathPrefix="/p/" />
             </intent-filter>
         </activity>
+
+        <!--
+          The home screen icon, one alias per icon of the desktop's picker
+          (Settings → Вид → «Иконка приложения»). Exactly one is enabled; the
+          launcher's own links stay on MainActivity, so switching the icon never
+          breaks a millida:// or pack-code link.
+        -->
+        <activity-alias
+            android:name=".IconDefault"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconSpark"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_spark"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_spark"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconFlame"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_flame"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_flame"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconAmethyst"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_amethyst"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_amethyst"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconLegend"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_legend"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_legend"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconGold"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_gold"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_gold"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconDiamond"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_diamond"
+            android:label="@string/app_name"
+            android:roundIcon="@mipmap/ic_launcher_diamond"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
 
         <activity
             android:name=".GameActivity"
@@ -163,8 +258,24 @@
           us and the update package the system installer reads both live inside
           our own storage, which no other application may open directly.
         -->
+        <!--
+          The builds' folders in the system «Files» app and in file pickers:
+          app storage is closed to file managers since Android 11, and a mod
+          author needs a way to put a jar into a build.
+        -->
+        <provider
+            android:name=".GameFilesProvider"
+            android:authorities="${applicationId}.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
         <receiver
             android:name=".UpdateInstallReceiver"
+
             android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"

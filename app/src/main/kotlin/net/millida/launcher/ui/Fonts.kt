@@ -18,7 +18,3 @@ val UnboundedFamily: FontFamily = FontFamily(
     Font(R.font.unbounded_bold, FontWeight.Bold),
     Font(R.font.unbounded_black, FontWeight.Black),
 )
-
-val MonocraftFamily: FontFamily = FontFamily(
-    Font(R.font.monocraft, FontWeight.Normal),
-)

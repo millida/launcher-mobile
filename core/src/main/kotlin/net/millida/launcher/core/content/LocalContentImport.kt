@@ -5,6 +5,7 @@ import net.millida.launcher.core.Hashing
 import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.catalog.ContentKind
 import net.millida.launcher.core.atomicCopyFrom
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.profile.Profile
 import java.io.File
 import java.io.IOException
@@ -36,24 +37,23 @@ class LocalContentImport(
         val warnings = ArrayList<String>()
 
         if (facts.shape == ArchiveShape.NOT_AN_ARCHIVE) {
-            return reject(source, fileName, facts, facts.unreadable.ifBlank { "это не jar и не zip" })
+            return reject(source, fileName, facts, facts.unreadable.ifBlank { tr("это не jar и не zip") })
         }
         val kind = facts.kind()
-            ?: return reject(source, fileName, facts, "не удалось понять, что это за файл")
+            ?: return reject(source, fileName, facts, tr("не удалось понять, что это за файл"))
 
         if (facts.strongFindings >= 2) {
-            warnings += "Внутри файла есть то, что обычному моду не нужно: " +
-                facts.findings.filter { it.strong }.joinToString(", ") { it.text }
+            warnings += tr("Внутри файла есть то, что обычному моду не нужно: {0}", facts.findings.filter { it.strong }.joinToString(", ") { it.text })
         }
 
         var needsConsent = facts.strongFindings >= 2
         if (kind == ContentKind.MOD && !facts.runsOn(profile.loader)) {
             val wanted = profile.loader.label
-            warnings += "Файл собран под ${facts.loaderLabel()}, а сборка на $wanted — игра с ним не запустится"
+            warnings += tr("Файл собран под {0}, а сборка на {wanted} — игра с ним не запустится", facts.loaderLabel(), wanted)
             needsConsent = true
         }
         if (facts.fitsGameVersion(profile.gameVersion) == false) {
-            warnings += "Файл собран под ${facts.gameVersionRange}, а сборка на ${profile.gameVersion}"
+            warnings += tr("Файл собран под {gameVersionRange}, а сборка на {gameVersion}", facts.gameVersionRange, profile.gameVersion)
             needsConsent = true
         }
 
@@ -73,11 +73,11 @@ class LocalContentImport(
         kindOverride: ContentKind? = null,
     ): File {
         if (candidate.rejection.isNotEmpty()) throw IOException(candidate.rejection)
-        val kind = kindOverride ?: candidate.kind ?: throw IOException("не удалось понять, что это за файл")
+        val kind = kindOverride ?: candidate.kind ?: throw IOException(tr("не удалось понять, что это за файл"))
         if (candidate.needsConsent && !consent) {
-            throw IOException(candidate.warnings.firstOrNull() ?: "файл требует подтверждения")
+            throw IOException(candidate.warnings.firstOrNull() ?: tr("файл требует подтверждения"))
         }
-        if (!candidate.source.isFile) throw IOException("файл ${candidate.fileName} пропал")
+        if (!candidate.source.isFile) throw IOException(tr("файл {fileName} пропал", candidate.fileName))
 
         val folder = contentFolder(layout, profileDir, kind).also { it.mkdirs() }
         val target = SafePath.join(folder, candidate.fileName)
@@ -101,7 +101,7 @@ class LocalContentImport(
         kind = null,
         facts = facts,
         warnings = emptyList(),
-        rejection = "Файл $fileName не годится для сборки: $why",
+        rejection = tr("Файл {fileName} не годится для сборки: {why}", fileName, why),
         needsConsent = false,
     )
 }

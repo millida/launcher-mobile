@@ -5,12 +5,14 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.update.UpdatePolicy
 import java.io.File
 
@@ -27,12 +29,11 @@ object SelfInstallEvents {
 }
 
 /**
- * Installs our own update through a PackageInstaller session. From API 31 the
- * session asks for no user action; the system honours that only for the
- * installer of record (this app, after the first update installed this way),
- * on an update of an already installed package, with targetSdk >= 31 (we
- * target 35). Android 12-14 may still show the dialog once (first update, or
- * the system's own conditions), which arrives as STATUS_PENDING_USER_ACTION.
+ * Installs our own update through a PackageInstaller session. The system installs
+ * without asking only from API 31 and only for an installer that declares
+ * UPDATE_PACKAGES_WITHOUT_USER_ACTION; in every other case the session comes back
+ * as STATUS_PENDING_USER_ACTION with the confirmation to show, and
+ * [UpdateInstallReceiver] has to show it — otherwise nothing happens at all.
  */
 object SelfInstaller {
     private const val TAG = "millida"
@@ -40,6 +41,17 @@ object SelfInstaller {
 
     fun canInstall(context: Context): Boolean =
         context.packageManager.canRequestPackageInstalls()
+
+    /** See [UpdatePolicy.installsSilently]: read from what this build really declares. */
+    fun installsSilently(context: Context): Boolean {
+        @Suppress("DEPRECATION")
+        val declared = runCatching {
+            context.packageManager
+                .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
+                .requestedPermissions
+        }.getOrNull()
+        return UpdatePolicy.installsSilently(Build.VERSION.SDK_INT, declared?.toList().orEmpty())
+    }
 
     /** Sends the player to the "install unknown apps" switch of this app. */
     fun openInstallSettings(context: Context) {
@@ -70,7 +82,9 @@ object SelfInstaller {
                         session.fsync(out)
                     }
                 }
-                val intent = Intent(ACTION_RESULT).setPackage(context.packageName)
+                // By class: the receiver declares no filter, and an intent that named only the
+                // action never reached it, so the system's confirmation was never shown.
+                val intent = Intent(context, UpdateInstallReceiver::class.java).setAction(ACTION_RESULT)
                 // mutable: the system fills in status extras
                 val flags = PendingIntent.FLAG_UPDATE_CURRENT or
                     (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
@@ -112,11 +126,11 @@ class UpdateInstallReceiver : BroadcastReceiver() {
                 Log.w("millida", "установка обновления: статус $status, $why")
                 SelfInstallEvents.post(
                     when (status) {
-                        PackageInstaller.STATUS_FAILURE_STORAGE -> "Не хватило места для обновления"
+                        PackageInstaller.STATUS_FAILURE_STORAGE -> tr("Не хватило места для обновления")
                         PackageInstaller.STATUS_FAILURE_CONFLICT,
                         PackageInstaller.STATUS_FAILURE_INCOMPATIBLE ->
-                            "Обновление не подошло к установленной версии — скачай её с сайта"
-                        else -> "Не получилось установить обновление — повтори позже"
+                            tr("Обновление не подошло к установленной версии — скачай её с сайта")
+                        else -> tr("Не получилось установить обновление — повтори позже")
                     },
                     true,
                 )

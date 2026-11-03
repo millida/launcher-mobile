@@ -9,6 +9,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.MemoryTuning
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.launch.LaunchSpec
 import net.millida.launcher.core.runtime.InstalledRuntime
 import java.io.File
@@ -40,26 +41,26 @@ class GameRunner(
         heapMb: Int,
         logFile: File,
     ): Boolean {
-        if (RuntimeBridge.running()) throw IOException("игра уже запущена")
+        if (RuntimeBridge.running()) throw IOException(tr("игра уже запущена"))
         if (started.get()) {
-            throw IOException("после выхода из игры перезапусти приложение — виртуальная машина Java поднимается один раз")
+            throw IOException(tr("после выхода из игры перезапусти приложение — виртуальная машина Java поднимается один раз"))
         }
 
         // Loading the library here, on a background thread, keeps the failure
         // catchable: the same call from the surface callback would land on the
         // main thread as an uncatchable UnsatisfiedLinkError.
-        state.value = GameState.Starting("готовим мост")
+        state.value = GameState.Starting(tr("готовим мост"))
         try {
             RuntimeBridge.load()
         } catch (error: Throwable) {
-            state.value = GameState.Stopped("не загрузился мост: ${error.message}")
-            throw IOException("не загрузился нативный мост: ${error.message}", error)
+            state.value = GameState.Stopped(tr("не загрузился мост: {message}", error.message))
+            throw IOException(tr("не загрузился нативный мост: {message}", error.message), error)
         }
 
-        state.value = GameState.Starting("ждём поверхность отрисовки")
+        state.value = GameState.Starting(tr("ждём поверхность отрисовки"))
         if (!RuntimeBridge.awaitSurface()) {
-            state.value = GameState.Stopped("экран игры не успел появиться")
-            throw IOException("экран игры не открылся — попробуй снова")
+            state.value = GameState.Stopped(tr("экран игры не успел появиться"))
+            throw IOException(tr("экран игры не открылся — попробуй снова"))
         }
 
         val classpath = (runtime.bridgeClasspath + spec.classpath).joinToString(":") { it.absolutePath }
@@ -129,7 +130,7 @@ class GameRunner(
         val reason = when {
             ok -> null
             failure != null -> failure?.message ?: failure.toString()
-            else -> "игра закрылась с ошибкой — журнал в ${logFile.name}"
+            else -> tr("игра закрылась с ошибкой — журнал в {name}", logFile.name)
         }
         state.value = GameState.Stopped(reason)
         return ok

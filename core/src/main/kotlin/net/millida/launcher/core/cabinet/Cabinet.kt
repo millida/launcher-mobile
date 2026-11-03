@@ -10,6 +10,7 @@ import net.millida.launcher.core.account.MillidaAuth
 import net.millida.launcher.core.account.Unauthorized
 import java.io.IOException
 
+import net.millida.launcher.core.i18n.tr
 const val MILLIDA_SITE = "https://millida.net"
 
 /** Anything the cabinet screens can show the player as-is. */
@@ -19,19 +20,19 @@ open class CabinetError(message: String, cause: Throwable? = null) : IOException
  * A lapsed session is not a failure to report as one: the screen has to offer
  * the sign-in button, so it needs a verdict it can tell apart from a real error.
  */
-class SignInRequired(cause: Throwable? = null) : CabinetError("Нужен вход в Millida", cause)
+class SignInRequired(cause: Throwable? = null) : CabinetError(tr("Нужен вход в Millida"), cause)
 
 internal suspend fun MillidaAuth.cabinetElement(path: String): JsonElement = try {
     authorizedElement(path, "GET", null)
 } catch (expired: Unauthorized) {
     throw SignInRequired(expired)
 } catch (error: IOException) {
-    throw CabinetError(error.message ?: "Не удалось загрузить данные кабинета", error)
+    throw CabinetError(error.message ?: tr("Не удалось загрузить данные кабинета"), error)
 }
 
 internal suspend fun MillidaAuth.cabinetObject(path: String): JsonObject =
     cabinetElement(path) as? JsonObject
-        ?: throw CabinetError("Сервер ответил не тем, что ожидалось")
+        ?: throw CabinetError(tr("Сервер ответил не тем, что ожидалось"))
 
 /**
  * An empty answer is a normal answer here: a fresh account has no operations,

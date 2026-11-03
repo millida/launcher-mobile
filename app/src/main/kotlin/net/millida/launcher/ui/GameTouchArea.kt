@@ -43,6 +43,10 @@ import net.millida.launcher.core.hud.HudKeys
 import net.millida.launcher.core.input.AndroidKeys
 import net.millida.launcher.core.input.CursorMapping
 import net.millida.launcher.core.input.KeyCodes
+import net.millida.launcher.core.input.TouchAcceleration
+import net.millida.launcher.core.input.TapRouting
+import net.millida.launcher.core.input.TouchGestures
+import net.millida.launcher.TapTargetFile
 import net.millida.launcher.runtime.GameInputSink
 import net.millida.launcher.runtime.GameSurfaceView
 import kotlin.math.PI
@@ -52,11 +56,12 @@ import kotlin.math.round
 import kotlin.math.sin
 
 private const val CLICK_MS = 70L
-private const val TAP_MS = 200L
+private const val TAP_MS = TouchGestures.TAP_MS
 private const val MENU_LONG_PRESS_MS = 400L
 private const val TOUCH_SLOP_DP = 9f
 private const val SCROLL_STEP_DP = 28f
 private const val MENU_FRAME_GAP_MS = 40L
+private const val MENU_HOVER_MS = 45L
 private const val CURSOR_JUMP_PX = 6f
 private const val DROP_PRESS_MS = 450L
 private const val DROP_REPEAT_FROM_MS = 1_000L
@@ -95,8 +100,12 @@ internal class MenuPointer(private val sink: GameInputSink) {
 
     fun press(button: Int) {
         steps.trySend {
-            val wait = MENU_FRAME_GAP_MS - (SystemClock.uptimeMillis() - jumpedAt)
-            if (wait > 0) delay(wait)
+            // The game finds the hovered button from the last move it saw: the press repeats the
+            // position and lets one more frame pass, so the first tap in a fresh menu clicks at once
+            // instead of only putting the cursor there.
+            if (!lastX.isNaN()) sink.cursorPosition(lastX, lastY)
+            val wait = maxOf(MENU_FRAME_GAP_MS - (SystemClock.uptimeMillis() - jumpedAt), MENU_HOVER_MS)
+            delay(wait)
             pressed += button
             sink.mouseButton(button, true)
         }
@@ -175,6 +184,9 @@ internal fun GameTouchArea(
     guiScale: Int,
     forceUnicode: Boolean,
     haptics: Boolean,
+    resolution: Float = 1f,
+    acceleration: Boolean = false,
+    invertY: Boolean = false,
     onCursor: (Offset) -> Unit,
     onFirstTouch: () -> Unit,
     onMouseLook: () -> Unit,
@@ -193,6 +205,9 @@ internal fun GameTouchArea(
     val wantedScale by rememberUpdatedState(guiScale)
     val unicode by rememberUpdatedState(forceUnicode)
     val buzzOn by rememberUpdatedState(haptics)
+    val gamePixels by rememberUpdatedState(resolution)
+    val accelerated by rememberUpdatedState(acceleration)
+    val inverted by rememberUpdatedState(invertY)
     val cursorTo by rememberUpdatedState(onCursor)
     val firstTouch by rememberUpdatedState(onFirstTouch)
     val mouseLook by rememberUpdatedState(onMouseLook)
@@ -230,7 +245,10 @@ internal fun GameTouchArea(
                     sink.key(code, code, false)
                 }
 
-                fun hotbarScale(): Int = Hotbar.scale(size.width, size.height, wantedScale, unicode)
+                // The hotbar is laid out in the game's pixels, which a reduced resolution makes fewer.
+                fun gameWidth(): Int = (size.width * gamePixels).toInt().coerceAtLeast(1)
+                fun gameHeight(): Int = (size.height * gamePixels).toInt().coerceAtLeast(1)
+                fun hotbarScale(): Int = Hotbar.scale(gameWidth(), gameHeight(), wantedScale, unicode)
 
                 fun stopMenu(touch: Touch) {
                     touch.timer?.cancel()
@@ -272,7 +290,7 @@ internal fun GameTouchArea(
                 }
 
                 fun beginHotbar(touch: Touch, scale: Int) {
-                    touch.slot = Hotbar.slotAt(touch.start.x, touch.start.y, size.width, size.height, scale)
+                    touch.slot = Hotbar.slotAt(touch.start.x * gamePixels, touch.start.y * gamePixels, gameWidth(), gameHeight(), scale)
                     touch.timer = scope.launch {
                         delay(DROP_PRESS_MS)
                         if (touch.moved || touch.role != TouchRole.HOTBAR || touch.slot != selectedSlot) return@launch
@@ -316,7 +334,7 @@ internal fun GameTouchArea(
                     val scale = hotbarScale()
                     val role = when {
                         !look -> TouchRole.MENU
-                        Hotbar.contains(position.x, position.y, size.width, size.height, scale) -> TouchRole.HOTBAR
+                        Hotbar.contains(position.x * gamePixels, position.y * gamePixels, gameWidth(), gameHeight(), scale) -> TouchRole.HOTBAR
                         else -> TouchRole.LOOK
                     }
                     val touch = Touch(change.id, position, change.uptimeMillis, role)
@@ -335,8 +353,14 @@ internal fun GameTouchArea(
                     when (touch.role) {
                         TouchRole.LOOK -> {
                             if (delta != Offset.Zero) {
-                                sink.cursorDelta(delta.x * lookSensitivity, delta.y * lookSensitivity)
+                                val gain = if (accelerated) {
+                                    TouchAcceleration.gain(delta.x, delta.y, change.uptimeMillis - change.previousUptimeMillis)
+                                } else {
+                                    1f
+                                }
+                                sink.cursorDelta(delta.x * lookSensitivity * gain, TouchGestures.lookY(delta.y, inverted) * lookSensitivity * gain)
                             }
+
                             if (beyond) {
                                 touch.moved = true
                                 if (!touch.holding) {
@@ -352,17 +376,15 @@ internal fun GameTouchArea(
                                 touch.timer?.cancel()
                             }
                             touch.hotbarTravel += delta.x
-                            val step = Hotbar.slotPixels(hotbarScale())
-                            while (touch.hotbarTravel >= step) {
-                                sink.scroll(0.0, -1.0)
-                                selectedSlot = (selectedSlot + 1) % Hotbar.SLOTS
-                                touch.hotbarTravel -= step
+                            val step = Hotbar.slotPixels(hotbarScale()) / gamePixels
+
+                            val (passed, rest) = TouchGestures.slotSteps(touch.hotbarTravel, step)
+                            touch.hotbarTravel = rest
+                            repeat(abs(passed)) {
+                                sink.scroll(0.0, if (passed > 0) -1.0 else 1.0)
+                                selectedSlot = (selectedSlot + (if (passed > 0) 1 else Hotbar.SLOTS - 1)) % Hotbar.SLOTS
                             }
-                            while (touch.hotbarTravel <= -step) {
-                                sink.scroll(0.0, 1.0)
-                                selectedSlot = (selectedSlot + Hotbar.SLOTS - 1) % Hotbar.SLOTS
-                                touch.hotbarTravel += step
-                            }
+                            if (passed != 0) buzz(HapticFeedbackConstants.CLOCK_TICK)
                         }
                         TouchRole.MENU -> {
                             if (touch.scrolling) {
@@ -406,8 +428,13 @@ internal fun GameTouchArea(
                                 touch.holding = false
                                 holdLeft(false)
                             }
-                            !touch.moved && change.uptimeMillis - touch.startedAt < TAP_MS -> {
-                                val button = tapButton
+                            TouchGestures.isTap(
+                                change.uptimeMillis - touch.startedAt,
+                                (position - touch.start).getDistance(),
+                                slop,
+                            ) && !touch.moved -> {
+                                val button = TapRouting.button(tapButton, TapTargetFile.current())
+                                buzz(HapticFeedbackConstants.KEYBOARD_TAP)
                                 if (button != GameSurfaceView.BUTTON_LEFT || leftHolders == 0) {
                                     scope.launch {
                                         sink.mouseButton(button, true)

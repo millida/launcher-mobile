@@ -173,4 +173,28 @@ class PackExportTest {
             content.trees.any { File(it, "mods/hand-made.jar").isFile },
         )
     }
+    @Test
+    fun `CurseForge zip - ids from the pack, the rest in overrides, loader with its build`() {
+        val dir = buildDir()
+        val out = PackExport.exportCurseForge(
+            fabric,
+            dir,
+            File(tmp.root, "out/pack.zip"),
+            known = mapOf(
+                "mods/sodium.jar" to PackExport.CurseForgeRef(394468, 5_000_001),
+                "mods/gone.jar" to PackExport.CurseForgeRef(1, 2),
+            ),
+        )
+        val files = entries(out)
+        val manifest = MojangJson.parseToJsonElement(files.getValue("manifest.json")).jsonObject
+        assertEquals("minecraftModpack", manifest["manifestType"]?.jsonPrimitive?.content)
+        val loader = manifest["minecraft"]!!.jsonObject["modLoaders"]!!.jsonArray.single().jsonObject
+        assertEquals("CurseForge reads the loader and its build from one string", "fabric-0.16.9", loader["id"]?.jsonPrimitive?.content)
+        val listed = manifest["files"]!!.jsonArray.map { it.jsonObject }
+        assertEquals("a file missing on disk is not listed: the pack would ask for a mod the build lacks", 1, listed.size)
+        assertEquals(394468L, listed.single()["projectID"]!!.jsonPrimitive.long)
+        assertFalse("a listed mod is not copied a second time", "overrides/mods/sodium.jar" in files)
+        assertTrue("a mod without ids travels in overrides", "overrides/mods/hand-made.jar" in files)
+        assertFalse("disabled files stay on the phone", files.keys.any { it.endsWith(".disabled") })
+    }
 }

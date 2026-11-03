@@ -28,6 +28,7 @@ import net.millida.launcher.core.friends.InviteOverview
 import net.millida.launcher.core.friends.InviteStatus
 import net.millida.launcher.core.friends.InviteTier
 import net.millida.launcher.core.friends.Referrals
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MAvatar
 import net.millida.launcher.ui.MBadge
 import net.millida.launcher.ui.MButtonRow
@@ -75,7 +76,7 @@ internal fun LazyListScope.inviteTabItems(
     overview.invitedBy?.let { by ->
         item(key = "invite-by") {
             Text(
-                "Тебя пригласил " + (by.nickname ?: "друг"),
+                tr("Тебя пригласил {0}", by.nickname ?: tr("друг")),
                 modifier = Modifier
                     .animateItem()
                     .padding(horizontal = 4.dp),
@@ -90,18 +91,18 @@ internal fun LazyListScope.inviteTabItems(
         item(key = "invite-empty") {
             MEmptyState(
                 icon = MIcons.gift,
-                title = "Пока никого",
+                title = tr("Пока никого"),
                 modifier = Modifier.animateItem(),
-                actionText = if (overview.link.isNotEmpty()) "Копировать ссылку" else null,
-                onAction = if (overview.link.isNotEmpty()) ({ onCopy(overview.link, "Ссылка скопирована") }) else null,
+                actionText = if (overview.link.isNotEmpty()) tr("Копировать ссылку") else null,
+                onAction = if (overview.link.isNotEmpty()) ({ onCopy(overview.link, tr("Ссылка скопирована")) }) else null,
                 actionIcon = MIcons.link,
             )
         }
         return
     }
-    item(key = "invite-cap") { SocialCaption("Приглашённые · ${overview.friends.size}", Modifier.animateItem()) }
+    item(key = "invite-cap") { SocialCaption(tr("Приглашённые · {size}", overview.friends.size), Modifier.animateItem()) }
     items(overview.friends.withIndex().toList(), key = { "invited:" + it.index + ":" + it.value.invitedAt }) { (_, friend) ->
-        val nick = friend.nickname ?: "Игрок"
+        val nick = friend.nickname ?: tr("Игрок")
         MListRow(
             title = nick,
             modifier = Modifier.animateItem(),
@@ -139,13 +140,13 @@ private fun ApplyCodeCard(applying: Boolean, draft: String, onApply: (String) ->
     var code by rememberSaveable(draft) { mutableStateOf(draft) }
     val ready = Referrals.normalizeCode(code).isNotEmpty()
     MCard(modifier = modifier, contentPadding = 14.dp) {
-        CardTitle(MIcons.gift, "Есть код друга?")
+        CardTitle(MIcons.gift, tr("Есть код друга?"))
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             MField(
                 value = code,
                 onValueChange = { code = it.uppercase().take(CODE_INPUT_LIMIT) },
-                placeholder = "Код друга",
+                placeholder = tr("Код друга"),
                 modifier = Modifier.weight(1f),
                 imeAction = ImeAction.Done,
                 onImeAction = { if (ready && !applying) onApply(code) },
@@ -154,7 +155,7 @@ private fun ApplyCodeCard(applying: Boolean, draft: String, onApply: (String) ->
             )
             Spacer(Modifier.width(8.dp))
             MPrimaryButton(
-                "Ввести",
+                tr("Ввести"),
                 onClick = { onApply(code) },
                 enabled = ready && !applying,
                 icon = MIcons.check,
@@ -168,20 +169,20 @@ private fun ApplyCodeCard(applying: Boolean, draft: String, onApply: (String) ->
 @Composable
 private fun CodeCard(overview: InviteOverview, onCopy: (String, String) -> Unit, modifier: Modifier = Modifier) {
     MCard(modifier = modifier, contentPadding = 14.dp) {
-        CardTitle(MIcons.users, "Пригласи друга — получи PLUS")
+        CardTitle(MIcons.users, tr("Пригласи друга — получи PLUS"))
         Spacer(Modifier.height(12.dp))
         Text(overview.code, style = MillidaType.pixel, color = millida.fg, maxLines = 1)
         Spacer(Modifier.height(12.dp))
         MButtonRow {
             if (overview.link.isNotEmpty()) {
                 MPrimaryButton(
-                    "Копировать ссылку",
-                    onClick = { onCopy(overview.link, "Ссылка скопирована") },
+                    tr("Копировать ссылку"),
+                    onClick = { onCopy(overview.link, tr("Ссылка скопирована")) },
                     icon = MIcons.link,
                     size = MButtonSize.Small,
                 )
             }
-            MSecondaryButton("Код", onClick = { onCopy(overview.code, "Код скопирован") }, icon = MIcons.copy, size = MButtonSize.Small)
+            MSecondaryButton(tr("Код"), onClick = { onCopy(overview.code, tr("Код скопирован")) }, icon = MIcons.copy, size = MButtonSize.Small)
         }
         Spacer(Modifier.height(10.dp))
         Text(Referrals.ruleText(overview), style = MillidaType.small, color = millida.fgSubtle)
@@ -194,7 +195,7 @@ private fun LadderCard(overview: InviteOverview, modifier: Modifier = Modifier) 
     val nextTier = overview.next?.let { next -> overview.tiers.firstOrNull { it.friends == next.friends } }
     MCard(modifier = modifier, contentPadding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            CardTitle(MIcons.trophy, "Засчитано: " + Referrals.friendsText(overview.qualified), Modifier.weight(1f))
+            CardTitle(MIcons.trophy, tr("Засчитано: {0}", Referrals.friendsText(overview.qualified)), Modifier.weight(1f))
             if (overview.earnedPlusDays > 0) {
                 MBadge(
                     "+" + Referrals.daysText(overview.earnedPlusDays) + " PLUS",
@@ -209,7 +210,7 @@ private fun LadderCard(overview: InviteOverview, modifier: Modifier = Modifier) 
             MProgressBar(Referrals.tierProgress(overview.qualified, overview.tiers))
             Spacer(Modifier.height(6.dp))
             Text(
-                "Ещё " + Referrals.friendsText(next.left) + " — " + Referrals.tierRewardText(nextTier),
+                tr("Ещё {0} — {1}", Referrals.friendsText(next.left), Referrals.tierRewardText(nextTier)),
                 style = MillidaType.small,
                 color = colors.fgSubtle,
             )

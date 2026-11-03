@@ -24,6 +24,7 @@ import net.millida.launcher.core.friends.NotifyLevels
 import net.millida.launcher.core.friends.levelOf
 import java.util.concurrent.ConcurrentHashMap
 
+import net.millida.launcher.core.i18n.tr
 sealed class AlertOpen {
     data class Chat(val target: ChatTarget) : AlertOpen()
 
@@ -122,9 +123,9 @@ class FriendAlerts(context: Context) {
         val manager = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.createNotificationChannels(
             listOf(
-                NotificationChannel(CHANNEL_MESSAGES, "Сообщения друзей", NotificationManager.IMPORTANCE_HIGH),
-                NotificationChannel(CHANNEL_PRESENCE, "Друзья в игре и в сети", NotificationManager.IMPORTANCE_DEFAULT),
-                NotificationChannel(CHANNEL_REQUESTS, "Заявки в друзья", NotificationManager.IMPORTANCE_DEFAULT),
+                NotificationChannel(CHANNEL_MESSAGES, tr("Сообщения друзей"), NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(CHANNEL_PRESENCE, tr("Друзья в игре и в сети"), NotificationManager.IMPORTANCE_DEFAULT),
+                NotificationChannel(CHANNEL_REQUESTS, tr("Заявки в друзья"), NotificationManager.IMPORTANCE_DEFAULT),
             ),
         )
         channelsReady = true

@@ -18,6 +18,7 @@ import net.millida.launcher.core.account.MillidaAuth
 import net.millida.launcher.core.account.SecretVault
 import net.millida.launcher.core.account.Unauthorized
 import net.millida.launcher.core.http.Downloader
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -45,7 +46,7 @@ class HostingClient(
 
     val console: ServerConsole = ServerConsole(auth, vault, client, apiBase)
 
-    suspend fun servers(): List<HostingServerState> = guard("Не удалось получить список серверов") {
+    suspend fun servers(): List<HostingServerState> = guard(tr("Не удалось получить список серверов")) {
         auth.authorizedElement("/hosting/servers/me", "GET", null)
             .asArray("servers", "items")
             .map { it.toServerState() }
@@ -53,7 +54,7 @@ class HostingClient(
 
     suspend fun details(serverId: String): HostingDetails {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось открыть сервер") {
+        return guard(tr("Не удалось открыть сервер")) {
             val body = auth.authorized(base(id), "GET", null)
             val access = body.child("access")
             HostingDetails(
@@ -92,7 +93,7 @@ class HostingClient(
 
     suspend fun stats(serverId: String): HostingStats {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить нагрузку сервера") {
+        return guard(tr("Не удалось получить нагрузку сервера")) {
             val body = auth.authorized("${base(id)}/stats", "GET", null)
             HostingStats(
                 running = body.flag("running"),
@@ -107,7 +108,7 @@ class HostingClient(
 
     suspend fun online(serverId: String): List<HostingOnlinePlayer> {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить список игроков") {
+        return guard(tr("Не удалось получить список игроков")) {
             auth.authorizedElement("${base(id)}/online", "GET", null)
                 .asArray("players")
                 .map { HostingOnlinePlayer(name = it.str("name"), uuid = it.str("uuid")) }
@@ -116,7 +117,7 @@ class HostingClient(
 
     suspend fun events(serverId: String, limit: Int = 30): List<HostingEvent> {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить журнал событий") {
+        return guard(tr("Не удалось получить журнал событий")) {
             auth.authorizedElement("${base(id)}/events?limit=$limit", "GET", null)
                 .asArray("events", "items")
                 .map {
@@ -133,7 +134,7 @@ class HostingClient(
 
     suspend fun crash(serverId: String): HostingCrash {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось прочитать причину падения") {
+        return guard(tr("Не удалось прочитать причину падения")) {
             val body = auth.authorized("${base(id)}/crash", "GET", null)
             val hint = body.child("hint")
             HostingCrash(
@@ -146,23 +147,23 @@ class HostingClient(
     }
 
     suspend fun start(serverId: String): HostingActionResult =
-        power(serverId, "start", "Не удалось запустить сервер", "Сервер запускается")
+        power(serverId, "start", tr("Не удалось запустить сервер"), tr("Сервер запускается"))
 
     suspend fun stop(serverId: String): HostingActionResult =
-        power(serverId, "stop", "Не удалось остановить сервер", "Сервер останавливается")
+        power(serverId, "stop", tr("Не удалось остановить сервер"), tr("Сервер останавливается"))
 
     suspend fun restart(serverId: String): HostingActionResult =
-        power(serverId, "restart", "Не удалось перезапустить сервер", "Перезапуск запущен")
+        power(serverId, "restart", tr("Не удалось перезапустить сервер"), tr("Перезапуск запущен"))
 
     suspend fun kill(serverId: String): HostingActionResult =
-        power(serverId, "kill", "Не удалось завершить процесс сервера", "Процесс сервера завершён")
+        power(serverId, "kill", tr("Не удалось завершить процесс сервера"), tr("Процесс сервера завершён"))
 
     suspend fun updateSettings(serverId: String, patch: JsonObject): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        if (patch.isEmpty()) throw HostingError("Нечего сохранять: настройки не изменились")
-        return guard("Не удалось сохранить настройки") {
+        if (patch.isEmpty()) throw HostingError(tr("Нечего сохранять: настройки не изменились"))
+        return guard(tr("Не удалось сохранить настройки")) {
             auth.authorized("${base(id)}/settings", "PATCH", patch)
-            HostingActionResult("Настройки сохранены — применятся после перезапуска")
+            HostingActionResult(tr("Настройки сохранены — применятся после перезапуска"))
         }
     }
 
@@ -182,7 +183,7 @@ class HostingClient(
 
     suspend fun setAutoRenew(serverId: String, enabled: Boolean): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось изменить автопродление") {
+        return guard(tr("Не удалось изменить автопродление")) {
             val body = auth.authorized(
                 "${base(id)}/plan/auto-renew",
                 "POST",
@@ -190,15 +191,15 @@ class HostingClient(
             )
             val until = body.str("paidUntil")
             HostingActionResult(
-                if (enabled) "Автопродление включено" else "Автопродление выключено",
-                if (until.isEmpty()) "" else "оплачено до $until",
+                if (enabled) tr("Автопродление включено") else tr("Автопродление выключено"),
+                if (until.isEmpty()) "" else tr("оплачено до {until}", until),
             )
         }
     }
 
     suspend fun usage(serverId: String, days: Int = 30): HostingUsage {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить статистику тарифа") {
+        return guard(tr("Не удалось получить статистику тарифа")) {
             val body = auth.authorized("${base(id)}/usage?days=$days", "GET", null)
             val summary = body.child("summary") ?: buildJsonObject { }
             HostingUsage(
@@ -214,24 +215,24 @@ class HostingClient(
 
     suspend fun deleteServer(serverId: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось удалить сервер") {
+        return guard(tr("Не удалось удалить сервер")) {
             auth.authorized(base(id), "DELETE", null)
-            HostingActionResult("Сервер удалён")
+            HostingActionResult(tr("Сервер удалён"))
         }
     }
 
     suspend fun rename(serverId: String, name: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        if (name.isBlank()) throw HostingError("Имя сервера не может быть пустым")
-        return guard("Не удалось переименовать сервер") {
+        if (name.isBlank()) throw HostingError(tr("Имя сервера не может быть пустым"))
+        return guard(tr("Не удалось переименовать сервер")) {
             auth.authorized("${base(id)}/name", "PATCH", buildJsonObject { put("name", name) })
-            HostingActionResult("Сервер переименован")
+            HostingActionResult(tr("Сервер переименован"))
         }
     }
 
     suspend fun network(serverId: String): HostingNetwork {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить адреса и порты") {
+        return guard(tr("Не удалось получить адреса и порты")) {
             val body = auth.authorized("${base(id)}/ports", "GET", null)
             HostingNetwork(
                 address = body.str("address"),
@@ -243,56 +244,56 @@ class HostingClient(
 
     suspend fun addPort(serverId: String, note: String = ""): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось выдать порт") {
+        return guard(tr("Не удалось выдать порт")) {
             val body = auth.authorized(
                 "${base(id)}/ports",
                 "POST",
                 buildJsonObject { if (note.isNotBlank()) put("note", note) },
             )
-            HostingActionResult("Порт выдан: ${body.int("port")}", body.str("address"))
+            HostingActionResult(tr("Порт выдан: {0}", body.int("port")), body.str("address"))
         }
     }
 
     suspend fun removePort(serverId: String, port: Int): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось убрать порт") {
+        return guard(tr("Не удалось убрать порт")) {
             auth.authorized("${base(id)}/ports/$port", "DELETE", null)
-            HostingActionResult("Порт $port убран")
+            HostingActionResult(tr("Порт {port} убран", port))
         }
     }
 
     suspend fun changeAddress(serverId: String, slug: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        if (slug.isBlank()) throw HostingError("Адрес не может быть пустым")
-        return guard("Не удалось сменить адрес") {
+        if (slug.isBlank()) throw HostingError(tr("Адрес не может быть пустым"))
+        return guard(tr("Не удалось сменить адрес")) {
             auth.authorized("${base(id)}/address", "PATCH", buildJsonObject { put("slug", slug) })
-            HostingActionResult("Адрес сервера изменён")
+            HostingActionResult(tr("Адрес сервера изменён"))
         }
     }
 
     suspend fun setDomain(serverId: String, domain: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось привязать домен") {
+        return guard(tr("Не удалось привязать домен")) {
             val body = auth.authorized("${base(id)}/domain", "PATCH", buildJsonObject { put("domain", domain) })
             val target = body.str("dnsTarget")
             HostingActionResult(
-                if (domain.isBlank()) "Домен отвязан" else "Домен привязан",
-                if (target.isEmpty()) "" else "пропиши в DNS запись на $target",
+                if (domain.isBlank()) tr("Домен отвязан") else tr("Домен привязан"),
+                if (target.isEmpty()) "" else tr("пропиши в DNS запись на {target}", target),
             )
         }
     }
 
     suspend fun shares(serverId: String): List<HostingShare> {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить доступы") {
+        return guard(tr("Не удалось получить доступы")) {
             auth.authorizedElement("${base(id)}/shares", "GET", null).asArray("shares", "items").map { it.toShare() }
         }
     }
 
     suspend fun addShare(serverId: String, email: String, permissions: List<String>): List<HostingShare> {
         val id = HostingPaths.serverId(serverId)
-        if (email.isBlank()) throw HostingError("Укажи почту или ник того, кому даёшь доступ")
-        return guard("Не удалось выдать доступ") {
+        if (email.isBlank()) throw HostingError(tr("Укажи почту или ник того, кому даёшь доступ"))
+        return guard(tr("Не удалось выдать доступ")) {
             val payload = buildJsonObject {
                 put("email", email)
                 putJsonArray("permissions") { permissions.forEach { add(it) } }
@@ -303,7 +304,7 @@ class HostingClient(
 
     suspend fun updateShare(serverId: String, userId: String, permissions: List<String>): List<HostingShare> {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось изменить доступ") {
+        return guard(tr("Не удалось изменить доступ")) {
             val payload = buildJsonObject { putJsonArray("permissions") { permissions.forEach { add(it) } } }
             auth.authorizedElement("${base(id)}/shares/${encode(userId)}", "PATCH", payload)
                 .asArray("shares", "items")
@@ -313,15 +314,15 @@ class HostingClient(
 
     suspend fun removeShare(serverId: String, userId: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось забрать доступ") {
+        return guard(tr("Не удалось забрать доступ")) {
             auth.authorizedElement("${base(id)}/shares/${encode(userId)}", "DELETE", null)
-            HostingActionResult("Доступ забран")
+            HostingActionResult(tr("Доступ забран"))
         }
     }
 
     suspend fun apiKeys(serverId: String): List<HostingApiKey> {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить ключи API") {
+        return guard(tr("Не удалось получить ключи API")) {
             auth.authorizedElement("${base(id)}/api-keys", "GET", null).asArray("keys", "items").map {
                 HostingApiKey(
                     id = it.str("id"),
@@ -337,8 +338,8 @@ class HostingClient(
 
     suspend fun createApiKey(serverId: String, name: String, permissions: List<String>): HostingApiKeyIssued {
         val id = HostingPaths.serverId(serverId)
-        if (name.isBlank()) throw HostingError("Дай ключу имя, иначе его не отличить от других")
-        return guard("Не удалось создать ключ API") {
+        if (name.isBlank()) throw HostingError(tr("Дай ключу имя, иначе его не отличить от других"))
+        return guard(tr("Не удалось создать ключ API")) {
             val payload = buildJsonObject {
                 put("name", name)
                 putJsonArray("permissions") { permissions.forEach { add(it) } }
@@ -350,37 +351,37 @@ class HostingClient(
 
     suspend fun revokeApiKey(serverId: String, keyId: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось отозвать ключ API") {
+        return guard(tr("Не удалось отозвать ключ API")) {
             auth.authorized("${base(id)}/api-keys/${encode(keyId)}", "DELETE", null)
-            HostingActionResult("Ключ отозван")
+            HostingActionResult(tr("Ключ отозван"))
         }
     }
 
     suspend fun sftp(serverId: String): HostingSftp {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить доступ по SFTP") {
+        return guard(tr("Не удалось получить доступ по SFTP")) {
             auth.authorized("${base(id)}/sftp", "GET", null).toSftp()
         }
     }
 
     suspend fun issueSftp(serverId: String): HostingSftp {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось выдать доступ по SFTP") {
+        return guard(tr("Не удалось выдать доступ по SFTP")) {
             auth.authorized("${base(id)}/sftp", "POST", buildJsonObject { }).toSftp().copy(active = true)
         }
     }
 
     suspend fun revokeSftp(serverId: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось отозвать доступ по SFTP") {
+        return guard(tr("Не удалось отозвать доступ по SFTP")) {
             auth.authorized("${base(id)}/sftp", "DELETE", null)
-            HostingActionResult("Доступ по SFTP отозван")
+            HostingActionResult(tr("Доступ по SFTP отозван"))
         }
     }
 
     suspend fun worlds(serverId: String): List<HostingWorld> {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить список миров") {
+        return guard(tr("Не удалось получить список миров")) {
             auth.authorizedElement("${base(id)}/worlds", "GET", null).asArray("worlds", "items").map {
                 HostingWorld(
                     name = it.str("name"),
@@ -394,17 +395,17 @@ class HostingClient(
 
     suspend fun switchWorld(serverId: String, name: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        if (name.isBlank()) throw HostingError("Не выбран мир")
-        return guard("Не удалось переключить мир") {
+        if (name.isBlank()) throw HostingError(tr("Не выбран мир"))
+        return guard(tr("Не удалось переключить мир")) {
             auth.authorized("${base(id)}/worlds/switch", "POST", buildJsonObject { put("name", name) })
-            HostingActionResult("Мир переключён — применится после перезапуска")
+            HostingActionResult(tr("Мир переключён — применится после перезапуска"))
         }
     }
 
     suspend fun files(serverId: String, path: String = "."): List<HostingFileEntry> {
         val id = HostingPaths.serverId(serverId)
         val remote = HostingPaths.remote(path)
-        return guard("Не удалось открыть папку") {
+        return guard(tr("Не удалось открыть папку")) {
             auth.authorizedElement("${base(id)}/files?path=${encode(remote)}", "GET", null)
                 .asArray("files", "items")
                 .map {
@@ -421,7 +422,7 @@ class HostingClient(
     suspend fun readFile(serverId: String, path: String): HostingFileContent {
         val id = HostingPaths.serverId(serverId)
         val remote = HostingPaths.remote(path)
-        return guard("Не удалось прочитать файл") {
+        return guard(tr("Не удалось прочитать файл")) {
             val body = auth.authorized("${base(id)}/files/content?path=${encode(remote)}", "GET", null)
             HostingFileContent(path = body.str("path").ifEmpty { remote }, content = body.str("content"))
         }
@@ -430,34 +431,34 @@ class HostingClient(
     suspend fun writeFile(serverId: String, path: String, content: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
         val remote = HostingPaths.remote(path)
-        if (remote == ".") throw HostingError("Не указан файл для записи")
-        return guard("Не удалось сохранить файл") {
+        if (remote == ".") throw HostingError(tr("Не указан файл для записи"))
+        return guard(tr("Не удалось сохранить файл")) {
             auth.authorized(
                 "${base(id)}/files/content?path=${encode(remote)}",
                 "PUT",
                 buildJsonObject { put("content", content) },
             )
-            HostingActionResult("Файл сохранён: $remote")
+            HostingActionResult(tr("Файл сохранён: {remote}", remote))
         }
     }
 
     suspend fun deleteFile(serverId: String, path: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
         val remote = HostingPaths.remote(path)
-        if (remote == ".") throw HostingError("Корневую папку сервера удалить нельзя")
-        return guard("Не удалось удалить файл") {
+        if (remote == ".") throw HostingError(tr("Корневую папку сервера удалить нельзя"))
+        return guard(tr("Не удалось удалить файл")) {
             auth.authorized("${base(id)}/files?path=${encode(remote)}", "DELETE", null)
-            HostingActionResult("Удалено: $remote")
+            HostingActionResult(tr("Удалено: {remote}", remote))
         }
     }
 
     suspend fun makeDirectory(serverId: String, path: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
         val remote = HostingPaths.remote(path)
-        if (remote == ".") throw HostingError("Не указано имя папки")
-        return guard("Не удалось создать папку") {
+        if (remote == ".") throw HostingError(tr("Не указано имя папки"))
+        return guard(tr("Не удалось создать папку")) {
             auth.authorized("${base(id)}/files/mkdir?path=${encode(remote)}", "POST", buildJsonObject { })
-            HostingActionResult("Папка создана: $remote")
+            HostingActionResult(tr("Папка создана: {remote}", remote))
         }
     }
 
@@ -465,7 +466,7 @@ class HostingClient(
         val id = HostingPaths.serverId(serverId)
         val source = HostingPaths.remote(from)
         val destination = HostingPaths.remote(to)
-        return guard("Не удалось переименовать файл") {
+        return guard(tr("Не удалось переименовать файл")) {
             auth.authorized(
                 "${base(id)}/files/rename",
                 "POST",
@@ -474,7 +475,7 @@ class HostingClient(
                     put("to", destination)
                 },
             )
-            HostingActionResult("Переименовано в $destination")
+            HostingActionResult(tr("Переименовано в {destination}", destination))
         }
     }
 
@@ -482,7 +483,7 @@ class HostingClient(
         val id = HostingPaths.serverId(serverId)
         val source = HostingPaths.remote(path)
         val target = HostingPaths.remote(destination)
-        return guard("Не удалось распаковать архив") {
+        return guard(tr("Не удалось распаковать архив")) {
             auth.authorized(
                 "${base(id)}/files/extract",
                 "POST",
@@ -491,13 +492,13 @@ class HostingClient(
                     put("dest", target)
                 },
             )
-            HostingActionResult("Архив распакован в $target")
+            HostingActionResult(tr("Архив распакован в {target}", target))
         }
     }
 
     suspend fun backups(serverId: String): List<HostingBackup> {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить резервные копии") {
+        return guard(tr("Не удалось получить резервные копии")) {
             auth.authorizedElement("${base(id)}/backups", "GET", null).asArray("backups", "items").map {
                 HostingBackup(
                     id = it.str("id"),
@@ -513,65 +514,65 @@ class HostingClient(
 
     suspend fun createBackup(serverId: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось создать копию") {
+        return guard(tr("Не удалось создать копию")) {
             auth.authorized("${base(id)}/backups", "POST", buildJsonObject { })
-            HostingActionResult("Копия поставлена в очередь")
+            HostingActionResult(tr("Копия поставлена в очередь"))
         }
     }
 
     suspend fun restoreBackup(serverId: String, backupId: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось восстановить из копии") {
+        return guard(tr("Не удалось восстановить из копии")) {
             auth.authorized("${base(id)}/backups/${encode(backupId)}/restore", "POST", buildJsonObject { })
-            HostingActionResult("Восстановление запущено")
+            HostingActionResult(tr("Восстановление запущено"))
         }
     }
 
     suspend fun deleteBackup(serverId: String, backupId: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось удалить копию") {
+        return guard(tr("Не удалось удалить копию")) {
             auth.authorized("${base(id)}/backups/${encode(backupId)}", "DELETE", null)
-            HostingActionResult("Копия удалена")
+            HostingActionResult(tr("Копия удалена"))
         }
     }
 
-    suspend fun plans(): List<HostingPlan> = guard("Не удалось получить тарифы") {
+    suspend fun plans(): List<HostingPlan> = guard(tr("Не удалось получить тарифы")) {
         auth.authorizedElement("/hosting/plans", "GET", null)
             .asArray("plans", "items")
             .map { it.toPlan() }
             .filter { it.code.isNotEmpty() }
     }
 
-    suspend fun freeGate(): HostingFreeGate = guard("Не удалось проверить условия бесплатного сервера") {
+    suspend fun freeGate(): HostingFreeGate = guard(tr("Не удалось проверить условия бесплатного сервера")) {
         auth.authorized("/hosting/free-gate", "GET", null).toFreeGate()
     }
 
-    suspend fun recheckFreeGate(): HostingFreeGate = guard("Не удалось проверить условия бесплатного сервера") {
+    suspend fun recheckFreeGate(): HostingFreeGate = guard(tr("Не удалось проверить условия бесплатного сервера")) {
         auth.authorized("/hosting/free-gate/recheck", "POST", buildJsonObject { }).toFreeGate()
     }
 
     suspend fun createServer(playKind: String, planCode: String?, name: String?): HostingServerState {
-        if (playKind !in HOSTING_PLAY_KINDS) throw HostingError("Не выбрано, во что играем")
+        if (playKind !in HOSTING_PLAY_KINDS) throw HostingError(tr("Не выбрано, во что играем"))
         val title = name?.trim().orEmpty()
         if (title.isNotEmpty() && title.length !in HOSTING_NAME_MIN..HOSTING_NAME_MAX) {
-            throw HostingError("Имя сервера — от $HOSTING_NAME_MIN до $HOSTING_NAME_MAX символов")
+            throw HostingError(tr("Имя сервера — от {HOSTING_NAME_MIN} до {HOSTING_NAME_MAX} символов", HOSTING_NAME_MIN, HOSTING_NAME_MAX))
         }
-        return guard("Не удалось создать сервер") {
+        return guard(tr("Не удалось создать сервер")) {
             val payload = buildJsonObject {
                 put("playKind", playKind)
                 if (!planCode.isNullOrBlank()) put("planCode", planCode)
                 if (title.isNotEmpty()) put("name", title)
             }
             val server = auth.authorized("/hosting/servers", "POST", payload).toServerState()
-            if (server.id.isEmpty()) throw HostingError("Не удалось создать сервер: ответ пришёл без номера сервера")
+            if (server.id.isEmpty()) throw HostingError(tr("Не удалось создать сервер: ответ пришёл без номера сервера"))
             server
         }
     }
 
     suspend fun changePlan(serverId: String, planCode: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        if (planCode.isBlank()) throw HostingError("Не выбран тариф")
-        return guard("Не удалось сменить тариф") {
+        if (planCode.isBlank()) throw HostingError(tr("Не выбран тариф"))
+        return guard(tr("Не удалось сменить тариф")) {
             auth.authorized(
                 "${base(id)}/plan",
                 "POST",
@@ -580,7 +581,7 @@ class HostingClient(
                     put("months", 1)
                 },
             )
-            HostingActionResult("Тариф изменён")
+            HostingActionResult(tr("Тариф изменён"))
         }
     }
 
@@ -588,10 +589,10 @@ class HostingClient(
         val id = HostingPaths.serverId(serverId)
         val nick = nickname.trim()
         if (!HOSTING_NICKNAME.matches(nick) || nick.length !in 3..16) {
-            throw HostingError("Ник «$nickname» не подходит для команды сервера")
+            throw HostingError(tr("Ник «{nickname}» не подходит для команды сервера", nickname))
         }
-        if (action !in HOSTING_PLAYER_ACTIONS) throw HostingError("Такого действия с игроком нет")
-        return guard("Не удалось выполнить действие с игроком") {
+        if (action !in HOSTING_PLAYER_ACTIONS) throw HostingError(tr("Такого действия с игроком нет"))
+        return guard(tr("Не удалось выполнить действие с игроком")) {
             auth.authorized(
                 "${base(id)}/online/action",
                 "POST",
@@ -600,16 +601,53 @@ class HostingClient(
                     put("action", action)
                 },
             )
-            HostingActionResult("Готово", nick)
+            HostingActionResult(tr("Готово"), nick)
         }
     }
 
-    suspend fun searchMaps(query: String): List<HostingMap> = guard("Каталог карт не ответил") {
+    suspend fun addPlayer(serverId: String, nickname: String): HostingActionResult {
+        val id = HostingPaths.serverId(serverId)
+        val nick = nickname.trim()
+        if (!HOSTING_NICKNAME.matches(nick) || nick.length !in 3..16) {
+            throw HostingError(tr("Ник «{nickname}» не подходит: 3–16 латинских букв, цифр или _", nickname))
+        }
+        return guard(tr("Не удалось добавить игрока в команду")) {
+            auth.authorized("${base(id)}/players", "POST", buildJsonObject { put("nickname", nick) })
+            HostingActionResult(tr("{nick} добавлен в команду", nick), nick)
+        }
+    }
+
+    suspend fun removePlayer(serverId: String, playerId: String): HostingActionResult {
+        val id = HostingPaths.serverId(serverId)
+        return guard(tr("Не удалось убрать игрока из команды")) {
+            auth.authorized("${base(id)}/players/${encode(playerId)}", "DELETE", null)
+            HostingActionResult(tr("Игрок убран из команды"))
+        }
+    }
+
+    suspend fun changeRole(serverId: String, playerId: String, role: String): HostingActionResult {
+        val id = HostingPaths.serverId(serverId)
+        if (role !in HOSTING_ROSTER_ROLES) throw HostingError(tr("Такой роли нет"))
+        return guard(tr("Не удалось сменить роль")) {
+            auth.authorized("${base(id)}/players/${encode(playerId)}/role", "PATCH", buildJsonObject { put("role", role) })
+            HostingActionResult(tr("Роль изменена"))
+        }
+    }
+
+    suspend fun banPlayer(serverId: String, playerId: String, banned: Boolean): HostingActionResult {
+        val id = HostingPaths.serverId(serverId)
+        return guard(if (banned) tr("Не удалось забанить игрока") else tr("Не удалось снять бан")) {
+            auth.authorized("${base(id)}/players/${encode(playerId)}/ban", "POST", buildJsonObject { put("banned", banned) })
+            HostingActionResult(if (banned) tr("Забанен") else tr("Разбанен"))
+        }
+    }
+
+    suspend fun searchMaps(query: String): List<HostingMap> = guard(tr("Каталог карт не ответил")) {
         val text = query.trim().take(60)
         val suffix = if (text.isEmpty()) "" else "&query=${encode(text)}"
         val body = auth.authorized("/hosting/catalog/curseforge?type=map$suffix", "GET", null)
-        if (!body.flag("enabled", true)) throw HostingError("Каталог карт сейчас недоступен — попробуй позже")
-        if (body.str("error").isNotEmpty()) throw HostingError("Каталог карт не ответил — попробуй позже")
+        if (!body.flag("enabled", true)) throw HostingError(tr("Каталог карт сейчас недоступен — попробуй позже"))
+        if (body.str("error").isNotEmpty()) throw HostingError(tr("Каталог карт не ответил — попробуй позже"))
         body.asArray("hits").map {
             HostingMap(
                 id = it.long("id"),
@@ -621,7 +659,7 @@ class HostingClient(
         }.filter { it.id > 0 && it.name.isNotEmpty() }
     }
 
-    suspend fun mapGameVersion(mapId: Long): String? = guard("Не удалось узнать версию карты") {
+    suspend fun mapGameVersion(mapId: Long): String? = guard(tr("Не удалось узнать версию карты")) {
         auth.authorized("/hosting/catalog/curseforge/$mapId", "GET", null)
             .asArray("files")
             .asSequence()
@@ -631,10 +669,10 @@ class HostingClient(
 
     suspend fun setServerVersion(serverId: String, version: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        if (version.isBlank()) throw HostingError("Не указана версия игры")
-        return guard("Не удалось сменить версию сервера") {
+        if (version.isBlank()) throw HostingError(tr("Не указана версия игры"))
+        return guard(tr("Не удалось сменить версию сервера")) {
             auth.authorized("${base(id)}/core", "PATCH", buildJsonObject { put("version", version) })
-            HostingActionResult("Версия сервера изменена")
+            HostingActionResult(tr("Версия сервера изменена"))
         }
     }
 
@@ -645,8 +683,8 @@ class HostingClient(
         versionId: String? = null,
     ): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        if (projectId.isBlank()) throw HostingError("Не выбрано, что ставить")
-        return guard("Не удалось поставить на сервер") {
+        if (projectId.isBlank()) throw HostingError(tr("Не выбрано, что ставить"))
+        return guard(tr("Не удалось поставить на сервер")) {
             auth.authorized(
                 "${base(id)}/installs",
                 "POST",
@@ -656,13 +694,13 @@ class HostingClient(
                     if (!versionId.isNullOrBlank()) put("versionId", versionId)
                 },
             )
-            HostingActionResult("Ставим на сервер")
+            HostingActionResult(tr("Ставим на сервер"))
         }
     }
 
     suspend fun installs(serverId: String): List<HostingInstall> {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить список установленного") {
+        return guard(tr("Не удалось получить список установленного")) {
             auth.authorizedElement("${base(id)}/installs", "GET", null).asArray("installs", "items").map {
                 HostingInstall(
                     id = it.str("id"),
@@ -682,7 +720,7 @@ class HostingClient(
 
     suspend fun installUpdates(serverId: String): List<HostingInstallUpdate> {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось проверить обновления") {
+        return guard(tr("Не удалось проверить обновления")) {
             auth.authorizedElement("${base(id)}/installs/updates", "GET", null).asArray("updates", "items").map {
                 HostingInstallUpdate(
                     installId = it.str("installId"),
@@ -699,14 +737,14 @@ class HostingClient(
 
     suspend fun removeInstall(serverId: String, installId: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        if (installId.isBlank()) throw HostingError("Не выбрано, что убрать")
-        return guard("Не удалось убрать с сервера") {
+        if (installId.isBlank()) throw HostingError(tr("Не выбрано, что убрать"))
+        return guard(tr("Не удалось убрать с сервера")) {
             auth.authorizedElement("${base(id)}/installs/${encode(installId)}", "DELETE", null)
-            HostingActionResult("Убрали — применится после перезапуска")
+            HostingActionResult(tr("Убрали — применится после перезапуска"))
         }
     }
 
-    suspend fun cores(): List<HostingCore> = guard("Каталог ядер не ответил") {
+    suspend fun cores(): List<HostingCore> = guard(tr("Каталог ядер не ответил")) {
         auth.authorizedElement("/hosting/catalog/cores", "GET", null).asArray("cores").map {
             HostingCore(
                 id = it.str("id"),
@@ -721,8 +759,8 @@ class HostingClient(
 
     suspend fun changeCore(serverId: String, core: String, version: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        if (core.isBlank() || version.isBlank()) throw HostingError("Выбери ядро и версию")
-        return guard("Не удалось сменить ядро") {
+        if (core.isBlank() || version.isBlank()) throw HostingError(tr("Выбери ядро и версию"))
+        return guard(tr("Не удалось сменить ядро")) {
             auth.authorized(
                 "${base(id)}/core",
                 "PATCH",
@@ -731,7 +769,7 @@ class HostingClient(
                     put("version", version)
                 },
             )
-            HostingActionResult("Ядро сменено")
+            HostingActionResult(tr("Ядро сменено"))
         }
     }
 
@@ -741,7 +779,7 @@ class HostingClient(
         query: String,
         version: String,
         offset: Int,
-    ): HostingCatalogPage = guard("Каталог не ответил") {
+    ): HostingCatalogPage = guard(tr("Каталог не ответил")) {
         val text = query.trim().take(100)
         when (source) {
             HOSTING_SOURCE_FTB -> {
@@ -765,8 +803,8 @@ class HostingClient(
                 if (version.isNotBlank()) params.append("&version=${encode(version)}")
                 if (offset > 0) params.append("&offset=$offset")
                 val body = auth.authorized("/hosting/catalog/curseforge?$params", "GET", null)
-                if (!body.flag("enabled", true)) throw HostingError("CurseForge сейчас недоступен — выбери Modrinth")
-                if (body.str("error").isNotEmpty()) throw HostingError("CurseForge не ответил — попробуй позже")
+                if (!body.flag("enabled", true)) throw HostingError(tr("CurseForge сейчас недоступен — выбери Modrinth"))
+                if (body.str("error").isNotEmpty()) throw HostingError(tr("CurseForge не ответил — попробуй позже"))
                 HostingCatalogPage(
                     body.asArray("hits").map { it.toCatalogHit() }.filter { it.id.isNotEmpty() && it.name.isNotEmpty() },
                     body.int("nextOffset").takeIf { body.flag("hasMore") },
@@ -853,7 +891,7 @@ class HostingClient(
 
     suspend fun toolAccess(serverId: String): HostingToolAccess {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось открыть сервер") {
+        return guard(tr("Не удалось открыть сервер")) {
             val body = auth.authorized(base(id), "GET", null)
             val access = body.child("access")
             val status = body.str("status")
@@ -870,22 +908,22 @@ class HostingClient(
     }
 
     suspend fun extractJob(serverId: String): HostingJob =
-        toolsJob(serverId, "files/extract/job", "Не удалось узнать, как идёт распаковка")
+        toolsJob(serverId, "files/extract/job", tr("Не удалось узнать, как идёт распаковка"))
 
     suspend fun worldImportJob(serverId: String): HostingJob =
-        toolsJob(serverId, "worlds/import/job", "Не удалось узнать, как идёт загрузка мира")
+        toolsJob(serverId, "worlds/import/job", tr("Не удалось узнать, как идёт загрузка мира"))
 
     suspend fun restoreJob(serverId: String): HostingJob =
-        toolsJob(serverId, "backups/restore/job", "Не удалось узнать, как идёт восстановление")
+        toolsJob(serverId, "backups/restore/job", tr("Не удалось узнать, как идёт восстановление"))
 
     suspend fun startWorldImport(serverId: String, path: String, name: String): Boolean {
         val id = HostingPaths.serverId(serverId)
         val remote = HostingPaths.remote(path)
-        if (remote == ".") throw HostingError("Не указан архив мира")
+        if (remote == ".") throw HostingError(tr("Не указан архив мира"))
         if (!HOSTING_WORLD_NAME.matches(name)) {
-            throw HostingError("Имя мира — латиница, цифры, точка, тире и подчёркивание, до 40 знаков")
+            throw HostingError(tr("Имя мира — латиница, цифры, точка, тире и подчёркивание, до 40 знаков"))
         }
-        return guard("Не удалось загрузить мир") {
+        return guard(tr("Не удалось загрузить мир")) {
             val body = auth.authorized(
                 "${base(id)}/worlds/import",
                 "POST",
@@ -900,11 +938,11 @@ class HostingClient(
 
     suspend fun regenerateWorld(serverId: String, backup: Boolean): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось пересоздать мир") {
+        return guard(tr("Не удалось пересоздать мир")) {
             auth.authorized("${base(id)}/world/regenerate", "POST", buildJsonObject { put("backup", backup) })
             HostingActionResult(
-                "Мир удалён — новый создастся при запуске",
-                if (backup) "прежний сохранён в резервных копиях" else "",
+                tr("Мир удалён — новый создастся при запуске"),
+                if (backup) tr("прежний сохранён в резервных копиях") else "",
             )
         }
     }
@@ -918,17 +956,17 @@ class HostingClient(
         val id = HostingPaths.serverId(serverId)
         onPacking()
         if (!startWorldExport(id).finished) awaitWorldExport(id, onPacking)
-        return downloadRanged("${base(id)}/world/download", sink, "Не удалось скачать мир", onProgress)
+        return downloadRanged("${base(id)}/world/download", sink, tr("Не удалось скачать мир"), onProgress)
     }
 
     private suspend fun startWorldExport(serverId: String): HostingJob =
-        guard("Не удалось собрать архив мира") {
+        guard(tr("Не удалось собрать архив мира")) {
             val body = auth.authorized("${base(serverId)}/world/export", "POST", buildJsonObject { })
             HostingJob(state = body.str("state").ifEmpty { "running" })
         }
 
     private suspend fun worldExportJob(serverId: String): HostingJob =
-        guard("Не удалось узнать, как идёт сборка архива") {
+        guard(tr("Не удалось узнать, как идёт сборка архива")) {
             val body = auth.authorized("${base(serverId)}/world/export/job", "GET", null)
             HostingJob(
                 state = body.str("state").ifEmpty { "none" },
@@ -955,12 +993,12 @@ class HostingClient(
             misses = 0
             when (job.state) {
                 "ready" -> return
-                "failed" -> throw HostingError(job.error.ifBlank { "Архив мира не собрался — повтори" })
-                "none" -> throw HostingError("Сборка архива прервалась — повтори")
+                "failed" -> throw HostingError(job.error.ifBlank { tr("Архив мира не собрался — повтори") })
+                "none" -> throw HostingError(tr("Сборка архива прервалась — повтори"))
                 else -> onPacking()
             }
         }
-        throw HostingError("Архив мира собирается слишком долго — попробуй скачать позже")
+        throw HostingError(tr("Архив мира собирается слишком долго — попробуй скачать позже"))
     }
 
     suspend fun downloadFileTo(
@@ -971,8 +1009,8 @@ class HostingClient(
     ): Long {
         val id = HostingPaths.serverId(serverId)
         val remote = HostingPaths.remote(path)
-        if (remote == ".") throw HostingError("Не выбран файл для скачивания")
-        return downloadRanged("${base(id)}/files/download?path=${encode(remote)}", sink, "Не удалось скачать файл", onProgress)
+        if (remote == ".") throw HostingError(tr("Не выбран файл для скачивания"))
+        return downloadRanged("${base(id)}/files/download?path=${encode(remote)}", sink, tr("Не удалось скачать файл"), onProgress)
     }
 
     // Pieces are addressed by offset, so a resent piece overwrites itself instead of being appended twice.
@@ -985,9 +1023,9 @@ class HostingClient(
     ): HostingActionResult = withContext(Dispatchers.IO) {
         val id = HostingPaths.serverId(serverId)
         val remote = HostingPaths.remote(path)
-        val failure = "Не удалось загрузить файл"
-        if (remote == ".") throw HostingError("Не указано имя файла")
-        if (total <= 0L) throw HostingError("$failure: файл пустой или его размер неизвестен — выбери другой")
+        val failure = tr("Не удалось загрузить файл")
+        if (remote == ".") throw HostingError(tr("Не указано имя файла"))
+        if (total <= 0L) throw HostingError(tr("{failure}: файл пустой или его размер неизвестен — выбери другой", failure))
         val buffer = ByteArray(TOOLS_PIECE_START)
         var token = toolsToken(failure)
         var renewed = false
@@ -999,7 +1037,7 @@ class HostingClient(
             val want = minOf(buffer.size.toLong(), total - sent).toInt()
             val filled = toolsReadFully(source, buffer, want)
             if (filled < want) {
-                throw HostingError("$failure: файл на телефоне короче, чем заявлен — выбери его заново")
+                throw HostingError(tr("{failure}: файл на телефоне короче, чем заявлен — выбери его заново", failure))
             }
             var within = 0
             var failures = 0
@@ -1040,25 +1078,25 @@ class HostingClient(
             sent += filled
         }
         if (source.read() >= 0) {
-            throw HostingError("$failure: файл на телефоне длиннее, чем заявлен — загрузи его заново")
+            throw HostingError(tr("{failure}: файл на телефоне длиннее, чем заявлен — загрузи его заново", failure))
         }
         if (sizeOnNode >= 0L && sizeOnNode != total) {
-            throw HostingError("$failure: на сервер доехало $sizeOnNode из $total байт — загрузи файл заново")
+            throw HostingError(tr("{failure}: на сервер доехало {sizeOnNode} из {total} байт — загрузи файл заново", failure, sizeOnNode, total))
         }
-        HostingActionResult("Файл загружен: $remote")
+        HostingActionResult(tr("Файл загружен: {remote}", remote))
     }
 
     // Every stored field is kept: dropping a repeat interval on save would turn an hourly task into a daily one.
     suspend fun scheduleEntries(serverId: String): List<JsonObject> {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось получить расписание") {
+        return guard(tr("Не удалось получить расписание")) {
             auth.authorizedElement("${base(id)}/schedules", "GET", null).asArray("schedules", "items")
         }
     }
 
     suspend fun replaceScheduleEntries(serverId: String, entries: List<JsonObject>): List<JsonObject> {
         val id = HostingPaths.serverId(serverId)
-        return guard("Не удалось сохранить расписание") {
+        return guard(tr("Не удалось сохранить расписание")) {
             val payload = buildJsonObject { putJsonArray("schedules") { entries.forEach { add(it) } } }
             auth.authorizedElement("${base(id)}/schedules", "PUT", payload).asArray("schedules", "items")
         }
@@ -1107,14 +1145,14 @@ class HostingClient(
                 client.newCall(request).execute().use { response ->
                     val code = response.code
                     if (code != 200 && code != 206) toolsRefusal(code, response.body?.string().orEmpty(), failure)
-                    val body = response.body ?: throw HostingTransientFailure("ответ пришёл пустым")
+                    val body = response.body ?: throw HostingTransientFailure(tr("ответ пришёл пустым"))
                     if (code == 200) {
                         if (received > 0L) throw HostingError("$failure: $TOOLS_NO_RESUME")
                         single = !response.header("Accept-Ranges").orEmpty().contains("bytes", ignoreCase = true)
                         total = body.contentLength()
                     } else {
                         val range = TOOLS_CONTENT_RANGE.find(response.header("Content-Range").orEmpty())
-                            ?: throw HostingError("$failure: сервер отдал кусок в непонятном виде — повтори")
+                            ?: throw HostingError(tr("{failure}: сервер отдал кусок в непонятном виде — повтори", failure))
                         total = range.groupValues[1].toLong()
                     }
                     body.byteStream().use { input ->
@@ -1129,9 +1167,9 @@ class HostingClient(
                     }
                     if (code == 200) {
                         if (total < 0L) total = received
-                        if (received < total) throw HostingError("$failure: файл пришёл не целиком — скачай его заново")
+                        if (received < total) throw HostingError(tr("{failure}: файл пришёл не целиком — скачай его заново", failure))
                     } else if (received == before) {
-                        throw HostingError("$failure: сервер перестал отдавать данные — повтори")
+                        throw HostingError(tr("{failure}: сервер перестал отдавать данные — повтори", failure))
                     }
                 }
                 failures = 0
@@ -1261,6 +1299,8 @@ val HOSTING_PLAYER_ACTIONS: Set<String> = setOf(
     "creative", "survival", "adventure", "spectator", "heal", "clearInventory", "message", "teleport",
 )
 
+val HOSTING_ROSTER_ROLES: List<String> = listOf("ADMIN", "MODERATOR", "PLAYER")
+
 const val HOSTING_NAME_MIN = 2
 const val HOSTING_NAME_MAX = 32
 
@@ -1306,7 +1346,7 @@ private val TOOLS_RETRY_DELAYS_MS = longArrayOf(1_000L, 3_000L, 6_000L)
 private val TOOLS_OCTET_STREAM = "application/octet-stream".toMediaType()
 private val TOOLS_CONTENT_RANGE = Regex("""^bytes \d+-\d+/(\d+)$""")
 private const val TOOLS_MESSAGE_MAX = 300
-private const val TOOLS_NO_RESUME = "файл большой, а связь оборвалась — скачай его через SFTP"
+private val TOOLS_NO_RESUME: String get() = tr("файл большой, а связь оборвалась — скачай его через SFTP")
 private const val WORLD_EXPORT_POLL_MS = 2_000L
 private const val WORLD_EXPORT_WAIT_NS = 60L * 60 * 1_000_000_000
 private const val WORLD_EXPORT_MISSES = 5
@@ -1366,5 +1406,5 @@ private fun toolsNetworkFailure(failure: String, error: IOException): HostingErr
     if (error is HostingTransientFailure) {
         HostingError("$failure: ${error.message}", error)
     } else {
-        HostingError("$failure: связь оборвалась — проверь интернет и повтори", error)
+        HostingError(tr("{failure}: связь оборвалась — проверь интернет и повтори", failure), error)
     }

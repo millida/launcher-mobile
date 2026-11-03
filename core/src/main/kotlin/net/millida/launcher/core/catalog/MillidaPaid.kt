@@ -14,8 +14,10 @@ import java.net.UnknownHostException
 import java.net.URLEncoder
 import java.text.NumberFormat
 import java.time.Instant
-import java.util.Locale
 
+import net.millida.launcher.core.i18n.I18n
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trSource
 enum class Pricing {
     FREE,
     ONE_TIME,
@@ -85,7 +87,7 @@ object MillidaPaid {
         pricing != Pricing.FREE && kopecks != null && kopecks > 0
 
     fun rubles(kopecks: Long): String {
-        val format = NumberFormat.getNumberInstance(Locale("ru", "RU"))
+        val format = NumberFormat.getNumberInstance(I18n.javaLocale)
         if (kopecks % 100 == 0L) {
             format.maximumFractionDigits = 0
         } else {
@@ -98,10 +100,10 @@ object MillidaPaid {
     /** «300 ₽» for a purchase, «300 ₽/мес» for a subscription, empty for a free item. */
     fun priceTag(pricing: Pricing, kopecks: Long?): String {
         if (!isPaid(pricing, kopecks)) return ""
-        return rubles(kopecks ?: 0) + if (pricing == Pricing.SUBSCRIPTION) "/мес" else ""
+        return rubles(kopecks ?: 0) + if (pricing == Pricing.SUBSCRIPTION) tr("/мес") else ""
     }
 
-    fun buyLabel(pricing: Pricing): String = if (pricing == Pricing.SUBSCRIPTION) "Подписаться" else "Купить"
+    fun buyLabel(pricing: Pricing): String = if (pricing == Pricing.SUBSCRIPTION) tr("Подписаться") else tr("Купить")
 
     /** `/catalog/items/:slug/access`: an owner has access too. */
     fun accessOpen(body: JsonObject): Boolean =
@@ -124,13 +126,13 @@ object MillidaPaid {
 
     /** A short sentence for a toast; null when the verdict has a screen of its own. */
     fun verdictText(verdict: PaidVerdict): String? = when (verdict) {
-        PaidVerdict.LOGIN -> "Войди в аккаунт Millida"
-        PaidVerdict.FUNDS -> "Не хватает денег на балансе"
-        PaidVerdict.PRICE_CHANGED -> "Цена изменилась — проверь и подтверди"
-        PaidVerdict.NO_ACCESS -> "Сначала купи — потом установка"
-        PaidVerdict.OWNED -> "Уже куплено"
-        PaidVerdict.FROZEN -> "Баланс заморожен — напиши в поддержку"
-        PaidVerdict.BUSY -> "Покупка уже идёт — подожди минуту"
+        PaidVerdict.LOGIN -> tr("Войди в аккаунт Millida")
+        PaidVerdict.FUNDS -> tr("Не хватает денег на балансе")
+        PaidVerdict.PRICE_CHANGED -> tr("Цена изменилась — проверь и подтверди")
+        PaidVerdict.NO_ACCESS -> tr("Сначала купи — потом установка")
+        PaidVerdict.OWNED -> tr("Уже куплено")
+        PaidVerdict.FROZEN -> tr("Баланс заморожен — напиши в поддержку")
+        PaidVerdict.BUSY -> tr("Покупка уже идёт — подожди минуту")
         PaidVerdict.ERROR -> null
     }
 
@@ -141,7 +143,7 @@ object MillidaPaid {
     fun transient(error: Throwable): Boolean {
         val chain = generateSequence(error) { it.cause?.takeIf { cause -> cause !== it } }.take(8).toList()
         if (chain.any { it is UnknownHostException || it is SocketException || it is InterruptedIOException }) return true
-        val message = error.message.orEmpty()
+        val message = trSource(error.message.orEmpty())
         return Regex("сервер ответил (5\\d\\d|429)").containsMatchIn(message) ||
             message.contains("too many requests", ignoreCase = true)
     }

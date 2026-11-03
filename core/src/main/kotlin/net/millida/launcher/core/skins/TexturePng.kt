@@ -3,6 +3,7 @@ package net.millida.launcher.core.skins
 import java.io.IOException
 import java.util.Base64
 
+import net.millida.launcher.core.i18n.tr
 /** Player-facing failure: the text is shown as is, so it says what to do next. */
 class TextureError(message: String, cause: Throwable? = null) : IOException(message, cause)
 
@@ -14,7 +15,7 @@ enum class TextureKind(val dir: String, val wire: String) {
     companion object {
         fun of(raw: String): TextureKind =
             entries.firstOrNull { it.dir.equals(raw, true) || it.wire.equals(raw, true) }
-                ?: throw TextureError("Неизвестный вид текстуры: $raw")
+                ?: throw TextureError(tr("Неизвестный вид текстуры: {raw}", raw))
     }
 }
 
@@ -45,11 +46,11 @@ object TexturePng {
 
     fun decode(data: String): ByteArray {
         val raw = data.substringAfterLast(',').filterNot { it.isWhitespace() }
-        if (raw.isEmpty()) throw TextureError("Пустая картинка")
+        if (raw.isEmpty()) throw TextureError(tr("Пустая картинка"))
         // Strict decoding on purpose: the lenient decoder skips whatever it
         // does not understand and turns a pasted sentence into bytes.
         return runCatching { Base64.getDecoder().decode(raw) }
-            .getOrElse { throw TextureError("Битый PNG") }
+            .getOrElse { throw TextureError(tr("Битый PNG")) }
     }
 
     fun encode(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)
@@ -80,12 +81,12 @@ object TexturePng {
     }
 
     fun validate(kind: TextureKind, bytes: ByteArray): TextureShape {
-        if (bytes.isEmpty()) throw TextureError("Пустая картинка")
-        if (!isPng(bytes)) throw TextureError("Это не PNG — нужен файл .png")
+        if (bytes.isEmpty()) throw TextureError(tr("Пустая картинка"))
+        if (!isPng(bytes)) throw TextureError(tr("Это не PNG — нужен файл .png"))
         if (bytes.size > MAX_BYTES) {
-            throw TextureError("PNG больше 2 МБ — возьми файл поменьше")
+            throw TextureError(tr("PNG больше 2 МБ — возьми файл поменьше"))
         }
-        val size = size(bytes) ?: throw TextureError("Битый PNG — не читается размер картинки")
+        val size = size(bytes) ?: throw TextureError(tr("Битый PNG — не читается размер картинки"))
         val (width, height) = size
         return when (kind) {
             TextureKind.SKIN -> skinShape(width, height)
@@ -99,7 +100,7 @@ object TexturePng {
             if (height == 64 * scale) return TextureShape(width, height, scale, legacy = false)
             if (height == 32 * scale) return TextureShape(width, height, scale, legacy = true)
         }
-        throw TextureError("Скин должен быть 64x64 или 64x32, а тут ${width}x$height")
+        throw TextureError(tr("Скин должен быть 64x64 или 64x32, а тут {width}x{height}", width, height))
     }
 
     /**
@@ -112,7 +113,7 @@ object TexturePng {
         if (scale > 0 && height == 32 * scale) {
             return TextureShape(width, height, scale, legacy = true)
         }
-        throw TextureError("Плащ должен быть 64x32, а тут ${width}x$height")
+        throw TextureError(tr("Плащ должен быть 64x32, а тут {width}x{height}", width, height))
     }
 
     private fun scaleOf(width: Int, base: Int): Int =

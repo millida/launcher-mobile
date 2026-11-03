@@ -19,7 +19,7 @@ object GraphicsProbe {
     private fun probe(context: Context): DeviceGraphics {
         val names = runCatching { glNames() }.getOrNull()
         val vulkan11 = context.packageManager.hasSystemFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION, VULKAN_1_1)
-        return DeviceGraphics(GpuFamily.of(names?.first, names?.second), vulkan11)
+        return DeviceGraphics(GpuFamily.of(names?.first, names?.second), vulkan11, names?.second?.trim()?.take(40))
     }
 
     private fun glNames(): Pair<String?, String?>? {

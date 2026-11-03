@@ -1,5 +1,7 @@
 package net.millida.launcher.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,17 +20,26 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import net.millida.launcher.core.hud.ControlScheme
 import net.millida.launcher.core.hud.HudAction
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import net.millida.launcher.core.hud.HudControl
+import net.millida.launcher.core.hud.HudForeign
 import net.millida.launcher.core.hud.HudIcons
+import net.millida.launcher.core.hud.HudImported
+import net.millida.launcher.core.hud.HudSource
 import net.millida.launcher.core.hud.HudKeys
 import net.millida.launcher.core.hud.HudKind
 import net.millida.launcher.core.hud.HudLayout
@@ -39,16 +50,23 @@ import net.millida.launcher.core.hud.HudVisibility
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private enum class EditorTab(val label: String) {
-    CONTROL("Кнопка"),
-    PROFILES("Раскладки"),
-    TOUCH("Касание"),
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
+import net.millida.launcher.core.i18n.trText
+private enum class EditorTab(private val labelKey: String) {
+    CONTROL(trKey("Кнопка")),
+    PROFILES(trKey("Раскладки")),
+    TOUCH(trKey("Касание")),;
+
+    val label: String get() = tr(labelKey)
 }
 
-private enum class PressMode(val label: String) {
-    HOLD("Удержание"),
-    TOGGLE("Переключатель"),
-    LATCH("Двойной тап"),
+private enum class PressMode(private val labelKey: String) {
+    HOLD(trKey("Удержание")),
+    TOGGLE(trKey("Переключатель")),
+    LATCH(trKey("Двойной тап")),;
+
+    val label: String get() = tr(labelKey)
 }
 
 private enum class KeyPick { REPLACE, ADD }
@@ -62,11 +80,11 @@ private val VISIBILITIES = listOf(
 )
 
 private fun visibilityLabel(visibility: HudVisibility): String = when (visibility) {
-    HudVisibility.LOOK -> "В мире"
-    HudVisibility.WALKING -> "На земле"
-    HudVisibility.FLYING -> "В полёте"
-    HudVisibility.CURSOR -> "В меню"
-    HudVisibility.ALWAYS -> "Всегда"
+    HudVisibility.LOOK -> tr("В мире")
+    HudVisibility.WALKING -> tr("На земле")
+    HudVisibility.FLYING -> tr("В полёте")
+    HudVisibility.CURSOR -> tr("В меню")
+    HudVisibility.ALWAYS -> tr("Всегда")
 }
 
 private const val HOLD_STEP_MS = 25
@@ -86,6 +104,15 @@ fun HudEditorPanel(
     onNotice: (String) -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
+    onSlide: (HudControl) -> Unit = onChange,
+    canUndo: Boolean = false,
+    onUndo: () -> Unit = {},
+    snap: Boolean = true,
+    onSnap: (Boolean) -> Unit = {},
+    gyro: Boolean? = null,
+    onGyro: (Boolean) -> Unit = {},
+    acceleration: Boolean = false,
+    onAcceleration: (Boolean) -> Unit = {},
 ) {
     var hidden by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf(EditorTab.CONTROL) }
@@ -103,13 +130,14 @@ fun HudEditorPanel(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            MSecondaryButton("Показать", onClick = { hidden = false }, icon = MIcons.chevronUp, size = MButtonSize.Small)
-            MPrimaryButton("Готово", onClick = onDone, icon = MIcons.check, size = MButtonSize.Small)
+            MSecondaryButton(tr("Показать"), onClick = { hidden = false }, icon = MIcons.chevronUp, size = MButtonSize.Small)
+            MSecondaryButton(tr("Отменить"), onClick = onUndo, enabled = canUndo, icon = MIcons.back, size = MButtonSize.Small)
+            MPrimaryButton(tr("Готово"), onClick = onDone, icon = MIcons.check, size = MButtonSize.Small)
         }
         return
     }
 
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.62f).dp
+    val maxHeight = (effectiveScreenHeightDp() * 0.62f).dp
     Column(
         modifier
             .fillMaxWidth()
@@ -121,15 +149,16 @@ fun HudEditorPanel(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Управление",
+                tr("Управление"),
                 modifier = Modifier.weight(1f),
                 style = MillidaType.dialogTitle,
                 color = colors.fg,
                 maxLines = 1,
             )
-            MTextButton("Скрыть", onClick = { hidden = true }, icon = MIcons.chevronDown)
+            MTextButton(tr("Отменить"), onClick = onUndo, enabled = canUndo, icon = MIcons.back)
+            MTextButton(tr("Скрыть"), onClick = { hidden = true }, icon = MIcons.chevronDown)
             Spacer(Modifier.width(8.dp))
-            MPrimaryButton("Готово", onClick = onDone, icon = MIcons.check, size = MButtonSize.Small)
+            MPrimaryButton(tr("Готово"), onClick = onDone, icon = MIcons.check, size = MButtonSize.Small)
         }
 
         MSegmented(
@@ -140,9 +169,9 @@ fun HudEditorPanel(
         )
 
         when (tab) {
-            EditorTab.CONTROL -> ControlTab(layout, selected, onChange, onRemove, onAdd)
+            EditorTab.CONTROL -> ControlTab(layout, selected, onChange, onSlide, onRemove, onAdd, snap, onSnap)
             EditorTab.PROFILES -> ProfilesTab(profiles, onProfiles, onPreset, onNotice)
-            EditorTab.TOUCH -> TouchTab(layout, sensitivity, onLayout, onSensitivity)
+            EditorTab.TOUCH -> TouchTab(layout, sensitivity, onLayout, onSensitivity, gyro, onGyro, acceleration, onAcceleration)
         }
     }
 }
@@ -152,22 +181,32 @@ private fun ControlTab(
     layout: HudLayout,
     selected: HudControl?,
     onChange: (HudControl) -> Unit,
+    onSlide: (HudControl) -> Unit,
     onRemove: (String) -> Unit,
     onAdd: (HudControl) -> Unit,
+    snap: Boolean,
+    onSnap: (Boolean) -> Unit,
 ) {
     var adding by remember { mutableStateOf(false) }
     if (selected == null) {
         Text(
-            "Перетащи кнопку пальцем, коснись её, чтобы настроить",
+            tr("Перетащи кнопку пальцем, коснись её, чтобы настроить"),
             style = MillidaType.small,
             color = millida.fgSubtle,
         )
     } else {
-        SelectedControl(layout, selected, onChange, onRemove)
+        Text(
+            tr("Уголок выбранной кнопки меняет размер"),
+            style = MillidaType.small,
+            color = millida.fgSubtle,
+        )
+        SelectedControl(layout, selected, onChange, onSlide, onRemove)
     }
 
+    MSwitchRow(tr("Сетка"), tr("Кнопки встают ровно по линиям"), snap, onSnap)
+
     MSecondaryButton(
-        if (adding) "Скрыть список" else "Добавить кнопку",
+        if (adding) tr("Скрыть список") else tr("Добавить кнопку"),
         onClick = { adding = !adding },
         icon = if (adding) MIcons.chevronUp else MIcons.plus,
         size = MButtonSize.Small,
@@ -190,6 +229,7 @@ private fun SelectedControl(
     layout: HudLayout,
     selected: HudControl,
     onChange: (HudControl) -> Unit,
+    onSlide: (HudControl) -> Unit,
     onRemove: (String) -> Unit,
 ) {
     val colors = millida
@@ -197,7 +237,7 @@ private fun SelectedControl(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Кнопка «${selected.label}»",
+                tr("Кнопка «{label}»", selected.label),
                 modifier = Modifier.weight(1f),
                 style = MillidaType.rowTitle,
                 color = colors.fg,
@@ -206,39 +246,39 @@ private fun SelectedControl(
             )
             if (canReset) {
                 MTextButton(
-                    "Сбросить",
+                    tr("Сбросить"),
                     onClick = { layout.reset(selected.id).controls.firstOrNull { it.id == selected.id }?.let(onChange) },
                     icon = MIcons.refresh,
                 )
                 Spacer(Modifier.width(6.dp))
             }
-            MDangerButton("Удалить", onClick = { onRemove(selected.id) }, icon = MIcons.trash)
+            MDangerButton(tr("Удалить"), onClick = { onRemove(selected.id) }, icon = MIcons.trash)
         }
-        EditorRow("Размер") {
+        EditorRow(tr("Размер")) {
             MSlider(
                 value = selected.scale,
-                onValueChange = { onChange(selected.withSize(it)) },
+                onValueChange = { onSlide(selected.withSize(it)) },
                 valueRange = HudControl.MIN_SCALE..HudControl.MAX_SCALE,
             )
         }
-        EditorRow("Прозрачность") {
+        EditorRow(tr("Прозрачность")) {
             MSlider(
                 value = selected.shownOpacity(layout.shownOpacity),
-                onValueChange = { onChange(selected.withOpacity(it)) },
+                onValueChange = { onSlide(selected.withOpacity(it)) },
                 valueRange = HudLayout.MIN_OPACITY..1f,
             )
         }
         if (selected.opacity != null) {
-            MTextButton("Как у всех", onClick = { onChange(selected.withOpacity(null)) }, icon = MIcons.refresh)
+            MTextButton(tr("Как у всех"), onClick = { onChange(selected.withOpacity(null)) }, icon = MIcons.refresh)
         }
         MSegmented(
             options = listOf(false, true),
             selected = selected.hidden,
             onSelect = { onChange(selected.copy(hidden = it)) },
-            label = { if (it) "Скрыта" else "Видна" },
+            label = { if (it) tr("Скрыта") else tr("Видна") },
         )
         if (!selected.anchored && selected.kind != HudKind.FLOAT_STICK) {
-            MSectionTitle("КОГДА ВИДНА")
+            MSectionTitle(tr("КОГДА ВИДНА"))
             MSegmented(
                 options = VISIBILITIES,
                 selected = selected.visibility,
@@ -268,7 +308,7 @@ private fun SelectedControl(
 private fun KeyBinding(selected: HudControl, onChange: (HudControl) -> Unit) {
     var pick by remember(selected.id) { mutableStateOf<KeyPick?>(null) }
     val keys = selected.keys
-    MSectionTitle("КЛАВИШИ")
+    MSectionTitle(tr("КЛАВИШИ"))
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -283,13 +323,13 @@ private fun KeyBinding(selected: HudControl, onChange: (HudControl) -> Unit) {
             )
         }
         MTextButton(
-            "Сменить",
+            tr("Сменить"),
             onClick = { pick = if (pick == KeyPick.REPLACE) null else KeyPick.REPLACE },
             icon = MIcons.edit,
         )
         if (keys.size < HudControl.MAX_KEYS) {
             MTextButton(
-                "Сочетание",
+                tr("Сочетание"),
                 onClick = { pick = if (pick == KeyPick.ADD) null else KeyPick.ADD },
                 icon = MIcons.plus,
             )
@@ -327,7 +367,7 @@ private fun ProfilesTab(
     val active = profiles.activeName
 
     fun create(next: HudProfiles) {
-        if (next == profiles) onNotice("Раскладок уже ${HudProfiles.MAX_PROFILES} — удали лишнюю") else onProfiles(next)
+        if (next == profiles) onNotice(tr("Раскладок уже {MAX_PROFILES} — удали лишнюю", HudProfiles.MAX_PROFILES)) else onProfiles(next)
     }
 
     fun commitRename() {
@@ -335,12 +375,60 @@ private fun ProfilesTab(
         renaming = false
     }
 
+    fun adopt(imported: HudImported) {
+        val next = profiles.create(imported.layout.name, imported.layout)
+        create(next)
+        if (next == profiles) return
+        val count = imported.layout.controls.size
+        onNotice(
+            if (imported.skipped > 0) {
+                tr("Раскладка {source}: перенесено кнопок {count}, без пары у нас {skipped}", sourceLabel(imported.source), count, imported.skipped)
+            } else {
+                tr("Раскладка {source}: перенесено кнопок {count}", sourceLabel(imported.source), count)
+            },
+        )
+    }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val text = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        val bytes = stream.readUpTo(HudForeign.MAX_TEXT + 1)
+                        if (bytes.size > HudForeign.MAX_TEXT) null else bytes.toString(Charsets.UTF_8)
+                    }
+                }.getOrNull()
+            }
+            val imported = text?.let(HudForeign::read)
+            if (imported == null) {
+                onNotice(tr("В файле нет раскладки, которую мы умеем читать — нужна раскладка Millida, FCL, Zalith или PojavLauncher"))
+            } else {
+                adopt(imported)
+            }
+        }
+    }
+    val saveFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val text = HudTransfer.encode(profiles.layout)
+        scope.launch {
+            val written = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) } != null
+                }.getOrDefault(false)
+            }
+            onNotice(if (written) tr("Раскладка сохранена в файл") else tr("Файл не записался — выбери другую папку"))
+        }
+    }
+
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         profiles.names.forEach { name ->
-            MChip(name, selected = name == active, onClick = {
+            MChip(trText(name), selected = name == active, onClick = {
                 confirmDelete = false
                 renaming = false
                 onProfiles(profiles.switchTo(name))
@@ -353,25 +441,25 @@ private fun ProfilesTab(
             MField(
                 value = draft,
                 onValueChange = { draft = it.take(HudProfiles.MAX_NAME) },
-                placeholder = "Название",
+                placeholder = tr("Название"),
                 modifier = Modifier.weight(1f),
                 onImeAction = ::commitRename,
             )
             Spacer(Modifier.width(8.dp))
-            MPrimaryButton("Сохранить", onClick = ::commitRename, icon = MIcons.check, size = MButtonSize.Small)
-            MTextButton("Отмена", onClick = { renaming = false })
+            MPrimaryButton(tr("Сохранить"), onClick = ::commitRename, icon = MIcons.check, size = MButtonSize.Small)
+            MTextButton(tr("Отмена"), onClick = { renaming = false })
         }
         confirmDelete -> Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Удалить «$active»?",
+                tr("Удалить «{active}»?", active),
                 modifier = Modifier.weight(1f),
                 style = MillidaType.body,
                 color = millida.fg,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            MTextButton("Отмена", onClick = { confirmDelete = false })
-            MDangerButton("Удалить", onClick = {
+            MTextButton(tr("Отмена"), onClick = { confirmDelete = false })
+            MDangerButton(tr("Удалить"), onClick = {
                 confirmDelete = false
                 onProfiles(profiles.delete(active))
             }, icon = MIcons.trash)
@@ -380,17 +468,17 @@ private fun ProfilesTab(
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            MSecondaryButton("Новая", onClick = { create(profiles.create(HudProfiles.NEW_NAME)) }, icon = MIcons.plus, size = MButtonSize.Small)
-            MSecondaryButton("Копия", onClick = { create(profiles.duplicate()) }, icon = MIcons.copy, size = MButtonSize.Small)
-            MSecondaryButton("Переименовать", onClick = {
+            MSecondaryButton(tr("Новая"), onClick = { create(profiles.create(HudProfiles.NEW_NAME)) }, icon = MIcons.plus, size = MButtonSize.Small)
+            MSecondaryButton(tr("Копия"), onClick = { create(profiles.duplicate()) }, icon = MIcons.copy, size = MButtonSize.Small)
+            MSecondaryButton(tr("Переименовать"), onClick = {
                 draft = active
                 renaming = true
             }, icon = MIcons.edit, size = MButtonSize.Small)
-            MDangerButton("Удалить", onClick = { confirmDelete = true }, enabled = profiles.names.size > 1, icon = MIcons.trash)
+            MDangerButton(tr("Удалить"), onClick = { confirmDelete = true }, enabled = profiles.names.size > 1, icon = MIcons.trash)
         }
     }
 
-    MSectionTitle("ШАБЛОН")
+    MSectionTitle(tr("ШАБЛОН"))
     Row(
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -404,31 +492,61 @@ private fun ProfilesTab(
         }
     }
 
-    MSectionTitle("ОБМЕН")
+    MSectionTitle(tr("ОБМЕН"))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         MSecondaryButton(
-            "Скопировать",
+            tr("Скопировать"),
             onClick = {
                 clipboard.setText(AnnotatedString(HudTransfer.encode(profiles.layout)))
-                onNotice("Раскладка скопирована")
+                onNotice(tr("Раскладка скопирована"))
             },
             icon = MIcons.copy,
             size = MButtonSize.Small,
         )
         MSecondaryButton(
-            "Вставить",
+            tr("Вставить"),
             onClick = {
-                val imported = clipboard.getText()?.text?.let(HudTransfer::decode)
+                val imported = clipboard.getText()?.text?.let(HudForeign::read)
                 if (imported == null) {
-                    onNotice("В буфере нет раскладки — скопируй её кнопкой «Скопировать»")
+                    onNotice(tr("В буфере нет раскладки — скопируй её кнопкой «Скопировать»"))
                 } else {
-                    create(profiles.create(imported.name, imported))
+                    adopt(imported)
                 }
             },
             icon = MIcons.download,
             size = MButtonSize.Small,
         )
     }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        MSecondaryButton(tr("Из файла"), onClick = { openFile.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) }, icon = MIcons.folder, size = MButtonSize.Small)
+        MSecondaryButton(tr("В файл"), onClick = { saveFile.launch(fileName(profiles.activeName)) }, icon = MIcons.upload, size = MButtonSize.Small)
+    }
+    Text(
+        tr("Подходят раскладки Millida, FCL, Zalith и PojavLauncher"),
+        style = MillidaType.small,
+        color = millida.fgSubtle,
+    )
+}
+
+private fun java.io.InputStream.readUpTo(limit: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(8192)
+    while (out.size() < limit) {
+        val read = read(buffer, 0, minOf(buffer.size, limit - out.size()))
+        if (read < 0) break
+        out.write(buffer, 0, read)
+    }
+    return out.toByteArray()
+}
+
+private fun fileName(name: String): String =
+    name.filter { it.isLetterOrDigit() || it == ' ' || it == '-' || it == '_' }.trim().ifEmpty { "layout" } + ".json"
+
+private fun sourceLabel(source: HudSource): String = when (source) {
+    HudSource.MILLIDA -> "Millida"
+    HudSource.POJAV -> "PojavLauncher"
+    HudSource.FCL -> "FCL"
+    HudSource.ZALITH -> "Zalith"
 }
 
 @Composable
@@ -437,21 +555,39 @@ private fun TouchTab(
     sensitivity: Float,
     onLayout: (HudLayout) -> Unit,
     onSensitivity: (Float) -> Unit,
+    gyro: Boolean?,
+    onGyro: (Boolean) -> Unit,
+    acceleration: Boolean,
+    onAcceleration: (Boolean) -> Unit,
 ) {
     var look by remember(sensitivity) { mutableFloatStateOf(sensitivity) }
-    EditorRow("Прозрачность") {
+    SchemePicker(layout.shownScheme) { onLayout(layout.withScheme(it)) }
+    if (gyro != null) {
+        MSwitchRow(tr("Обзор гироскопом"), tr("Поворачивай телефон, чтобы смотреть по сторонам"), gyro, onGyro)
+    }
+    MSwitchRow(tr("Ускорение касаний"), tr("Быстрый взмах поворачивает дальше медленного"), acceleration, onAcceleration)
+
+    EditorRow(tr("Прозрачность")) {
         MSlider(
             value = layout.shownOpacity,
             onValueChange = { onLayout(layout.withOpacity(it)) },
             valueRange = HudLayout.MIN_OPACITY..1f,
         )
     }
+    EditorRow(tr("Размер")) {
+        MSlider(
+            value = layout.shownSizeScale,
+            onValueChange = { onLayout(layout.withSizeScale(it)) },
+            valueRange = HudLayout.MIN_SIZE..HudLayout.MAX_SIZE,
+        )
+    }
+    MSwitchRow(tr("Инверсия Y"), null, layout.invertY) { onLayout(layout.withInvertY(it)) }
     MSwitchRow(
-        "Тап бьёт",
-        "Короткое касание — удар, а не действие",
+        tr("Тап бьёт"),
+        tr("Короткое касание — удар, а не действие"),
         layout.tapHits,
     ) { hits -> onLayout(layout.withLookTap(if (hits) HudKeys.MOUSE_LEFT else HudKeys.MOUSE_RIGHT)) }
-    EditorRow("Обзор ${String.format(Locale.ROOT, "%.1f×", look)}") {
+    EditorRow(tr("Обзор {0}", String.format(Locale.ROOT, "%.1f×", look))) {
         MSlider(
             value = look,
             onValueChange = { look = it },
@@ -460,7 +596,7 @@ private fun TouchTab(
             onValueChangeFinished = { onSensitivity(look) },
         )
     }
-    EditorRow("Удержание ${layout.shownHoldDelay} мс") {
+    EditorRow(tr("Удержание {shownHoldDelay} мс", layout.shownHoldDelay)) {
         MSlider(
             value = layout.shownHoldDelay.toFloat(),
             onValueChange = { onLayout(layout.withHoldDelay(((it / HOLD_STEP_MS).roundToInt() * HOLD_STEP_MS))) },
@@ -468,6 +604,22 @@ private fun TouchTab(
             steps = (HudLayout.MAX_HOLD_MS - HudLayout.MIN_HOLD_MS) / HOLD_STEP_MS - 1,
         )
     }
+}
+
+@Composable
+internal fun SchemePicker(selected: ControlScheme, onSelect: (ControlScheme) -> Unit) {
+    MSegmented(
+        options = ControlScheme.entries.toList(),
+        selected = selected,
+        onSelect = onSelect,
+        label = { schemeLabel(it) },
+    )
+}
+
+internal fun schemeLabel(scheme: ControlScheme): String = when (scheme) {
+    ControlScheme.TOUCH -> tr("Касание")
+    ControlScheme.CROSSHAIR -> tr("Прицел")
+    ControlScheme.BUTTONS -> tr("Кнопки")
 }
 
 @Composable
@@ -484,47 +636,47 @@ private fun EditorRow(label: String, content: @Composable () -> Unit) {
     }
 }
 
-private val addable: List<Pair<String, () -> HudControl>> = listOf(
-    "Прыжок" to { key("jump", "Прыжок", HudKeys.SPACE, wide = true) },
-    "Присесть" to { key("sneak", "Присесть", HudKeys.LEFT_SHIFT, wide = true, toggle = true) },
-    "Бег" to { key("sprint", "Бег", HudKeys.LEFT_CONTROL, wide = true, toggle = true) },
+private val addable: List<Pair<String, () -> HudControl>> get() = listOf(
+    tr("Прыжок") to { key("jump", tr("Прыжок"), HudKeys.SPACE, wide = true) },
+    tr("Присесть") to { key("sneak", tr("Присесть"), HudKeys.LEFT_SHIFT, wide = true, toggle = true) },
+    tr("Бег") to { key("sprint", tr("Бег"), HudKeys.LEFT_CONTROL, wide = true, toggle = true) },
     "W" to { key("forward", "W", HudKeys.W) },
     "A" to { key("left", "A", HudKeys.A) },
     "S" to { key("back", "S", HudKeys.S) },
     "D" to { key("right", "D", HudKeys.D) },
-    "Инвентарь" to { key("inventory", "Инвентарь", HudKeys.E, wide = true) },
-    "Чат" to { key("chat", "Чат", HudKeys.T, wide = true) },
-    "Бросить" to { key("drop", "Бросить", HudKeys.Q, wide = true) },
-    "Выбрать" to { key("pick", "Выбрать", HudKeys.F, wide = true) },
-    "Меню игры" to { key("escape", "Esc", HudKeys.ESCAPE, wide = true, visibility = HudVisibility.ALWAYS) },
-    "Список" to { key("tab", "Игроки", HudKeys.TAB, wide = true) },
-    "Отладка" to { key("debug", "F3", HudKeys.F3, wide = true) },
-    "Интерфейс F1" to { key("hide", "F1", HudKeys.F1) },
-    "Скриншот F2" to { key("screenshot", "F2", HudKeys.F2) },
-    "Вид F5" to { key("camera", "F5", HudKeys.F5) },
-    "Слот 1" to { key("slot1", "1", HudKeys.ONE) },
-    "Слот 2" to { key("slot2", "2", HudKeys.TWO) },
-    "Слот 3" to { key("slot3", "3", HudKeys.THREE) },
-    "Слот 4" to { key("slot4", "4", HudKeys.FOUR) },
-    "Слот 5" to { key("slot5", "5", HudKeys.FIVE) },
-    "Слот 6" to { key("slot6", "6", HudKeys.SIX) },
-    "Слот 7" to { key("slot7", "7", HudKeys.SEVEN) },
-    "Слот 8" to { key("slot8", "8", HudKeys.EIGHT) },
-    "Слот 9" to { key("slot9", "9", HudKeys.NINE) },
-    "Слот назад" to { wheel("slot-prev", "Слот −", HudKeys.SCROLL_UP) },
-    "Слот вперёд" to { wheel("slot-next", "Слот +", HudKeys.SCROLL_DOWN) },
-    "Удар" to { mouse("hit", "Удар", HudKeys.MOUSE_LEFT) },
-    "Действие" to { mouse("use", "Действие", HudKeys.MOUSE_RIGHT) },
-    "Средняя" to { mouse("middle", "Копировать", HudKeys.MOUSE_MIDDLE) },
-    "Клавиатура" to { action("keyboard", "Клавиатура", HudAction.KEYBOARD, 140f) },
-    "Меню" to { action("menu", "Меню", HudAction.MENU, 96f) },
-    "Курсор" to { action("mode", "Курсор", HudAction.POINTER_MODE, 104f) },
-    "Джойстик" to {
-        HudControl("stick", "Ходьба", HudKind.STICK, x = 0.5f, y = 0.5f, width = 176f, height = 176f)
+    tr("Инвентарь") to { key("inventory", tr("Инвентарь"), HudKeys.E, wide = true) },
+    tr("Чат") to { key("chat", tr("Чат"), HudKeys.T, wide = true) },
+    tr("Бросить") to { key("drop", tr("Бросить"), HudKeys.Q, wide = true) },
+    tr("Выбрать") to { key("pick", tr("Выбрать"), HudKeys.F, wide = true) },
+    tr("Меню игры") to { key("escape", "Esc", HudKeys.ESCAPE, wide = true, visibility = HudVisibility.ALWAYS) },
+    tr("Список") to { key("tab", tr("Игроки"), HudKeys.TAB, wide = true) },
+    tr("Отладка") to { key("debug", "F3", HudKeys.F3, wide = true) },
+    tr("Интерфейс F1") to { key("hide", "F1", HudKeys.F1) },
+    tr("Скриншот F2") to { key("screenshot", "F2", HudKeys.F2) },
+    tr("Вид F5") to { key("camera", "F5", HudKeys.F5) },
+    tr("Слот 1") to { key("slot1", "1", HudKeys.ONE) },
+    tr("Слот 2") to { key("slot2", "2", HudKeys.TWO) },
+    tr("Слот 3") to { key("slot3", "3", HudKeys.THREE) },
+    tr("Слот 4") to { key("slot4", "4", HudKeys.FOUR) },
+    tr("Слот 5") to { key("slot5", "5", HudKeys.FIVE) },
+    tr("Слот 6") to { key("slot6", "6", HudKeys.SIX) },
+    tr("Слот 7") to { key("slot7", "7", HudKeys.SEVEN) },
+    tr("Слот 8") to { key("slot8", "8", HudKeys.EIGHT) },
+    tr("Слот 9") to { key("slot9", "9", HudKeys.NINE) },
+    tr("Слот назад") to { wheel("slot-prev", tr("Слот −"), HudKeys.SCROLL_UP) },
+    tr("Слот вперёд") to { wheel("slot-next", tr("Слот +"), HudKeys.SCROLL_DOWN) },
+    tr("Удар") to { mouse("hit", tr("Удар"), HudKeys.MOUSE_LEFT) },
+    tr("Действие") to { mouse("use", tr("Действие"), HudKeys.MOUSE_RIGHT) },
+    tr("Средняя") to { mouse("middle", tr("Копировать"), HudKeys.MOUSE_MIDDLE) },
+    tr("Клавиатура") to { action("keyboard", tr("Клавиатура"), HudAction.KEYBOARD, 140f) },
+    tr("Меню") to { action("menu", tr("Меню"), HudAction.MENU, 96f) },
+    tr("Курсор") to { action("mode", tr("Курсор"), HudAction.POINTER_MODE, 104f) },
+    tr("Джойстик") to {
+        HudControl("stick", tr("Ходьба"), HudKind.STICK, x = 0.5f, y = 0.5f, width = 176f, height = 176f)
     },
-    "Джойстик под палец" to { HudPresets.base(HudKind.FLOAT_STICK).copy(x = 0.15f, y = 0.72f) },
-    "Прыжок и полёт" to { HudPresets.base(HudKind.JUMP).copy(icon = HudIcons.JUMP) },
-    "Инвентарь у хотбара" to { HudPresets.base(HudKind.HOTBAR_MORE).copy(icon = HudIcons.MORE) },
+    tr("Джойстик под палец") to { HudPresets.base(HudKind.FLOAT_STICK).copy(x = 0.15f, y = 0.72f) },
+    tr("Прыжок и полёт") to { HudPresets.base(HudKind.JUMP).copy(icon = HudIcons.JUMP) },
+    tr("Инвентарь у хотбара") to { HudPresets.base(HudKind.HOTBAR_MORE).copy(icon = HudIcons.MORE) },
 )
 
 private fun key(

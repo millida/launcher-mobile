@@ -25,9 +25,10 @@ import net.millida.launcher.Area
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.Screen
 import net.millida.launcher.UiState
-import net.millida.launcher.core.account.AccountKind
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.portal.asRubles
 import net.millida.launcher.ui.media.shotsCount
+import net.millida.launcher.ui.settings.SettingsSection
 import net.millida.launcher.ui.settings.stepIn
 
 private val HERO_HEIGHT = 108.dp
@@ -54,7 +55,7 @@ fun MoreScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
     LaunchedEffect(Unit) { model.loadShotsCount() }
 
     val friends = HubEntry(
-        title = "Друзья",
+        title = tr("Друзья"),
         subtitle = friendsLine(state),
         icon = MIcons.users,
         screen = Screen.FRIENDS,
@@ -62,50 +63,30 @@ fun MoreScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
         alert = state.incomingRequests > 0,
     )
     val servers = HubEntry(
-        title = "Серверы",
-        subtitle = if (state.serversTotal > 0) "Серверов: ${state.serversTotal}" else "Топ серверов",
+        title = tr("Серверы"),
+        subtitle = if (state.serversTotal > 0) tr("Серверов: {serversTotal}", state.serversTotal) else tr("Топ серверов"),
         icon = MIcons.map,
         screen = Screen.SERVERS,
     )
     val hosting = HubEntry(
-        title = "Хостинг",
-        subtitle = if (state.hosted.isNotEmpty()) "Моих: ${state.hosted.size}" else "Свой сервер",
+        title = tr("Хостинг"),
+        subtitle = if (state.hosted.isNotEmpty()) tr("Моих: {size}", state.hosted.size) else tr("Свой сервер"),
         icon = MIcons.server,
         screen = Screen.HOSTING,
     )
-    val cabinet = HubEntry(
-        title = "Кабинет",
-        subtitle = "Награды и новости",
-        icon = MIcons.trophy,
-        screen = Screen.CABINET,
-    )
-    val packs = HubEntry(
-        title = "Коды сборок",
-        subtitle = if (state.myPacks.isNotEmpty()) "Моих: ${state.myPacks.size}" else "По коду или файлом",
-        icon = MIcons.chest,
-        screen = Screen.PACKS,
-    )
-    val shots = HubEntry(
-        title = "Скриншоты",
-        subtitle = state.shotsAll?.takeIf { it > 0 }?.let(::shotsCount) ?: "Из игры",
-        icon = MIcons.image,
-        screen = Screen.SCREENSHOTS,
-    )
-    val bedrock = HubEntry(
-        title = "Bedrock",
-        subtitle = if (state.bedrockBridgeReady || state.bedrockOfficialReady) "Готов к игре" else "Порт 19132",
-        icon = MIcons.blocks,
-        screen = Screen.BEDROCK,
-    )
+    val cabinet = cabinetEntry()
+    val packs = packsEntry(state)
+    val shots = shotsEntry(state)
+    val bedrock = bedrockEntry(state)
     val settings = HubEntry(
-        title = "Настройки",
-        subtitle = "Звук, тема, память",
+        title = tr("Настройки"),
+        subtitle = tr("Звук, тема, память"),
         icon = MIcons.settings,
         screen = Screen.SETTINGS,
     )
     val open: (HubEntry) -> Unit = { entry -> model.open(entry.screen) }
 
-    MScreen(modifier = modifier, title = "Ещё", spacing = HUB_GAP) {
+    MScreen(modifier = modifier, title = tr("Ещё"), spacing = HUB_GAP) {
         item(key = "more-account") {
             AccountPlate(state, onOpen = { model.open(Screen.ACCOUNT) }, modifier = stepIn())
         }
@@ -134,11 +115,7 @@ fun MoreScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
             }
         }
         item(key = "more-premium") {
-            SlotTile(
-                HubEntry(title = "Премиум", subtitle = "Платные сборки", icon = MIcons.crown, screen = Screen.PREMIUM),
-                open,
-                stepIn(),
-            )
+            SlotTile(premiumEntry(), open, stepIn())
         }
         item(key = "more-version") {
             Text(
@@ -154,15 +131,75 @@ fun MoreScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
     }
 }
 
+private fun cabinetEntry() = HubEntry(
+    title = tr("Кабинет"),
+    subtitle = tr("Награды и новости"),
+    icon = MIcons.trophy,
+    screen = Screen.CABINET,
+)
+
+private fun packsEntry(state: UiState) = HubEntry(
+    title = tr("Коды сборок"),
+    subtitle = if (state.myPacks.isNotEmpty()) tr("Моих: {size}", state.myPacks.size) else tr("По коду или файлом"),
+    icon = MIcons.chest,
+    screen = Screen.PACKS,
+)
+
+private fun shotsEntry(state: UiState) = HubEntry(
+    title = tr("Скриншоты"),
+    subtitle = state.shotsAll?.takeIf { it > 0 }?.let(::shotsCount) ?: tr("Из игры"),
+    icon = MIcons.image,
+    screen = Screen.SCREENSHOTS,
+)
+
+private fun bedrockEntry(state: UiState) = HubEntry(
+    title = "Bedrock",
+    subtitle = if (state.bedrockBridgeReady || state.bedrockOfficialReady) tr("Готов к игре") else tr("Порт 19132"),
+    icon = MIcons.blocks,
+    screen = Screen.BEDROCK,
+)
+
+private fun premiumEntry() = HubEntry(title = tr("Премиум"), subtitle = tr("Платные сборки"), icon = MIcons.crown, screen = Screen.PREMIUM)
+
+/**
+ * The landscape lobby has no «Ещё» tab or button: the sections only «Ещё»
+ * leads to are listed in the settings instead, under the same names. Friends,
+ * hosting and the servers stay where the lobby itself opens them.
+ */
+@Composable
+internal fun MoreSectionsSettings(state: UiState, model: LauncherViewModel, modifier: Modifier = Modifier) {
+    LaunchedEffect(Unit) { model.loadShotsCount() }
+    val nick = state.portal?.nickname?.takeIf { it.isNotBlank() } ?: state.account?.nick?.takeIf { it.isNotBlank() }
+    val account = HubEntry(
+        title = tr("Аккаунт"),
+        subtitle = nick ?: tr("Войди или добавь аккаунт"),
+        icon = MIcons.user,
+        screen = Screen.ACCOUNT,
+    )
+    val entries = listOf(account, cabinetEntry(), packsEntry(state), shotsEntry(state), bedrockEntry(state), premiumEntry())
+    SettingsSection(tr("ЕЩЁ"), modifier) {
+        entries.forEachIndexed { index, entry ->
+            if (index > 0) MDivider()
+            MListRow(
+                title = entry.title,
+                subtitle = entry.subtitle,
+                icon = entry.icon,
+                plate = false,
+                onClick = { model.open(entry.screen) },
+            )
+        }
+    }
+}
+
 private fun friendsLine(state: UiState): String {
     val online = state.friends.count { it.online || it.playing }
     return when {
-        !state.millidaSignedIn -> "Нужен вход"
-        state.incomingRequests > 0 -> "Заявки: ${state.incomingRequests}"
-        state.unreadMessages > 0 -> "Новые: ${state.unreadMessages}"
-        online > 0 -> "В сети: $online"
-        state.friends.isNotEmpty() -> "Друзей: ${state.friends.size}"
-        else -> "Позови в игру"
+        !state.millidaSignedIn -> tr("Нужен вход")
+        state.incomingRequests > 0 -> tr("Заявки: {incomingRequests}", state.incomingRequests)
+        state.unreadMessages > 0 -> tr("Новые: {unreadMessages}", state.unreadMessages)
+        online > 0 -> tr("В сети: {online}", online)
+        state.friends.isNotEmpty() -> tr("Друзей: {size}", state.friends.size)
+        else -> tr("Позови в игру")
     }
 }
 
@@ -181,7 +218,7 @@ private fun AccountPlate(state: UiState, onOpen: () -> Unit, modifier: Modifier)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    nick ?: "Гость",
+                    nick ?: tr("Гость"),
                     style = MillidaType.pixel.copy(fontSize = 17.sp, lineHeight = 20.sp),
                     color = colors.fg,
                     maxLines = 1,
@@ -189,14 +226,14 @@ private fun AccountPlate(state: UiState, onOpen: () -> Unit, modifier: Modifier)
                 )
                 Spacer(Modifier.height(4.dp))
                 when {
-                    expired -> PlateLine("Вход истёк — войди заново", colors.danger)
+                    expired -> PlateLine(tr("Вход истёк — войди заново"), colors.danger)
                     portal != null -> Row(verticalAlignment = Alignment.CenterVertically) {
                         MIcon(MIcons.wallet, size = 14.dp)
                         Spacer(Modifier.width(6.dp))
                         PlateLine(portal.balanceKopecks.asRubles(), colors.fgSubtle)
                     }
-                    account != null -> PlateLine(kindLine(account.kind), colors.fgSubtle)
-                    else -> PlateLine("Войди или добавь аккаунт", colors.accentText)
+                    account != null -> PlateLine(accountKindLabel(account.kind), colors.fgSubtle)
+                    else -> PlateLine(tr("Войди или добавь аккаунт"), colors.accentText)
                 }
             }
             Spacer(Modifier.width(10.dp))
@@ -214,12 +251,6 @@ private fun PlateLine(text: String, color: Color) {
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
-}
-
-private fun kindLine(kind: AccountKind): String = when (kind) {
-    AccountKind.MILLIDA -> "Аккаунт Millida"
-    AccountKind.MICROSOFT -> "Лицензия Microsoft"
-    AccountKind.OFFLINE -> "Игра без входа"
 }
 
 @Composable

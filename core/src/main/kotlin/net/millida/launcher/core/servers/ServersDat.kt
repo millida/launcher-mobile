@@ -8,6 +8,7 @@ import java.io.File
 import java.io.IOException
 import java.util.zip.GZIPInputStream
 
+import net.millida.launcher.core.i18n.tr
 /**
  * One row of the in-game multiplayer list.
  *
@@ -347,12 +348,12 @@ internal fun File.atomicWriteBytes(data: ByteArray) {
     if (backup.exists()) backup.delete()
     if (exists() && !renameTo(backup)) {
         temp.delete()
-        throw IOException("не удалось заменить файл $name")
+        throw IOException(tr("не удалось заменить файл {name}", name))
     }
     if (!temp.renameTo(this)) {
         backup.renameTo(this)
         temp.delete()
-        throw IOException("не удалось записать файл $name")
+        throw IOException(tr("не удалось записать файл {name}", name))
     }
     backup.delete()
 }

@@ -11,10 +11,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.support.BugKind
 import net.millida.launcher.core.support.BugReport
 import net.millida.launcher.core.support.CrashFile
-import net.millida.launcher.core.support.ErrorReport
 import net.millida.launcher.core.support.ReportRedaction
 import net.millida.launcher.core.support.SupportClient
 import net.millida.launcher.runtime.GameSession
@@ -72,9 +72,9 @@ class SupportModel(
         if (note.status == CrashStatus.Sending || note.status == CrashStatus.Sent) return
         scope.launch {
             if (upload(note.text)) {
-                notice("Отчёт о вылете отправлен", false)
+                notice(tr("Отчёт о вылете отправлен"), false)
             } else {
-                notice("Отчёт не ушёл — проверь сеть и нажми «Отправить» ещё раз", true)
+                notice(tr("Отчёт не ушёл — проверь сеть и нажми «Отправить» ещё раз"), true)
             }
         }
     }
@@ -95,10 +95,10 @@ class SupportModel(
                     answer == null -> {
                         val report = withContext(Dispatchers.IO) { BugReport.review(body, stars, facts()) }
                         client.bugReport(report)
-                        notice("Отзыв принят — спасибо, мы читаем каждый", false)
+                        notice(tr("Отзыв принят — спасибо, мы читаем каждый"), false)
                     }
-                    answer.granted -> notice("Спасибо за отзыв! +${answer.shards} осколков", false)
-                    else -> notice("Отзыв принят — награда за отзыв раз в неделю", false)
+                    answer.granted -> notice(tr("Спасибо за отзыв! +{shards} осколков", answer.shards), false)
+                    else -> notice(tr("Отзыв принят — награда за отзыв раз в неделю"), false)
                 }
                 onSent()
             } catch (cancelled: CancellationException) {
@@ -122,7 +122,7 @@ class SupportModel(
                     BugReport.bug(kind, body, facts(), log)
                 }
                 client.bugReport(report)
-                notice("Баг отправлен — спасибо, разберёмся", false)
+                notice(tr("Баг отправлен — спасибо, разберёмся"), false)
                 onSent()
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -144,12 +144,7 @@ class SupportModel(
     private suspend fun upload(text: String): Boolean {
         mutable.update { current -> current.copy(crash = current.crash?.copy(status = CrashStatus.Sending)) }
         val sent = try {
-            withContext(Dispatchers.IO) {
-                val record = CrashFile.parse(text)
-                val release = RELEASE_PREFIX + record.version.ifEmpty { BuildConfig.VERSION_NAME }
-                client.error(ErrorReport.fromCrash(record, release, nickMasks()))
-                CrashGuard.clearIfSame(app, text)
-            }
+            withContext(Dispatchers.IO) { CrashGuard.send(app, client, nickMasks(), text) }
             true
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -164,13 +159,7 @@ class SupportModel(
 
     private fun facts(): String = "Millida Mobile ${BuildConfig.VERSION_NAME} · ${container.deviceReport()}"
 
-    /** A report names a fault, not a player. */
-    private fun nickMasks(): List<Pair<String?, String>> = try {
-        container.accounts.load().map { it.nick to NICK_MASK }
-    } catch (unreadable: Exception) {
-        Log.w(TAG, "аккаунты не прочитались для маски ников: ${unreadable.message}")
-        emptyList()
-    }
+    private fun nickMasks(): List<Pair<String?, String>> = CrashGuard.nickMasks(container.accounts)
 
     private fun logTail(): String {
         val runtimes = container.layout.runtimes
@@ -185,15 +174,13 @@ class SupportModel(
         val offline = generateSequence(error) { it.cause }.take(8).any {
             it is UnknownHostException || it is SocketException || it is SocketTimeoutException
         }
-        if (offline) return "Нет сети — проверь подключение и отправь ещё раз"
+        if (offline) return tr("Нет сети — проверь подключение и отправь ещё раз")
         val reason = error.message?.trim().orEmpty()
-        return if (reason.isEmpty()) "Не отправилось — попробуй ещё раз" else "Не отправилось: $reason"
+        return if (reason.isEmpty()) tr("Не отправилось — попробуй ещё раз") else tr("Не отправилось: {reason}", reason)
     }
 
     private companion object {
         const val TAG = "millida"
-        const val RELEASE_PREFIX = "launcher-mobile@"
-        const val NICK_MASK = "<nick>"
         const val NATIVE_LINES = 40
         const val SESSION_LINES = 120
         const val CRASH_LINES = 40

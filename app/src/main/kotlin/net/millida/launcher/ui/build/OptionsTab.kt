@@ -23,6 +23,22 @@ import androidx.compose.ui.unit.dp
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.UiState
 import net.millida.launcher.core.MemoryTuning
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.launch.JvmOptions
+import net.millida.launcher.core.content.ShaderKit
+import android.content.Context
+import android.content.Intent
+import android.provider.DocumentsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
+import net.millida.launcher.GameFilesProvider
+
+
+
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.mojang.VersionManifest
 import net.millida.launcher.core.profile.Profile
@@ -67,6 +83,8 @@ internal fun LazyListScope.optionsTab(
 ) {
     item(key = "options:main", contentType = "card") { MainCard(profile, state, lobby, model, onPickCover) }
     item(key = "options:game", contentType = "card") { GameCard(profile, state, model) }
+    item(key = "options:shaders", contentType = "card") { ShadersCard(profile, state, model) }
+    item(key = "options:files", contentType = "card") { FilesCard(profile, model) }
     val packUpdate = model.packUpdates.state.value
     val auto = packUpdate.auto?.takeIf { it.catalog && packUpdate.profileId == profile.id }
     if (auto != null) {
@@ -237,7 +255,127 @@ private fun GameCard(profile: Profile, state: UiState, model: LauncherViewModel)
                 }
             }
         }
+
+        Spacer(Modifier.height(18.dp))
+        JvmArgsField(profile, model)
     }
+}
+
+@Composable
+private fun FilesCard(profile: Profile, model: LauncherViewModel) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var open by rememberSaveable(profile.id) { mutableStateOf(false) }
+    val addMod = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            try {
+                val added = model.importBuildFile(profile, "mods", uri)
+                model.notice(tr("Мод «{name}» добавлен в сборку", added.name))
+                model.refreshBuild()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                model.notice(error.message ?: tr("файл не добавился"), isError = true)
+            }
+        }
+    }
+    MCard {
+        MSectionTitle(tr("ФАЙЛЫ СБОРКИ"))
+        Spacer(Modifier.height(4.dp))
+        Text(tr("Настройки модов, options.txt, журналы — открыть, отправить, добавить или удалить"), style = MillidaType.small, color = millida.fgSubtle)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            tr("В приложении «Файлы»: Millida → {name}. Папка Android/data с Android 11 закрыта для всех приложений, поэтому сборки видны там как отдельное место.", profile.name),
+            style = MillidaType.small,
+            color = millida.fgFaint,
+        )
+        Spacer(Modifier.height(10.dp))
+        MButtonRow {
+            MSecondaryButton(tr("Открыть файлы"), onClick = { open = true }, icon = MIcons.folder, size = MButtonSize.Small)
+            MSecondaryButton(tr("Добавить мод из файла"), onClick = { addMod.launch(arrayOf("application/java-archive", "application/zip", "application/octet-stream", "*/*")) }, icon = MIcons.plus, size = MButtonSize.Small)
+            MTextButton(tr("Открыть в «Файлах»"), onClick = {
+                if (!openInFiles(context, profile)) {
+                    model.notice(tr("Открой приложение «Файлы» и выбери в меню Millida"), isError = true)
+                }
+            }, icon = MIcons.externalLink)
+        }
+    }
+    if (open) BuildFilesSheet(profile, model, onDismiss = { open = false })
+}
+
+/** The build's folder in the system «Files» app, through the launcher's own documents provider. */
+private fun openInFiles(context: Context, profile: Profile): Boolean {
+    val uri = GameFilesProvider.folderUri(context.packageName, profile.id)
+    val intent = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR)
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    return runCatching { context.startActivity(intent) }.isSuccess
+}
+
+@Composable
+private fun ShadersCard(profile: Profile, state: UiState, model: LauncherViewModel) {
+    val colors = millida
+    var confirm by rememberSaveable(profile.id) { mutableStateOf(false) }
+    val supported = ShaderKit.supports(profile.loader)
+    MCard {
+        MSectionTitle(tr("ШЕЙДЕРЫ"))
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (supported) {
+                tr("Sodium, Iris и лёгкий шейдерпак MakeUp одной кнопкой; рендерер подберётся сам, если в настройках стоит «Авто»")
+            } else {
+                tr("Шейдерам нужен Fabric, Quilt или NeoForge — создай сборку с одним из них")
+            },
+            style = MillidaType.small,
+            color = colors.fgSubtle,
+        )
+        if (supported) {
+            Spacer(Modifier.height(10.dp))
+            MSecondaryButton(
+                tr("Включить шейдеры"),
+                onClick = { confirm = true },
+                enabled = state.busy == null,
+                icon = MIcons.sparkle,
+                size = MButtonSize.Small,
+            )
+        }
+    }
+    if (confirm) {
+        MConfirmDialog(
+            title = tr("Включить шейдеры?"),
+            text = tr("Шейдеры красиво светят, но на телефоне кадров станет в два-три раза меньше, а телефон будет греться. Выключить можно в игре: Настройки → Видео → Шейдеры."),
+            confirm = tr("Включить"),
+            onConfirm = {
+                confirm = false
+                model.installShaders(profile)
+            },
+            onDismiss = { confirm = false },
+            danger = false,
+        )
+    }
+}
+
+@Composable
+private fun JvmArgsField(profile: Profile, model: LauncherViewModel) {
+    val colors = millida
+    val saved = JvmOptions.format(profile.extraJvmArgs)
+    var typed by rememberSaveable(profile.id, saved) { mutableStateOf(saved) }
+    OptionField(tr("АРГУМЕНТЫ JAVA")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MField(typed, { typed = it }, placeholder = "-XX:+UseG1GC", modifier = Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            MIconButton(
+                icon = MIcons.check,
+                onClick = { model.setProfileJvmArgs(profile, typed) },
+                tint = colors.accentText,
+                enabled = typed.trim() != saved,
+                label = tr("Сохранить аргументы"),
+            )
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(tr("Для опытных: неверный аргумент не даст игре запуститься"), style = MillidaType.small, color = colors.fgFaint)
 }
 
 @Composable

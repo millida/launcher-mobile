@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderKind
 import java.io.IOException
 
@@ -107,17 +108,17 @@ data class PackManifest(
          */
         @Throws(IOException::class)
         fun parse(raw: JsonObject?, hosts: PackHostPolicy = PackHostPolicy()): PackManifest {
-            val root = raw ?: throw IOException("сборка записана в неизвестном формате — обнови лаунчер")
-            return packJson("описание сборки повреждено — попроси автора поделиться ею заново") { read(root, hosts) }
+            val root = raw ?: throw IOException(tr("сборка записана в неизвестном формате — обнови лаунчер"))
+            return packJson(tr("описание сборки повреждено — попроси автора поделиться ею заново")) { read(root, hosts) }
         }
 
         private fun read(root: JsonObject, hosts: PackHostPolicy): PackManifest {
             val format = root["formatVersion"]?.jsonPrimitive?.longOrNull?.toInt() ?: PACK_MANIFEST_FORMAT
             if (format > PACK_MANIFEST_FORMAT) {
-                throw IOException("сборку сделали в более новой версии лаунчера — обнови лаунчер")
+                throw IOException(tr("сборку сделали в более новой версии лаунчера — обнови лаунчер"))
             }
             val game = root.text("game")
-            if (game.isBlank()) throw IOException("в сборке не указана версия Minecraft")
+            if (game.isBlank()) throw IOException(tr("в сборке не указана версия Minecraft"))
             val files = (root["files"] as? JsonArray).orEmpty()
                 .map { it.jsonObject }
                 .take(MAX_FILES)
@@ -143,7 +144,7 @@ data class PackManifest(
                 }
             return PackManifest(
                 formatVersion = format,
-                name = clean(root.text("name")).take(MAX_NAME).ifEmpty { "Сборка друга" },
+                name = clean(root.text("name")).take(MAX_NAME).ifEmpty { tr("Сборка друга") },
                 summary = clean(root.text("summary")).take(MAX_SUMMARY),
                 game = game,
                 loader = root.text("loader").ifEmpty { LoaderKind.VANILLA.id },

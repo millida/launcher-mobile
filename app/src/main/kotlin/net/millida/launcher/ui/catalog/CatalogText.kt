@@ -1,7 +1,8 @@
 package net.millida.launcher.ui.catalog
 
-import java.util.Locale
 
+import net.millida.launcher.core.i18n.I18n
+import net.millida.launcher.core.i18n.tr
 private val HTML_BREAK = Regex("(?i)<\\s*(br|/p|/div|/li|/h[1-6])\\s*/?>")
 private val HTML_TAG = Regex("<[^>]+>")
 private val MD_IMAGE = Regex("!\\[[^\\]]*]\\([^)]*\\)")
@@ -46,7 +47,7 @@ internal fun plainText(raw: String): String {
 }
 
 internal fun compactCount(value: Long): String = when {
-    value >= 1_000_000 -> String.format(Locale.ROOT, "%.1f", value / 1_000_000.0).replace('.', ',').removeSuffix(",0") + " млн"
-    value >= 1_000 -> "${value / 1_000} тыс."
+    value >= 1_000_000 -> tr("{0} млн", I18n.decimal(value / 1_000_000.0, 1))
+    value >= 1_000 -> tr("{0} тыс.", value / 1_000)
     else -> value.coerceAtLeast(0).toString()
 }

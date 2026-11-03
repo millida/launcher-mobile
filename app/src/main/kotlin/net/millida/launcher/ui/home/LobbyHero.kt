@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import net.millida.launcher.UiState
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.profile.PlayTime
 import net.millida.launcher.core.profile.Profile
 import net.millida.launcher.ui.LocalReducedMotion
@@ -92,7 +93,7 @@ internal fun BuildHero(
         )
         Spacer(Modifier.height(10.dp))
         MButtonRow {
-            MSecondaryButton("Сборка", onClick = onOpen, icon = MIcons.settings, size = MButtonSize.Small)
+            MSecondaryButton(tr("Сборка"), onClick = onOpen, icon = MIcons.settings, size = MButtonSize.Small)
         }
     }
 }
@@ -131,7 +132,7 @@ internal fun ModePlate(
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                "СЕГОДНЯ ИГРАЕМ",
+                tr("Начни отсюда").uppercase(),
                 style = MillidaType.caption.copy(fontWeight = FontWeight.ExtraBold),
                 color = MillidaPixel.modeCaption,
                 maxLines = 1,
@@ -206,14 +207,14 @@ internal fun EmptyModePlate(modifier: Modifier = Modifier, artSize: Dp = 64.dp) 
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(
-                "СЕГОДНЯ ИГРАЕМ",
+                tr("Начни отсюда").uppercase(),
                 style = MillidaType.caption.copy(fontWeight = FontWeight.ExtraBold),
                 color = MillidaPixel.modeCaption,
                 maxLines = 1,
             )
             Spacer(Modifier.height(2.dp))
             Text(
-                "Ещё не выбрано",
+                tr("Ещё не выбрано"),
                 style = MillidaType.sectionTitle.copy(fontWeight = FontWeight.Black, shadow = titleShadow),
                 color = MillidaPixel.white,
                 maxLines = 2,
@@ -245,7 +246,7 @@ internal fun FirstBuildHero(state: UiState, onCreate: () -> Unit) {
         }
         Spacer(Modifier.height(14.dp))
         Text(
-            "Создай первую сборку",
+            tr("Создай первую сборку"),
             style = MillidaType.sectionTitle,
             color = colors.fg,
             textAlign = TextAlign.Center,
@@ -253,7 +254,7 @@ internal fun FirstBuildHero(state: UiState, onCreate: () -> Unit) {
         Spacer(Modifier.height(16.dp))
         if (state.busy == null) {
             MPrimaryButton(
-                text = "Создать сборку",
+                text = tr("Создать сборку"),
                 onClick = onCreate,
                 modifier = Modifier
                     .fillMaxWidth()

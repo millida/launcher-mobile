@@ -25,6 +25,7 @@ import net.millida.launcher.core.friends.OverlayCard
 import net.millida.launcher.core.friends.OverlaySnapshot
 import net.millida.launcher.core.friends.OverlayWire
 
+import net.millida.launcher.core.i18n.tr
 /**
  * The game process side of the friends chat: it only draws what the launcher
  * process sends and forwards what the player taps.
@@ -75,7 +76,7 @@ class FriendsBridgeClient(private val context: Context) {
             Log.w(TAG, "чат друзей не подключился: ${refused.message}")
             false
         }
-        if (!bound) noticeFlow.tryEmit("Чат друзей не подключился — открой его в лаунчере")
+        if (!bound) noticeFlow.tryEmit(tr("Чат друзей не подключился — открой его в лаунчере"))
     }
 
     fun unbind() {
@@ -116,7 +117,7 @@ class FriendsBridgeClient(private val context: Context) {
     private fun send(code: Int, json: String?): Boolean {
         val target = service
         if (target == null) {
-            noticeFlow.tryEmit("Чат друзей ещё подключается — повтори через секунду")
+            noticeFlow.tryEmit(tr("Чат друзей ещё подключается — повтори через секунду"))
             return false
         }
         val message = Message.obtain(null, code).apply {
@@ -128,7 +129,7 @@ class FriendsBridgeClient(private val context: Context) {
             true
         } catch (failed: RemoteException) {
             Log.w(TAG, "лаунчер не принял действие чата: ${failed.message}")
-            noticeFlow.tryEmit("Лаунчер не ответил — повтори")
+            noticeFlow.tryEmit(tr("Лаунчер не ответил — повтори"))
             false
         }
     }

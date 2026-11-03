@@ -28,6 +28,8 @@ import net.millida.launcher.core.hosting.HostingCatalogHit
 import net.millida.launcher.core.hosting.HostingCore
 import net.millida.launcher.core.hosting.HostingInstall
 import net.millida.launcher.core.hosting.HostingInstallUpdate
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.forServer
 import net.millida.launcher.ui.MBadge
 import net.millida.launcher.ui.MBottomSheet
@@ -58,42 +60,44 @@ private const val CATALOG_MAX_COLUMNS = 3
 /** The desktop catalog grid's `minmax(300px, 1fr)` cell. */
 private val CATALOG_CELL = 300.dp
 
-private enum class ContentView(val label: String) {
-    Installed("На сервере"),
-    Catalog("Каталог"),
-    Core("Ядро"),
+private enum class ContentView(private val labelKey: String) {
+    Installed(trKey("На сервере")),
+    Catalog(trKey("Каталог")),
+    Core(trKey("Ядро")),;
+
+    val label: String get() = tr(labelKey)
 }
 
-private val CONTENT_KINDS: List<Pair<String, String>> = listOf(
-    HOSTING_KIND_MODPACK to "Сборки",
-    "plugin" to "Плагины",
-    "mod" to "Моды",
-    "datapack" to "Дата-паки",
+private val CONTENT_KINDS: List<Pair<String, String>> get() = listOf(
+    HOSTING_KIND_MODPACK to tr("Сборки"),
+    "plugin" to tr("Плагины"),
+    "mod" to tr("Моды"),
+    "datapack" to tr("Дата-паки"),
 )
 
-private val INSTALL_KIND: Map<String, String> = mapOf(
-    "MOD" to "Мод",
-    "PLUGIN" to "Плагин",
-    "MODPACK" to "Сборка",
-    "DATAPACK" to "Дата-пак",
-    "MAP" to "Карта",
+private val INSTALL_KIND: Map<String, String> get() = mapOf(
+    "MOD" to tr("Мод"),
+    "PLUGIN" to tr("Плагин"),
+    "MODPACK" to tr("Сборка"),
+    "DATAPACK" to tr("Дата-пак"),
+    "MAP" to tr("Карта"),
 )
 
-private val INSTALL_SOURCE: Map<String, String> = mapOf(
+private val INSTALL_SOURCE: Map<String, String> get() = mapOf(
     "modrinth" to "Modrinth",
     "curseforge" to "CurseForge",
     "ftb" to "FTB",
-    "market" to "Маркет",
-    "upload" to "Свой файл",
-    "partner" to "Сборка партнёра",
-    "catalog" to "Каталог Millida",
+    "market" to tr("Маркет"),
+    "upload" to tr("Свой файл"),
+    "partner" to tr("Сборка партнёра"),
+    "catalog" to tr("Каталог Millida"),
 )
 
-private val CORE_FAMILY: Map<String, String> = mapOf(
-    "vanilla" to "Без модов и плагинов",
-    "plugins" to "Держит плагины",
-    "mods" to "Держит моды",
-    "proxy" to "Связывает серверы",
+private val CORE_FAMILY: Map<String, String> get() = mapOf(
+    "vanilla" to tr("Без модов и плагинов"),
+    "plugins" to tr("Держит плагины"),
+    "mods" to tr("Держит моды"),
+    "proxy" to tr("Связывает серверы"),
 )
 
 @Composable
@@ -200,11 +204,11 @@ fun HostingContentTab(
                 ContentView.Core -> {
                     item(key = "core-head") {
                         MCard {
-                            ToolsHead(title = "Ядро и версия", subtitle = "Сейчас: ${serverLine(core, version)}")
+                            ToolsHead(title = tr("Ядро и версия"), subtitle = tr("Сейчас: {0}", serverLine(core, version)))
                             Spacer(Modifier.height(8.dp))
                             MListRow(
-                                title = "Версия игры",
-                                subtitle = pickVersion.ifBlank { "не выбрана" },
+                                title = tr("Версия игры"),
+                                subtitle = pickVersion.ifBlank { tr("не выбрана") },
                                 icon = MIcons.box,
                                 plate = false,
                                 onClick = { versionSheet = true },
@@ -227,9 +231,9 @@ fun HostingContentTab(
 
     removing?.let { install ->
         MConfirmDialog(
-            title = "Убрать «${install.name}»?",
-            text = "Пропадёт с сервера после перезапуска",
-            confirm = "Убрать",
+            title = tr("Убрать «{name}»?", install.name),
+            text = tr("Пропадёт с сервера после перезапуска"),
+            confirm = tr("Убрать"),
             onConfirm = {
                 removing = null
                 tools.removeInstall(serverId, install)
@@ -241,9 +245,9 @@ fun HostingContentTab(
     askCore?.let { next ->
         val target = if (pickVersion in next.versions) pickVersion else next.latest.ifBlank { next.versions.firstOrNull() ?: pickVersion }
         MConfirmDialog(
-            title = "Поставить ${next.name} $target?",
-            text = "Установленная сборка сбросится, мир останется" + if (running) ". Сервер перезапустится" else "",
-            confirm = "Поставить",
+            title = tr("Поставить {name} {target}?", next.name, target),
+            text = if (running) tr("Установленная сборка сбросится, мир останется. Сервер перезапустится") else tr("Установленная сборка сбросится, мир останется"),
+            confirm = tr("Поставить"),
             onConfirm = {
                 askCore = null
                 tools.changeCore(serverId, next, target, running, onDone = onChanged)
@@ -257,9 +261,9 @@ fun HostingContentTab(
             .filter { it.isNotBlank() }
             .distinct()
             .sortedWith(VERSION_ORDER)
-        MBottomSheet(onDismiss = { versionSheet = false }, title = "Версия игры") {
+        MBottomSheet(onDismiss = { versionSheet = false }, title = tr("Версия игры")) {
             if (versions.isEmpty()) {
-                MEmptyState(icon = MIcons.box, title = "Версии ещё не загрузились")
+                MEmptyState(icon = MIcons.box, title = tr("Версии ещё не загрузились"))
             } else {
                 MButtonRow {
                     versions.forEach { item ->
@@ -291,7 +295,7 @@ private fun LazyListScope.installedItems(
     if (updates.isNotEmpty()) {
         item(key = "updates") {
             MCard(Modifier.animateItem()) {
-                ToolsHead(title = "Есть обновления", subtitle = "Всего: ${updates.size}")
+                ToolsHead(title = tr("Есть обновления"), subtitle = tr("Всего: {size}", updates.size))
                 updates.forEachIndexed { index, update ->
                     if (index > 0) MDivider()
                     val working = tools.key(serverId, "content:update:${update.installId}") in busy
@@ -302,7 +306,7 @@ private fun LazyListScope.installedItems(
                         plate = false,
                         trailing = {
                             MSecondaryButton(
-                                "Обновить",
+                                tr("Обновить"),
                                 onClick = { tools.applyUpdate(serverId, update) },
                                 enabled = update.compatible && !working,
                                 size = MButtonSize.Small,
@@ -315,7 +319,7 @@ private fun LazyListScope.installedItems(
         }
     }
     item(key = "installed-head") {
-        ToolsHead(title = "Сейчас на сервере", subtitle = headline)
+        ToolsHead(title = tr("Сейчас на сервере"), subtitle = headline)
     }
     val list = state?.installs
     val error = state?.error
@@ -327,8 +331,8 @@ private fun LazyListScope.installedItems(
         list.isEmpty() -> item(key = "installed-empty") {
             MEmptyState(
                 icon = MIcons.box,
-                title = "Пока пусто",
-                actionText = "Открыть каталог",
+                title = tr("Пока пусто"),
+                actionText = tr("Открыть каталог"),
                 onAction = onCatalog,
                 actionIcon = MIcons.search,
             )
@@ -349,7 +353,7 @@ private fun LazyListScope.installedItems(
                         if (removingNow) {
                             MPixelLoader()
                         } else {
-                            MIconButton(MIcons.trash, onClick = { onRemove(install) }, label = "Убрать")
+                            MIconButton(MIcons.trash, onClick = { onRemove(install) }, label = tr("Убрать"))
                         }
                     },
                 )
@@ -379,8 +383,8 @@ private fun LazyListScope.catalogItems(
         hits.isEmpty() -> item(key = "catalog-empty") {
             MEmptyState(
                 icon = MIcons.search,
-                title = "Ничего не нашли",
-                actionText = if (hasQuery) "Сбросить" else null,
+                title = tr("Ничего не нашли"),
+                actionText = if (hasQuery) tr("Сбросить") else null,
                 onAction = if (hasQuery) onReset else null,
                 primary = false,
             )
@@ -401,7 +405,7 @@ private fun LazyListScope.catalogItems(
                                 MIcons.download,
                                 onClick = { tools.installHit(serverId, source, hit, onDone = onInstalled) },
                                 tint = millida.accentText,
-                                label = "Поставить",
+                                label = tr("Поставить"),
                             )
                         }
                     },
@@ -411,7 +415,7 @@ private fun LazyListScope.catalogItems(
             if (state?.nextOffset != null) {
                 item(key = "catalog-more") {
                     MSecondaryButton(
-                        "Показать ещё",
+                        tr("Показать ещё"),
                         onClick = onMore,
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !searching,
@@ -443,7 +447,7 @@ private fun LazyListScope.coreItems(
                 .sortedWith(compareByDescending<HostingCore> { it.recommended }.thenBy(String.CASE_INSENSITIVE_ORDER) { it.name })
             if (fitting.isEmpty()) {
                 item(key = "cores-empty") {
-                    MEmptyState(icon = MIcons.server, title = "Под эту версию ядер нет")
+                    MEmptyState(icon = MIcons.server, title = tr("Под эту версию ядер нет"))
                 }
             } else {
                 items(fitting, key = { "core:" + it.id }) { item ->
@@ -452,16 +456,16 @@ private fun LazyListScope.coreItems(
                         title = item.name,
                         modifier = Modifier.animateItem(),
                         subtitle = listOfNotNull(
-                            if (item.recommended && !now) "Советуем" else null,
+                            if (item.recommended && !now) tr("Советуем") else null,
                             CORE_FAMILY[item.family],
                         ).joinToString(" · ").ifEmpty { null },
                         icon = MIcons.server,
                         trailing = {
                             if (now) {
-                                MBadge("стоит сейчас", millida.accentText, millida.accentSoft)
+                                MBadge(tr("стоит сейчас"), millida.accentText, millida.accentSoft)
                             } else {
                                 MSecondaryButton(
-                                    "Поставить",
+                                    tr("Поставить"),
                                     onClick = { onPick(item) },
                                     enabled = !saving,
                                     size = MButtonSize.Small,
@@ -495,7 +499,7 @@ private fun CatalogFilters(
         MField(
             value = query,
             onValueChange = onQuery,
-            placeholder = "Найти",
+            placeholder = tr("Найти"),
             leadingIcon = MIcons.search,
             imeAction = ImeAction.Search,
             onImeAction = onSearch,
@@ -521,14 +525,14 @@ private fun CatalogFilters(
 private fun InstallBadge(status: String) {
     val colors = millida
     when (status.uppercase()) {
-        "PENDING" -> MBadge("при запуске", colors.warning, colors.warningSoft)
-        "FAILED" -> MBadge("ошибка", colors.danger, colors.dangerSoft)
+        "PENDING" -> MBadge(tr("при запуске"), colors.warning, colors.warningSoft)
+        "FAILED" -> MBadge(tr("ошибка"), colors.danger, colors.dangerSoft)
         else -> Unit
     }
 }
 
 private fun serverLine(core: String, version: String): String =
-    listOf(core, version).filter { it.isNotBlank() }.joinToString(" ").ifEmpty { "ядро не выбрано" }
+    listOf(core, version).filter { it.isNotBlank() }.joinToString(" ").ifEmpty { tr("ядро не выбрано") }
 
 private fun installLine(install: HostingInstall): String = listOf(
     INSTALL_KIND[install.kind.uppercase()] ?: install.kind,
@@ -539,7 +543,7 @@ private fun installLine(install: HostingInstall): String = listOf(
 
 private fun updateLine(update: HostingInstallUpdate): String {
     val line = "${update.current.ifBlank { "—" }} → ${update.latest.ifBlank { "—" }}"
-    return if (update.compatible) line else "$line · под другую версию"
+    return if (update.compatible) line else tr("{line} · под другую версию", line)
 }
 
 private fun hitLine(hit: HostingCatalogHit): String {
@@ -547,7 +551,7 @@ private fun hitLine(hit: HostingCatalogHit): String {
     return listOfNotNull(
         hit.author.ifBlank { null },
         if (hit.downloads > 0) compactCount(hit.downloads) else null,
-        if (hit.minRamMb > 0) "от ${(hit.minRamMb + 1023) / 1024} ГБ" else null,
+        if (hit.minRamMb > 0) tr("от {0} ГБ", (hit.minRamMb + 1023) / 1024) else null,
     ).joinToString(" · ")
 }
 

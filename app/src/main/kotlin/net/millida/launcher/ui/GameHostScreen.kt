@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -73,26 +74,36 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import net.millida.launcher.GameLaunchModel
+import net.millida.launcher.applyGameCutout
+import net.millida.launcher.core.game.GameResolution
+import net.millida.launcher.BlackOffer
 import net.millida.launcher.GameUiState
 import net.millida.launcher.LAUNCH_STAGES
 import net.millida.launcher.Prefs
 import net.millida.launcher.SdlHost
 import net.millida.launcher.core.hud.HudAction
+import net.millida.launcher.core.hud.HudControl
+import net.millida.launcher.core.hud.HudHistory
+import net.millida.launcher.core.hud.HudLayout
+import net.millida.launcher.core.hud.HudProfiles
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.runtime.BootWatch
 import net.millida.launcher.runtime.DesktopInput
 import net.millida.launcher.runtime.GameSurfaceView
 import net.millida.launcher.runtime.GlfwKeys
 import kotlin.math.round
+import kotlin.math.roundToInt
 import kotlin.random.Random
 
 private const val TIP_MS = 5_000L
 
-private val TIPS = listOf(
-    "Держи палец на месте — так копают блоки",
-    "Коснись хотбара внизу, чтобы взять слот",
-    "Проведи по хотбару — слоты листаются",
-    "Кнопки двигаются: Меню → Настроить управление",
-    "Клавиатура, мышь и геймпад тоже работают",
-    "Esc ставит игру на паузу и закрывает чат",
+private val TIPS get() = listOf(
+    tr("Держи палец на месте — так копают блоки"),
+    tr("Коснись хотбара внизу, чтобы взять слот"),
+    tr("Проведи по хотбару — слоты листаются"),
+    tr("Кнопки двигаются: Меню → Настроить управление"),
+    tr("Клавиатура, мышь и геймпад тоже работают"),
+    tr("Esc ставит игру на паузу и закрывает чат"),
 )
 
 private class SurfaceRef {
@@ -100,7 +111,12 @@ private class SurfaceRef {
 }
 
 @Composable
-fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -> Unit) {
+fun GameHostScreen(
+    model: GameLaunchModel,
+    onLeave: () -> Unit,
+    onRelaunch: () -> Unit,
+    onSwitchVersion: (String) -> Unit = {},
+) {
     val state by model.ui.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val view = LocalView.current
@@ -111,11 +127,25 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
     val surface = remember { SurfaceRef() }
     var editing by remember { mutableStateOf(false) }
     var selectedControl by remember { mutableStateOf<String?>(null) }
+    var hudHistory by remember { mutableStateOf(HudHistory()) }
+    var snapToGrid by remember { mutableStateOf(true) }
+    var resolutionPercent by remember { mutableIntStateOf(model.resolutionPercent) }
+    var resolution by remember { mutableFloatStateOf(model.resolution) }
+    var fpsShown by remember { mutableStateOf(model.fpsMeter) }
+    var underCutout by remember { mutableStateOf(model.underCutout) }
+    val readFps = remember(model) { model::currentFps }
+    val gamePrefs = remember { Prefs(context) }
+    val gyroAvailable = remember { hasGyroscope(context) }
+    var gyroOn by remember { mutableStateOf(gamePrefs.gyroLook) }
+    var accelerationOn by remember { mutableStateOf(gamePrefs.touchAcceleration) }
+    val directKeyboard = remember { gamePrefs.directKeyboard }
     var lookMode by remember { mutableStateOf(false) }
     var flying by remember { mutableStateOf(false) }
     var cursor by remember { mutableStateOf(Offset.Unspecified) }
     var menuOpen by remember { mutableStateOf(false) }
     var confirmExit by remember { mutableStateOf(false) }
+    var logOpen by remember { mutableStateOf(false) }
+    var logOverlay by remember { mutableStateOf(false) }
     // The first touch is the last moment when the game can be told the window
     // size without the player noticing: the touch sets the pointer right after.
     var sized by remember { mutableStateOf(false) }
@@ -177,7 +207,7 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
         lookMode = grabbed
         model.grabChanged(grabbed)
         if (!grabbed) surface.view?.releaseCapture()
-        val launcherLayerOpen = menuOpen || editing || friendsOpen || typing
+        val launcherLayerOpen = menuOpen || editing || friendsOpen || typing || logOpen
         if (grabbed && desktopInput && !launcherLayerOpen && DesktopInput.mouseConnected(context)) {
             surface.view?.capturePointer()
         }
@@ -185,14 +215,48 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
 
     // A keyboard, a mouse and a gamepad talk to the focused view only, so the
     // game view takes the focus back whenever the launcher's own layer is done.
-    LaunchedEffect(typing, menuOpen, editing, friendsOpen) {
-        if (menuOpen || editing || friendsOpen) surface.view?.releaseCapture()
-        if (!typing && !menuOpen && !editing && !friendsOpen) surface.view?.takeFocus()
+    LaunchedEffect(typing, menuOpen, editing, friendsOpen, logOpen) {
+        if (menuOpen || editing || friendsOpen || logOpen) surface.view?.releaseCapture()
+        if (!typing && !menuOpen && !editing && !friendsOpen && !logOpen) surface.view?.takeFocus()
     }
 
     fun tapKey(code: Int) {
         sink.key(code, code, true)
         sink.key(code, code, false)
+    }
+
+    fun openKeyboard() {
+        if (directKeyboard) {
+            surface.view?.showDirectKeyboard()
+        } else {
+            typing = true
+        }
+    }
+
+    fun toggleKeyboard() {
+        if (directKeyboard) {
+            surface.view?.toggleDirectKeyboard()
+        } else {
+            typing = !typing
+        }
+    }
+
+    fun editHud(next: HudProfiles, step: String? = null) {
+        val before = model.hudProfiles.value
+        if (next == before) return
+        hudHistory = hudHistory.record(before, step)
+        model.updateHudProfiles(next)
+    }
+
+    fun editLayout(next: HudLayout, step: String? = null) = editHud(model.hudProfiles.value.withLayout(next), step)
+
+    fun editControl(control: HudControl, step: String?) = editLayout(model.hudProfiles.value.layout.replace(control), step)
+
+    fun undoHud() {
+        val (previous, rest) = hudHistory.undo() ?: return
+        hudHistory = rest
+        if (selectedControl != null && previous.layout.controls.none { it.id == selectedControl }) selectedControl = null
+        model.updateHudProfiles(previous)
     }
 
     fun submitTyping() {
@@ -205,6 +269,7 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
         when {
             state.finished -> onLeave()
             confirmExit -> confirmExit = false
+            logOpen -> logOpen = false
             friendsOpen -> friendsOpen = false
             typing -> typing = false
             editing -> {
@@ -224,6 +289,8 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
             factory = { ctx ->
                 GameSurfaceView(ctx).also {
                     it.sink = sink
+                    it.resolutionPercent = resolutionPercent
+                    it.gamepad = gamePrefs.gamepadMap
                     it.onSurfaceReady = { ready, width, height -> model.surfaceReady(ready, width, height) }
                     it.onSurfaceGone = { model.surfaceGone() }
                     it.onSurfaceFailure = { error -> model.surfaceFailed(error) }
@@ -232,6 +299,7 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
                     it.post { it.takeFocus() }
                 }
             },
+            update = { it.resolutionPercent = resolutionPercent },
         )
 
         if (!editing) {
@@ -244,6 +312,9 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
                 guiScale = state.guiScale,
                 forceUnicode = state.forceUnicode,
                 haptics = state.haptics,
+                resolution = resolution,
+                acceleration = accelerationOn,
+                invertY = hud.invertY,
                 onCursor = { cursor = it },
                 onFirstTouch = {
                     if (!sized) {
@@ -290,18 +361,22 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
                 onAction = { action ->
                     when (action) {
                         HudAction.POINTER_MODE -> lookMode = !lookMode
-                        HudAction.KEYBOARD -> typing = !typing
+                        HudAction.KEYBOARD -> toggleKeyboard()
                         HudAction.MENU -> menuOpen = true
                         HudAction.CHAT -> {
                             tapKey(GlfwKeys.T)
-                            typing = true
+                            openKeyboard()
                         }
                         HudAction.NONE -> Unit
                     }
                 },
                 onFly = { flying = !flying },
                 onSelect = { selectedControl = it },
-                onChange = { control -> model.updateHud(hud.replace(control)) },
+                onChange = { control -> editControl(control, "move:${control.id}") },
+                resolution = resolution,
+                snap = snapToGrid,
+                onResize = { control -> editControl(control, "size:${control.id}") },
+                onGestureEnd = { hudHistory = hudHistory.seal() },
             )
         }
 
@@ -323,19 +398,34 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
                 sensitivity = state.lookSensitivity,
                 onProfiles = { next ->
                     selectedControl = null
-                    model.updateHudProfiles(next)
+                    editHud(next)
                 },
                 onPreset = { preset ->
                     selectedControl = null
-                    model.updateHud(hud.switchTo(preset))
+                    editLayout(hud.switchTo(preset))
                 },
-                onChange = { control -> model.updateHud(hud.replace(control)) },
-                onLayout = { next -> model.updateHud(next) },
+                onChange = { control -> editControl(control, null) },
+                onSlide = { control -> editControl(control, "slide:${control.id}") },
+                onLayout = { next -> editLayout(next, "layout") },
                 onRemove = { id ->
                     selectedControl = null
-                    model.updateHud(hud.remove(id))
+                    editLayout(hud.remove(id))
                 },
-                onAdd = { control -> model.updateHud(hud.add(control)) },
+                onAdd = { control -> editLayout(hud.add(control)) },
+                canUndo = hudHistory.canUndo,
+                onUndo = ::undoHud,
+                snap = snapToGrid,
+                onSnap = { snapToGrid = it },
+                gyro = if (gyroAvailable) gyroOn else null,
+                onGyro = { on ->
+                    gyroOn = on
+                    gamePrefs.gyroLook = on
+                },
+                acceleration = accelerationOn,
+                onAcceleration = { on ->
+                    accelerationOn = on
+                    gamePrefs.touchAcceleration = on
+                },
                 onSensitivity = model::setLookSensitivity,
                 onNotice = model::showNotice,
                 onDone = {
@@ -350,7 +440,7 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
         }
 
         if (!state.finished && (!state.running || state.booting)) {
-            LoadingScreen(state = state, onExit = model::stop)
+            LoadingScreen(state = state, onExit = model::stop, onLog = { logOpen = true })
         }
 
         if (typing && playing) {
@@ -380,7 +470,7 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
                         }
                         draft = next
                     },
-                    placeholder = "Текст для игры",
+                    placeholder = tr("Текст для игры"),
                     modifier = Modifier.weight(1f),
                     imeAction = ImeAction.Send,
                     onImeAction = ::submitTyping,
@@ -389,7 +479,7 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
                 )
                 Spacer(Modifier.width(8.dp))
                 MButton(
-                    text = "Ввод",
+                    text = tr("Ввод"),
                     onClick = ::submitTyping,
                     variant = MButtonVariant.Primary,
                     size = MButtonSize.Small,
@@ -402,7 +492,7 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
                         draft = ""
                         typing = false
                     },
-                    label = "Закрыть",
+                    label = tr("Закрыть"),
                 )
             }
         }
@@ -443,11 +533,38 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
                     menuOpen = false
                     editing = true
                 },
+                onLog = {
+                    menuOpen = false
+                    logOpen = true
+                },
                 lookMode = lookMode,
                 onToggleMode = {
                     menuOpen = false
                     lookMode = !lookMode
                 },
+                screen = PauseScreenOptions(
+                    resolutionPercent = resolutionPercent,
+                    onResolution = { percent ->
+                        resolution = model.changeResolution(percent)
+                        resolutionPercent = model.resolutionPercent
+                    },
+                    fpsShown = fpsShown,
+                    fpsAvailable = state.packLayer && !state.sdlWindow,
+                    onFps = { shown ->
+                        fpsShown = shown
+                        model.fpsMeter = shown
+                    },
+                    underCutout = underCutout,
+                    onCutout = { under ->
+                        underCutout = under
+                        model.underCutout = under
+                        (context as? Activity)?.window?.let { applyGameCutout(it, under) }
+                    },
+                    onKeyboard = {
+                        menuOpen = false
+                        openKeyboard()
+                    },
+                ),
                 onExit = { confirmExit = true },
                 onConfirmExit = {
                     confirmExit = false
@@ -458,8 +575,57 @@ fun GameHostScreen(model: GameLaunchModel, onLeave: () -> Unit, onRelaunch: () -
             )
         }
 
+        if (logOverlay && playing && !logOpen && !editing && !menuOpen) {
+            GameLogOverlay(
+                model = model,
+                onClose = { logOverlay = false },
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(start = 12.dp, bottom = 64.dp, end = 12.dp),
+            )
+        }
+
+        if (logOpen && !state.finished) {
+            GameLogPanel(
+                model = model,
+                onClose = { logOpen = false },
+                onOverlay = {
+                    logOpen = false
+                    logOverlay = true
+                },
+            )
+        }
+
+        GyroLookEffect(
+            active = gyroOn && playing && lookMode && !editing && !menuOpen && !typing && !friendsOpen && !logOpen,
+            sink = sink,
+            sensitivity = state.lookSensitivity,
+        )
+
+        if (fpsShown && playing && !editing) {
+            FpsMeter(
+                read = readFps,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(start = 12.dp, top = 8.dp),
+            )
+        }
+
         if (state.finished) {
             FinishedPanel(state = state, model = model, onLeave = onLeave, onRelaunch = onRelaunch)
+        }
+
+        state.blackOffer?.takeIf { !state.finished && !state.closing }?.let { offer ->
+            BlackOfferPlate(
+                offer = offer,
+                onSwitch = onSwitchVersion,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(16.dp),
+            )
         }
 
         state.notice?.let { text ->
@@ -494,9 +660,13 @@ private fun CursorMark(position: Offset) {
 }
 
 @Composable
-private fun LoadingScreen(state: GameUiState, onExit: () -> Unit) {
+private fun LoadingScreen(state: GameUiState, onExit: () -> Unit, onLog: () -> Unit) {
     val colors = millida
-    val note = if (state.booting) "Игра загружается" else state.note
+    val note = when {
+        !state.booting -> state.note
+        state.bootSeconds > 0 -> tr("Игра загружается · {0}", BootWatch.clock(state.bootSeconds * 1000L))
+        else -> tr("Игра загружается")
+    }
     val progress = when {
         state.closing || state.booting || state.stage <= 0 -> null
         else -> state.stage / LAUNCH_STAGES.toFloat()
@@ -545,10 +715,16 @@ private fun LoadingScreen(state: GameUiState, onExit: () -> Unit) {
         }
         if (!state.closing) {
             MTextButton(
-                "Выйти",
+                tr("Выйти"),
                 onClick = onExit,
                 modifier = Modifier.align(Alignment.TopEnd),
                 icon = MIcons.close,
+            )
+            MTextButton(
+                tr("Лог"),
+                onClick = onLog,
+                modifier = Modifier.align(Alignment.TopStart),
+                icon = MIcons.list,
             )
         }
     }
@@ -595,12 +771,14 @@ private fun PauseMenu(
     onGamePause: () -> Unit,
     onChat: () -> Unit,
     onControls: () -> Unit,
+    onLog: () -> Unit,
     onExit: () -> Unit,
     onConfirmExit: () -> Unit,
     onCancelExit: () -> Unit,
     lookMode: Boolean,
     onToggleMode: () -> Unit,
     onFriends: (() -> Unit)? = null,
+    screen: PauseScreenOptions? = null,
 ) {
     val colors = millida
     val reduced = LocalReducedMotion.current
@@ -638,12 +816,12 @@ private fun PauseMenu(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (confirmExit) {
-                Text("Выйти из игры?", style = MillidaType.dialogTitle, color = colors.fg)
+                Text(tr("Выйти из игры?"), style = MillidaType.dialogTitle, color = colors.fg)
                 Text(
                     if (packLayer) {
-                        "Игра закроется сразу — сначала выйди в главное меню игры, чтобы мир сохранился"
+                        tr("Игра закроется сразу — сначала выйди в главное меню игры, чтобы мир сохранился")
                     } else {
-                        "Игра сохранит мир и закроется"
+                        tr("Игра сохранит мир и закроется")
                     },
                     style = MillidaType.body,
                     color = colors.fgMuted,
@@ -653,12 +831,12 @@ private fun PauseMenu(
                     horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    MTextButton("Отмена", onClick = onCancelExit)
-                    MDangerButton("Выйти", onClick = onConfirmExit, icon = MIcons.logout, size = MButtonSize.Medium)
+                    MTextButton(tr("Отмена"), onClick = onCancelExit)
+                    MDangerButton(tr("Выйти"), onClick = onConfirmExit, icon = MIcons.logout, size = MButtonSize.Medium)
                 }
             } else {
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text("Пауза", style = MillidaType.dialogTitle, color = colors.fg)
+                    Text(tr("Пауза"), style = MillidaType.dialogTitle, color = colors.fg)
                     if (buildName.isNotEmpty()) {
                         Spacer(Modifier.width(10.dp))
                         Text(
@@ -672,33 +850,35 @@ private fun PauseMenu(
                     }
                 }
                 MPrimaryButton(
-                    "Продолжить",
+                    tr("Продолжить"),
                     onClick = onResume,
                     modifier = Modifier.fillMaxWidth(),
                     icon = MIcons.play,
                     size = MButtonSize.Large,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MSecondaryButton("Пауза игры", onClick = onGamePause, modifier = Modifier.weight(1f), icon = MIcons.pause)
-                    MSecondaryButton("Чат", onClick = onChat, modifier = Modifier.weight(1f), icon = MIcons.chat)
+                    MSecondaryButton(tr("Пауза игры"), onClick = onGamePause, modifier = Modifier.weight(1f), icon = MIcons.pause)
+                    MSecondaryButton(tr("Чат"), onClick = onChat, modifier = Modifier.weight(1f), icon = MIcons.chat)
                 }
                 if (onFriends != null) {
-                    MSecondaryButton("Чат друзей", onClick = onFriends, modifier = Modifier.fillMaxWidth(), icon = MIcons.friends)
+                    MSecondaryButton(tr("Чат друзей"), onClick = onFriends, modifier = Modifier.fillMaxWidth(), icon = MIcons.friends)
                 }
                 MSecondaryButton(
-                    "Настроить управление",
+                    tr("Настроить управление"),
                     onClick = onControls,
                     modifier = Modifier.fillMaxWidth(),
                     icon = MIcons.settings,
                 )
+                MSecondaryButton(tr("Лог игры"), onClick = onLog, modifier = Modifier.fillMaxWidth(), icon = MIcons.list)
+                screen?.let { ScreenOptions(it) }
                 // Some packs never hand the cursor back or never take it: the mode can be forced by hand.
                 MTextButton(
-                    if (lookMode) "Режим курсора" else "Режим обзора",
+                    if (lookMode) tr("Режим курсора") else tr("Режим обзора"),
                     onClick = onToggleMode,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 MDangerButton(
-                    "Выйти",
+                    tr("Выйти"),
                     onClick = onExit,
                     modifier = Modifier.fillMaxWidth(),
                     icon = MIcons.logout,
@@ -707,6 +887,40 @@ private fun PauseMenu(
             }
         }
     }
+}
+
+/** What the pause menu can change about the picture without leaving the game. */
+private class PauseScreenOptions(
+    val resolutionPercent: Int,
+    val onResolution: (Int) -> Unit,
+    val fpsShown: Boolean,
+    val fpsAvailable: Boolean,
+    val onFps: (Boolean) -> Unit,
+    val underCutout: Boolean,
+    val onCutout: (Boolean) -> Unit,
+    val onKeyboard: () -> Unit,
+)
+
+@Composable
+private fun ScreenOptions(options: PauseScreenOptions) {
+    var percent by remember(options.resolutionPercent) { mutableIntStateOf(options.resolutionPercent) }
+    MSectionTitle(tr("ЭКРАН"))
+    MSecondaryButton(tr("Клавиатура"), onClick = options.onKeyboard, modifier = Modifier.fillMaxWidth(), icon = MIcons.menuKey)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(tr("Разрешение игры"), modifier = Modifier.weight(1f), style = MillidaType.small, color = millida.fgSubtle, maxLines = 1)
+        Text("$percent%", style = MillidaType.small, color = millida.fg, maxLines = 1)
+    }
+    MSlider(
+        value = percent.toFloat(),
+        onValueChange = { percent = GameResolution.clamp(it.roundToInt()) },
+        valueRange = GameResolution.MIN.toFloat()..GameResolution.FULL.toFloat(),
+        steps = (GameResolution.FULL - GameResolution.MIN) / GameResolution.STEP - 1,
+        onValueChangeFinished = { options.onResolution(percent) },
+    )
+    if (options.fpsAvailable) {
+        MSwitchRow(tr("Счётчик кадров"), tr("Число кадров и график в углу экрана"), options.fpsShown, options.onFps)
+    }
+    MSwitchRow(tr("Во весь экран"), tr("Игра рисует и под вырезом камеры"), options.underCutout, options.onCutout)
 }
 
 @Composable
@@ -725,10 +939,37 @@ private fun LegacyHudNote(onRestore: () -> Unit, onDismiss: () -> Unit, modifier
     ) {
         MIcon(MIcons.info, size = 16.dp, color = colors.accentText)
         Spacer(Modifier.width(10.dp))
-        Text("Новое управление", style = MillidaType.body, color = colors.fg, maxLines = 1)
+        Text(tr("Новое управление"), style = MillidaType.body, color = colors.fg, maxLines = 1)
         Spacer(Modifier.width(8.dp))
-        MTextButton("Вернуть старое", onClick = onRestore, icon = MIcons.refresh)
-        MIconButton(MIcons.close, onClick = onDismiss, label = "Закрыть")
+        MTextButton(tr("Вернуть старое"), onClick = onRestore, icon = MIcons.refresh)
+        MIconButton(MIcons.close, onClick = onDismiss, label = tr("Закрыть"))
+    }
+}
+
+@Composable
+private fun BlackOfferPlate(offer: BlackOffer, onSwitch: (String) -> Unit, modifier: Modifier = Modifier) {
+    val colors = millida
+    Column(
+        modifier
+            .widthIn(max = 420.dp)
+            .pixelSurface(
+                fill = colors.raised,
+                cut = MillidaCut.plate,
+                frame = colors.plateFrame().copy(left = colors.accent, leftWidth = 4.dp),
+            )
+            .padding(start = 18.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            if (offer.version != null) tr("На {0} экран чёрный", offer.from) else tr("На {0} экран чёрный, а сборка с модами", offer.from),
+            style = MillidaType.body,
+            color = colors.fg,
+        )
+        if (offer.version != null) {
+            MPrimaryButton(tr("Играть на {0}", offer.version), onClick = { onSwitch(offer.version) }, icon = MIcons.play)
+        } else {
+            Text(tr("Выбери версию ниже 26.3 — моды пока не переключаем"), style = MillidaType.small, color = colors.fgMuted)
+        }
     }
 }
 
@@ -768,12 +1009,12 @@ private fun FinishedPanel(
     var showLog by remember { mutableStateOf(false) }
     val failed = state.error != null
     val title = when {
-        !failed -> "Игра закрылась"
-        state.started -> "Игра вылетела"
-        else -> "Игра не запустилась"
+        !failed -> tr("Игра закрылась")
+        state.started -> tr("Игра вылетела")
+        else -> tr("Игра не запустилась")
     }
     val reason = state.cause ?: state.error
-    val logHeight = (LocalConfiguration.current.screenHeightDp * 0.4f).dp
+    val logHeight = (effectiveScreenHeightDp() * 0.4f).dp
 
     Box(
         Modifier
@@ -784,7 +1025,7 @@ private fun FinishedPanel(
     ) {
         Column(
             Modifier
-                .align(Alignment.Center)
+                .align(Alignment.TopCenter)
                 .widthIn(max = 600.dp)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState()),
@@ -827,22 +1068,24 @@ private fun FinishedPanel(
             }
 
             MButtonRow {
-                if (failed) {
-                    MPrimaryButton("Ещё раз", onClick = onRelaunch, icon = MIcons.refresh)
-                    MSecondaryButton("Отправить отчёт", onClick = { model.shareReport() }, icon = MIcons.share)
+                if (failed && state.retryHelps) {
+                    MPrimaryButton(tr("Ещё раз"), onClick = onRelaunch, icon = MIcons.refresh)
+                    MSecondaryButton(tr("Отправить отчёт"), onClick = { model.shareReport() }, icon = MIcons.share)
+                } else if (failed) {
+                    MPrimaryButton(tr("Отправить отчёт"), onClick = { model.shareReport() }, icon = MIcons.share)
                 } else {
-                    MPrimaryButton("В лаунчер", onClick = onLeave, icon = MIcons.back)
-                    MSecondaryButton("Ещё раз", onClick = onRelaunch, icon = MIcons.refresh)
+                    MPrimaryButton(tr("В лаунчер"), onClick = onLeave, icon = MIcons.back)
+                    MSecondaryButton(tr("Ещё раз"), onClick = onRelaunch, icon = MIcons.refresh)
                 }
                 if (log.isNotBlank()) {
                     MTextButton(
-                        if (showLog) "Скрыть лог" else "Лог",
+                        if (showLog) tr("Скрыть лог") else tr("Лог"),
                         onClick = { showLog = !showLog },
                         icon = if (showLog) MIcons.chevronUp else MIcons.list,
                     )
                 }
                 if (failed) {
-                    MTextButton("В лаунчер", onClick = onLeave, icon = MIcons.back)
+                    MTextButton(tr("В лаунчер"), onClick = onLeave, icon = MIcons.back)
                 }
             }
 
@@ -863,10 +1106,10 @@ private fun FinishedPanel(
                         )
                     }
                     MTextButton(
-                        "Скопировать лог",
+                        tr("Скопировать лог"),
                         onClick = {
                             clipboard.setText(AnnotatedString(log))
-                            model.showNotice("Лог скопирован")
+                            model.showNotice(tr("Лог скопирован"))
                         },
                         icon = MIcons.copy,
                     )
@@ -878,13 +1121,29 @@ private fun FinishedPanel(
 
 /** The settings row for [Prefs.touchControlsWithKeyboard], next to the other in-game switches. */
 @Composable
+internal fun DirectKeyboardSwitch() {
+    val context = LocalContext.current
+    val prefs = remember { Prefs(context) }
+    var on by remember { mutableStateOf(prefs.directKeyboard) }
+    MSwitchRow(
+        tr("Клавиатура сразу в игру"),
+        tr("Каждая клавиша уходит в игру при нажатии — для модов и горячих клавиш. Выключено: текст сначала набирается в поле"),
+        on,
+    ) { next ->
+        prefs.directKeyboard = next
+        on = next
+    }
+}
+
+@Composable
 internal fun TouchControlsSwitch() {
+
     val context = LocalContext.current
     val prefs = remember { Prefs(context) }
     var on by remember { mutableStateOf(prefs.touchControlsWithKeyboard) }
     MSwitchRow(
-        "Кнопки на экране с клавиатурой и мышью",
-        "Не прятать управление, когда подключены клавиатура или мышь",
+        tr("Кнопки на экране с клавиатурой и мышью"),
+        tr("Не прятать управление, когда подключены клавиатура или мышь"),
         on,
     ) { next ->
         prefs.touchControlsWithKeyboard = next

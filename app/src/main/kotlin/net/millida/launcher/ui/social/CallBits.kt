@@ -42,6 +42,7 @@ import net.millida.launcher.core.call.CallMode
 import net.millida.launcher.core.call.CallRules
 import net.millida.launcher.core.call.CallStatus
 import net.millida.launcher.core.friends.DialogKind
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MAvatar
 import net.millida.launcher.ui.MButtonSize
 import net.millida.launcher.ui.MDangerButton
@@ -122,7 +123,7 @@ internal fun rememberMicGate(model: LauncherViewModel, action: () -> Unit): () -
         if (granted) {
             next?.invoke()
         } else {
-            model.notice("Без микрофона разговор не начать — разреши его в настройках телефона", isError = true)
+            model.notice(tr("Без микрофона разговор не начать — разреши его в настройках телефона"), isError = true)
         }
     }
     return {
@@ -151,12 +152,12 @@ private fun IncomingCallCard(call: CallUiState, onAccept: () -> Unit, onDecline:
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(call.title, style = MillidaType.rowTitle, color = colors.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text("Входящий звонок", style = MillidaType.small, color = colors.fgSubtle)
+                Text(tr("Входящий звонок"), style = MillidaType.small, color = colors.fgSubtle)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            MPrimaryButton("Ответить", onClick = onAccept, modifier = Modifier.weight(1f), icon = MIcons.phone)
-            MDangerButton("Отклонить", onClick = onDecline, modifier = Modifier.weight(1f), icon = MIcons.phoneHang, size = MButtonSize.Medium)
+            MPrimaryButton(tr("Ответить"), onClick = onAccept, modifier = Modifier.weight(1f), icon = MIcons.phone)
+            MDangerButton(tr("Отклонить"), onClick = onDecline, modifier = Modifier.weight(1f), icon = MIcons.phoneHang, size = MButtonSize.Medium)
         }
     }
 }
@@ -175,15 +176,15 @@ private fun RoomInviteCard(invite: RoomInvite, onJoin: () -> Unit, onDismiss: ()
         RoomAvatar(size = 40.dp)
         Spacer(Modifier.width(10.dp))
         Text(
-            "${invite.nick} зовёт в «${invite.title}»",
+            tr("{nick} зовёт в «{title}»", invite.nick, invite.title),
             modifier = Modifier.weight(1f),
             style = MillidaType.small.copy(fontWeight = FontWeight.Bold),
             color = colors.fg,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        MTextButton("Зайти", onClick = onJoin, icon = MIcons.headset)
-        MIconButton(MIcons.close, onClick = onDismiss, label = "Скрыть")
+        MTextButton(tr("Зайти"), onClick = onJoin, icon = MIcons.headset)
+        MIconButton(MIcons.close, onClick = onDismiss, label = tr("Скрыть"))
     }
 }
 
@@ -212,26 +213,26 @@ private fun CallBar(call: CallUiState, center: CallCenter, modifier: Modifier = 
                 if (call.muted) MIcons.micOff else MIcons.mic,
                 onClick = center::toggleMute,
                 tint = if (call.muted) colors.danger else colors.fgSubtle,
-                label = if (call.muted) "Включить микрофон" else "Выключить микрофон",
+                label = if (call.muted) tr("Включить микрофон") else tr("Выключить микрофон"),
             )
             MIconButton(
                 if (call.deafened) MIcons.headsetOff else MIcons.headset,
                 onClick = center::toggleDeafen,
                 tint = if (call.deafened) colors.danger else colors.fgSubtle,
-                label = if (call.deafened) "Включить звук" else "Заглушить звук",
+                label = if (call.deafened) tr("Включить звук") else tr("Заглушить звук"),
             )
             MIconButton(
                 if (call.speaker) MIcons.volume else MIcons.mute,
                 onClick = center::toggleSpeaker,
                 tint = if (call.speaker) colors.accentText else colors.fgSubtle,
-                label = if (call.speaker) "Выключить громкую связь" else "Громкая связь",
+                label = if (call.speaker) tr("Выключить громкую связь") else tr("Громкая связь"),
             )
             if (call.mode == CallMode.ROOM) {
-                MIconButton(MIcons.bell, onClick = { center.ringRoom(call.roomId) }, label = "Позвать остальных")
+                MIconButton(MIcons.bell, onClick = { center.ringRoom(call.roomId) }, label = tr("Позвать остальных"))
             }
             Spacer(Modifier.weight(1f))
             MDangerButton(
-                if (call.mode == CallMode.ROOM) "Выйти" else "Завершить",
+                if (call.mode == CallMode.ROOM) tr("Выйти") else tr("Завершить"),
                 onClick = center::hangUp,
                 icon = MIcons.phoneHang,
                 size = MButtonSize.Medium,
@@ -250,15 +251,15 @@ private fun callStateLine(call: CallUiState): String {
     }
     val parts = buildList {
         if (call.status == CallStatus.ACTIVE && call.answeredAt > 0) add(CallRules.formatTime(now - call.answeredAt))
-        if (call.mode == CallMode.ROOM && call.status == CallStatus.ACTIVE) add("${call.parts.size + 1} в разговоре")
+        if (call.mode == CallMode.ROOM && call.status == CallStatus.ACTIVE) add(tr("{0} в разговоре", call.parts.size + 1))
         add(
             when (call.status) {
-                CallStatus.OUTGOING -> "Звоним…"
-                CallStatus.CONNECTING -> "Соединяем…"
+                CallStatus.OUTGOING -> tr("Звоним…")
+                CallStatus.CONNECTING -> tr("Соединяем…")
                 else -> call.quality.text
             },
         )
-        if (call.peerMuted) add("без микрофона")
+        if (call.peerMuted) add(tr("без микрофона"))
     }
     return parts.joinToString(" · ")
 }

@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.SafeUnzip
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
 import java.io.IOException
@@ -39,7 +40,7 @@ data class BundleDescription(
     val jres: List<JreSlot> = emptyList(),
     val bridge: List<String> = emptyList(),
     val rendererId: String = "local",
-    val rendererLabel: String = "Рендерер из пакета",
+    val rendererLabel: String = tr("Рендерер из пакета"),
     val rendererDir: String = "",
     val rendererLibrary: String = "",
     val eglLibrary: String = "",
@@ -53,12 +54,13 @@ object RuntimeImport {
     private const val FOLDER = "imported"
     private const val DESCRIPTION = "millida-runtime.json"
     private const val STAMP = ".millida-imported"
-    private val UNZIP_LIMITS = SafeUnzip.Limits(
+    private const val PINNED = ".millida-pinned"
+    private val UNZIP_LIMITS get() = SafeUnzip.Limits(
         maxEntries = 100_000,
         maxBytes = 4L * 1024 * 1024 * 1024,
-        broken = { cause -> "файл рантайма повреждён ($cause) — скачай его заново" },
-        tooMany = "в файле рантайма слишком много файлов — это не пакет рантайма",
-        tooBig = "файл рантайма распаковывается в слишком большой объём — это не пакет рантайма",
+        broken = { cause -> tr("файл рантайма повреждён ({cause}) — скачай его заново", cause) },
+        tooMany = tr("в файле рантайма слишком много файлов — это не пакет рантайма"),
+        tooBig = tr("файл рантайма распаковывается в слишком большой объём — это не пакет рантайма"),
     )
 
     /**
@@ -120,9 +122,17 @@ object RuntimeImport {
         File(layout.runtimes, FOLDER).deleteRecursively()
     }
 
+    /**
+     * A pack the player picked from a file is their own choice and keeps its
+     * window layer. The pack that came inside the application is a snapshot of
+     * its build day, so the manifest's layer takes over from it.
+     */
+    fun pinned(layout: GameLayout): Boolean = File(File(layout.runtimes, FOLDER), PINNED).isFile
+
     fun install(
         layout: GameLayout,
         source: InputStream,
+        pinned: Boolean = false,
         onEntry: (String) -> Unit = {},
     ): InstalledRuntime {
         layout.ensure()
@@ -141,12 +151,13 @@ object RuntimeImport {
         }
         if (entries == 0) {
             staging.deleteRecursively()
-            throw IOException("в файле нет ни одного файла рантайма")
+            throw IOException(tr("в файле нет ни одного файла рантайма"))
         }
 
         markExecutables(staging)
         val runtime = describe(staging, 0)
         File(staging, STAMP).writeText(runtime.javaHome.absolutePath)
+        if (pinned) File(staging, PINNED).writeText("")
 
         val root = File(layout.runtimes, FOLDER)
         if (root.exists()) {
@@ -155,11 +166,11 @@ object RuntimeImport {
             root.renameTo(old)
             if (!staging.renameTo(root)) {
                 old.renameTo(root)
-                throw IOException("не удалось заменить установленный рантайм")
+                throw IOException(tr("не удалось заменить установленный рантайм"))
             }
             old.deleteRecursively()
         } else if (!staging.renameTo(root)) {
-            throw IOException("не удалось установить рантайм")
+            throw IOException(tr("не удалось установить рантайм"))
         }
 
         return describe(root, 0)
@@ -201,17 +212,16 @@ object RuntimeImport {
         val javaHome = chosen?.let { SafePath.join(root, it.path) }
             ?: declared
             ?: findJavaHome(root)
-            ?: throw IOException("в пакете не нашлась виртуальная машина Java (нет lib/server/libjvm.so)")
+            ?: throw IOException(tr("в пакете не нашлась виртуальная машина Java (нет lib/server/libjvm.so)"))
 
         if (chosen != null && (javaMajor > 0 || javaMaximum != null) && !requirement.accepts(chosen.major)) {
             throw IOException(
-                "сборке нужна ${requirement.describe()}, а в пакете рантайма только " +
-                    slots.joinToString(", ") { it.major.toString() },
+                tr("сборке нужна {0}, а в пакете рантайма только {1}", requirement.describe(), slots.joinToString(", ") { it.major.toString() }),
             )
         }
         val javaHomeMajor = chosen?.major ?: describeJavaMajor(javaHome)
         if (chosen == null && javaMaximum != null && (javaHomeMajor == null || !requirement.accepts(javaHomeMajor))) {
-            throw IOException("сборке нужна ${requirement.describe()}, а Java пакета рантайма не подходит")
+            throw IOException(tr("сборке нужна {0}, а Java пакета рантайма не подходит", requirement.describe()))
         }
 
         val bridgeJars = bundle?.bridge
@@ -221,7 +231,7 @@ object RuntimeImport {
                 .filter { it.isFile && it.extension == "jar" }
                 .sortedBy { if (it.name.startsWith("millida")) 0 else 1 }
                 .toList()
-        if (bridgeJars.isEmpty()) throw IOException("в пакете нет ни одного jar для моста")
+        if (bridgeJars.isEmpty()) throw IOException(tr("в пакете нет ни одного jar для моста"))
 
         val rendererDir = bundle?.rendererDir?.takeIf { it.isNotEmpty() }?.let { SafePath.join(root, it) }
             ?: findRendererDir(root)
@@ -239,7 +249,7 @@ object RuntimeImport {
 
         val renderer = RuntimeManifest.RendererEntry(
             id = chosenRenderer?.id ?: bundle?.rendererId ?: "local",
-            label = chosenRenderer?.label ?: bundle?.rendererLabel ?: "Рендерер из пакета",
+            label = chosenRenderer?.label ?: bundle?.rendererLabel ?: tr("Рендерер из пакета"),
             url = "",
             sha256 = "",
             library = rendererLibrary,
@@ -273,7 +283,7 @@ object RuntimeImport {
     }
 
     private fun usableJavaHome(candidate: File): Boolean =
-        File(File(File(candidate, "lib"), "server"), "libjvm.so").isFile ||
+        File(JavaHomeLayout.jvmDir(candidate), "libjvm.so").isFile ||
             File(File(candidate, "bin"), "java").isFile
 
     private fun findJavaHome(root: File): File? {

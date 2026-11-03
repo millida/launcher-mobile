@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import net.millida.launcher.core.hosting.HostingServerState
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 
 data class ServerInvite(val addr: String, val name: String, val version: String? = null)
@@ -49,21 +50,21 @@ object ServerInvites {
         val addr = body.plain("addr")
         if (addr.isEmpty()) return null
         val version = cleanVersion(body.plain("version")).ifEmpty { null }
-        return ServerInvite(addr = addr, name = body.plain("name").ifEmpty { "Сервер" }, version = version)
+        return ServerInvite(addr = addr, name = body.plain("name").ifEmpty { tr("Сервер") }, version = version)
     }
 
     /** A running server with an address first, otherwise any with an address. */
     fun pickServer(list: List<HostingServerState>): HostingServerState? =
         list.firstOrNull { it.address.isNotBlank() && it.running } ?: list.firstOrNull { it.address.isNotBlank() }
 
-    fun serverTitle(server: HostingServerState): String = server.name.ifBlank { "Мой сервер" }
+    fun serverTitle(server: HostingServerState): String = server.name.ifBlank { tr("Мой сервер") }
 
     fun forServer(server: HostingServerState): String =
         encode(server.address, serverTitle(server).take(NAME_LIMIT), server.version)
 
     /** The lobby "Позвать" is a plain line, not a card: it names what is picked to play, if anything. */
     fun lobbyCall(modeTitle: String?): String =
-        modeTitle?.trim()?.takeIf { it.isNotEmpty() }?.let { "Го играть: $it" } ?: "Го играть"
+        modeTitle?.trim()?.takeIf { it.isNotEmpty() }?.let { tr("Го играть: {it}", it) } ?: tr("Го играть")
 
     private fun JsonObject.plain(key: String): String = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content.orEmpty()
 }

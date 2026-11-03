@@ -9,6 +9,8 @@ import kotlinx.serialization.json.put
 import net.millida.launcher.core.account.MillidaAuth
 import net.millida.launcher.core.account.Unauthorized
 import net.millida.launcher.core.friends.FriendsErrors
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trSource
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.IOException
 import java.net.URLEncoder
@@ -62,7 +64,7 @@ class CreatorClient(private val auth: MillidaAuth) {
     }
 
     suspend fun set(code: String, live: Boolean): CreatorAnswer {
-        val trimmed = normalizeCreatorCode(code) ?: throw CreatorError("Введи код автора", missingRoute = false)
+        val trimmed = normalizeCreatorCode(code) ?: throw CreatorError(tr("Введи код автора"), missingRoute = false)
         return call(live) { decode(CreatorAnswer.serializer(), auth.authorized(PATH, "POST", buildJsonObject { put("code", trimmed) })) }
     }
 
@@ -71,7 +73,7 @@ class CreatorClient(private val auth: MillidaAuth) {
     }
 
     suspend fun lookup(code: String): CreatorPublic {
-        val trimmed = normalizeCreatorCode(code) ?: throw CreatorError("Введи код автора", missingRoute = false)
+        val trimmed = normalizeCreatorCode(code) ?: throw CreatorError(tr("Введи код автора"), missingRoute = false)
         val path = "/creator-codes/public/" + URLEncoder.encode(trimmed, "UTF-8").replace("+", "%20")
         return call(live = true) { decode(CreatorPublic.serializer(), auth.publicCall(path, "GET", null, withSession = false)) }
     }
@@ -97,24 +99,24 @@ class CreatorClient(private val auth: MillidaAuth) {
     companion object {
         private const val PATH = "/launcher/creator-code"
         const val MAX_CODE = 32
-        const val SOON = "Коды авторов скоро заработают"
+        val SOON: String get() = tr("Коды авторов скоро заработают")
         const val CREATORS_URL = "https://millida.net/creators?utm_source=launcher&utm_medium=shop&utm_campaign=creator_code"
-        private const val FALLBACK = "Не получилось, попробуй позже"
+        private val FALLBACK: String get() = tr("Не получилось, попробуй позже")
     }
 }
 
 private val MISSING_ROUTE = Regex("^(сервер ответил 404|http 404|cannot (get|post|delete)\\b.*|not found)$", RegexOption.IGNORE_CASE)
 
 /** A bare 404 means the address is not there yet; "Код не найден" is the service's own answer and passes through. */
-fun isMissingRoute(message: String?): Boolean = MISSING_ROUTE.matches(message.orEmpty().trim().removePrefix("Error:").trim())
+fun isMissingRoute(message: String?): Boolean = MISSING_ROUTE.matches(trSource(message.orEmpty().trim().removePrefix("Error:").trim()))
 
 /**
  * `live` — the service answered the GET, so a bare 404 on input is an unknown
  * code rather than a missing address.
  */
 fun creatorErrorText(message: String?, live: Boolean): String {
-    if (isMissingRoute(message)) return if (live) "Код не найден" else CreatorClient.SOON
-    return FriendsErrors.text(IOException(message.orEmpty()), "Не получилось, попробуй позже")
+    if (isMissingRoute(message)) return if (live) tr("Код не найден") else CreatorClient.SOON
+    return FriendsErrors.text(IOException(message.orEmpty()), tr("Не получилось, попробуй позже"))
 }
 
 fun normalizeCreatorCode(raw: String): String? =

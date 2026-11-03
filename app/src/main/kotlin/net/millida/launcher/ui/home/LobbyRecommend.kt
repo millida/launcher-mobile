@@ -7,17 +7,20 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -34,6 +37,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.core.premium.PremiumPack
 import net.millida.launcher.ui.LocalReducedMotion
@@ -55,10 +59,19 @@ import net.millida.launcher.ui.rememberPressed
 import kotlin.math.round
 
 internal val LOBBY_REC_WIDTH = 320.dp
-internal val LOBBY_REC_MIN_WIDTH = 260.dp
 internal val LOBBY_REC_HEIGHT = 118.dp
 private val REC_ART = 96.dp
 private val REC_SLIDE = 24.dp
+private val REC_CHROME = 50.dp
+
+/**
+ * How tall the plate stands with the system font: four lines of text
+ * (caption, title, facts and the button) with the paddings, gaps and the button's own
+ * padding around them, never under the desktop's [LOBBY_REC_HEIGHT].
+ */
+@Composable
+@ReadOnlyComposable
+internal fun lobbyRecHeight(): Dp = (linesHeight(listOf(14.sp, 22.sp, 17.sp, 13.sp)) + REC_CHROME).coerceAtLeast(LOBBY_REC_HEIGHT)
 
 private val REC_FRAME = PixelFrame(
     outline = MillidaPixel.lobbyRecOutline,
@@ -99,7 +112,8 @@ internal fun LobbyRecommend(
     Row(
         modifier
             .width(width)
-            .height(LOBBY_REC_HEIGHT)
+            .heightIn(min = LOBBY_REC_HEIGHT)
+            .height(IntrinsicSize.Min)
             .graphicsLayer {
                 val shown = appear.value
                 alpha = shown
@@ -107,7 +121,7 @@ internal fun LobbyRecommend(
             }
             .pressShift(progress)
             .pixelSurface(if (pressed) MillidaPixel.lobbyRecPressed else MillidaPixel.lobbyRec, MillidaCut.plate, REC_FRAME)
-            .clickable(interaction, indication = null, role = Role.Button, onClickLabel = "Попробовать ${pack.title}", onClick = onOpen)
+            .clickable(interaction, indication = null, role = Role.Button, onClickLabel = tr("Попробовать {title}", pack.title), onClick = onOpen)
             .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -119,7 +133,7 @@ internal fun LobbyRecommend(
         ) {
             if (own) OneBlockArt() else MRemoteImage(pack.coverUrl, MIcons.chest, Modifier.fillMaxSize(), shape = MillidaShape.mini)
             if (own) {
-                Box(Modifier.padding(4.dp)) { HubTagBadge(HubTag.EXCLUSIVE, "Эксклюзив") }
+                Box(Modifier.padding(4.dp)) { HubTagBadge(HubTag.EXCLUSIVE, tr("Эксклюзив")) }
             }
         }
         Column(
@@ -128,7 +142,7 @@ internal fun LobbyRecommend(
                 .fillMaxHeight(),
         ) {
             Text(
-                if (own) "ЭКСКЛЮЗИВНЫЙ ИВЕНТ" else "ПОПРОБУЙ СЕГОДНЯ",
+                if (own) tr("ЭКСКЛЮЗИВНЫЙ ИВЕНТ") else tr("ПОПРОБУЙ СЕГОДНЯ"),
                 style = MillidaType.caption.copy(fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 0.06.em),
                 color = MillidaPixel.lobbyRecLabel,
                 maxLines = 1,
@@ -177,7 +191,7 @@ internal fun LobbyRecommend(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Попробовать",
+                    tr("Попробовать"),
                     style = MillidaType.small.copy(fontSize = 13.sp, lineHeight = 13.sp, fontWeight = FontWeight.ExtraBold),
                     color = colors.onAccent,
                     maxLines = 1,

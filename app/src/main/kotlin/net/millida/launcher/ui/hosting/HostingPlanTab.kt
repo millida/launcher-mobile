@@ -29,6 +29,7 @@ import net.millida.launcher.core.hosting.HOSTING_NAME_MAX
 import net.millida.launcher.core.hosting.HOSTING_NAME_MIN
 import net.millida.launcher.core.hosting.HostingServerState
 import net.millida.launcher.core.hosting.HostingSubscription
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.ui.LocalUiFeedback
 import net.millida.launcher.ui.MButtonSize
@@ -146,11 +147,11 @@ fun HostingPlanTab(
     if (deleteAsk && name.isNotEmpty()) {
         val colors = millida
         MDialog(
-            title = "Удалить сервер?",
+            title = tr("Удалить сервер?"),
             onDismiss = { deleteAsk = false },
             body = {
                 Text(
-                    "Мир, плагины и настройки пропадут навсегда. Впиши имя сервера, чтобы подтвердить.",
+                    tr("Мир, плагины и настройки пропадут навсегда. Впиши имя сервера, чтобы подтвердить."),
                     style = MillidaType.body,
                     color = colors.fgMuted,
                 )
@@ -160,9 +161,9 @@ fun HostingPlanTab(
                 MField(value = typed, onValueChange = { typed = it.take(HOSTING_NAME_MAX + 8) }, placeholder = name)
             },
             actions = {
-                MTextButton("Отмена", onClick = { deleteAsk = false })
+                MTextButton(tr("Отмена"), onClick = { deleteAsk = false })
                 MDangerButton(
-                    "Удалить навсегда",
+                    tr("Удалить навсегда"),
                     onClick = {
                         deleteAsk = false
                         hosting.deleteServer(serverId) {
@@ -190,12 +191,12 @@ private fun PlanSummary(
     onChangePlan: () -> Unit,
 ) {
     val colors = millida
-    val price = if (server.free) "Бесплатно" else "${hostingRubles(server.planPriceKopecks)} в месяц"
+    val price = if (server.free) tr("Бесплатно") else tr("{0} в месяц", hostingRubles(server.planPriceKopecks))
     MCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    server.planName.ifEmpty { if (server.free) "Бесплатный" else "Тариф" },
+                    server.planName.ifEmpty { if (server.free) tr("Бесплатный") else tr("Тариф") },
                     style = MillidaType.sectionTitle,
                     color = colors.fg,
                     maxLines = 1,
@@ -208,15 +209,15 @@ private fun PlanSummary(
         }
         Spacer(Modifier.height(12.dp))
         if (subscription != null) {
-            MInfoRow("Оплачен до", hostingDay(subscription.paidUntil).ifEmpty { "—" })
-            if (subscription.periodDays > 0) MInfoRow("Период", hostingDaysLabel(subscription.periodDays))
-            if (subscription.status.isNotEmpty()) MInfoRow("Подписка", subscriptionLabel(subscription.status))
+            MInfoRow(tr("Оплачен до"), hostingDay(subscription.paidUntil).ifEmpty { "—" })
+            if (subscription.periodDays > 0) MInfoRow(tr("Период"), hostingDaysLabel(subscription.periodDays))
+            if (subscription.status.isNotEmpty()) MInfoRow(tr("Подписка"), subscriptionLabel(subscription.status))
             if (owner) {
                 Spacer(Modifier.height(4.dp))
                 MDivider()
                 MSwitchRow(
-                    title = "Продление с баланса",
-                    hint = "Раз в период с кошелька Millida",
+                    title = tr("Продление с баланса"),
+                    hint = tr("Раз в период с кошелька Millida"),
                     checked = autoRenew ?: subscription.autoRenew,
                     onChange = onAutoRenew,
                 )
@@ -224,8 +225,8 @@ private fun PlanSummary(
         } else {
             val kept = hostingDay(server.worldDeleteAt)
             if (server.free && kept.isNotEmpty()) {
-                MInfoRow("Мир хранится до", kept)
-                Text("Запуск сервера продлевает срок", style = MillidaType.small, color = colors.fgFaint)
+                MInfoRow(tr("Мир хранится до"), kept)
+                Text(tr("Запуск сервера продлевает срок"), style = MillidaType.small, color = colors.fgFaint)
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -233,17 +234,17 @@ private fun PlanSummary(
             !owner -> Row(verticalAlignment = Alignment.CenterVertically) {
                 MIcon(MIcons.lock, size = 18.dp, color = colors.fgSubtle)
                 Spacer(Modifier.width(8.dp))
-                Text("Тарифом управляет владелец", style = MillidaType.small, color = colors.fgSubtle)
+                Text(tr("Тарифом управляет владелец"), style = MillidaType.small, color = colors.fgSubtle)
             }
 
             canUpgrade -> MPrimaryButton(
-                "Сменить тариф",
+                tr("Сменить тариф"),
                 onClick = onChangePlan,
                 modifier = Modifier.fillMaxWidth(),
                 icon = MIcons.arrowUp,
             )
 
-            else -> Text("Это самый большой тариф", style = MillidaType.small, color = colors.fgSubtle)
+            else -> Text(tr("Это самый большой тариф"), style = MillidaType.small, color = colors.fgSubtle)
         }
     }
 }
@@ -254,13 +255,13 @@ private fun UsageCard(panel: HostingPanel, onDays: (Int) -> Unit, onRetry: () ->
     val usage = panel.usage
     val usageError = panel.usageError
     MCard {
-        Text("Как работал", style = MillidaType.sectionTitle.copy(fontSize = 16.sp), color = colors.fg)
+        Text(tr("Как работал"), style = MillidaType.sectionTitle.copy(fontSize = 16.sp), color = colors.fg)
         Spacer(Modifier.height(10.dp))
         MSegmented(
             options = USAGE_PERIODS,
             selected = panel.usageDays,
             onSelect = onDays,
-            label = { "$it дн." },
+            label = { tr("{it} дн.", it) },
         )
         Spacer(Modifier.height(12.dp))
         when {
@@ -269,21 +270,21 @@ private fun UsageCard(panel: HostingPanel, onDays: (Int) -> Unit, onRetry: () ->
             else -> {
                 val uptime = usage.uptimePercent.toFloat().coerceIn(0f, 100f)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Был доступен", modifier = Modifier.weight(1f), style = MillidaType.small, color = colors.fgSubtle)
+                    Text(tr("Был доступен"), modifier = Modifier.weight(1f), style = MillidaType.small, color = colors.fgSubtle)
                     Text("${uptime.roundToInt()}%", style = MillidaType.pixel, color = colors.fg)
                 }
                 Spacer(Modifier.height(6.dp))
                 MProgressBar(uptime / 100f)
                 Spacer(Modifier.height(8.dp))
-                MInfoRow("Работал", "${usage.runningHours.roundToInt()} ч", mono = true)
-                MInfoRow("Пик игроков", "${usage.peakPlayers}", mono = true)
+                MInfoRow(tr("Работал"), tr("{0} ч", usage.runningHours.roundToInt()), mono = true)
+                MInfoRow(tr("Пик игроков"), "${usage.peakPlayers}", mono = true)
                 MInfoRow(
-                    "Падений",
+                    tr("Падений"),
                     "${usage.crashes}",
                     valueColor = if (usage.crashes > 0) colors.danger else colors.fg,
                     mono = true,
                 )
-                MInfoRow("Память", "${usage.ramGbHours.roundToInt()} ГБ·ч", mono = true)
+                MInfoRow(tr("Память"), tr("{0} ГБ·ч", usage.ramGbHours.roundToInt()), mono = true)
             }
         }
     }
@@ -300,12 +301,12 @@ private fun RenameCard(
     val colors = millida
     val title = draft.trim()
     MCard {
-        Text("Название", style = MillidaType.sectionTitle.copy(fontSize = 16.sp), color = colors.fg)
+        Text(tr("Название"), style = MillidaType.sectionTitle.copy(fontSize = 16.sp), color = colors.fg)
         Spacer(Modifier.height(10.dp))
-        MField(value = draft, onValueChange = onDraft, placeholder = current.ifEmpty { "Мой сервер" }, clearable = true)
+        MField(value = draft, onValueChange = onDraft, placeholder = current.ifEmpty { tr("Мой сервер") }, clearable = true)
         Spacer(Modifier.height(10.dp))
         MSecondaryButton(
-            "Сохранить",
+            tr("Сохранить"),
             onClick = onSave,
             enabled = !busy && title.length in HOSTING_NAME_MIN..HOSTING_NAME_MAX && title != current,
             icon = MIcons.check,
@@ -318,23 +319,23 @@ private fun RenameCard(
 private fun DeleteCard(allowed: Boolean, busy: Boolean, onDelete: () -> Unit) {
     val colors = millida
     MCard(frame = colors.plateFrame().copy(left = colors.danger, leftWidth = 4.dp)) {
-        Text("Удалить сервер", style = MillidaType.sectionTitle.copy(fontSize = 16.sp), color = colors.fg)
+        Text(tr("Удалить сервер"), style = MillidaType.sectionTitle.copy(fontSize = 16.sp), color = colors.fg)
         Spacer(Modifier.height(4.dp))
         Text(
-            if (allowed) "Мир, плагины и настройки пропадут" else "Сначала выключи продление",
+            if (allowed) tr("Мир, плагины и настройки пропадут") else tr("Сначала выключи продление"),
             style = MillidaType.small,
             color = colors.fgSubtle,
         )
         Spacer(Modifier.height(12.dp))
-        MDangerButton("Удалить", onClick = onDelete, enabled = allowed && !busy, icon = MIcons.trash)
+        MDangerButton(tr("Удалить"), onClick = onDelete, enabled = allowed && !busy, icon = MIcons.trash)
     }
 }
 
 private fun subscriptionLabel(status: String): String = when (status.uppercase()) {
-    "ACTIVE" -> "активна"
-    "EXPIRED" -> "истекла"
-    "CANCELLED", "CANCELED" -> "отменена"
-    "PENDING" -> "ждёт оплаты"
-    "SUSPENDED" -> "приостановлена"
+    "ACTIVE" -> tr("активна")
+    "EXPIRED" -> tr("истекла")
+    "CANCELLED", "CANCELED" -> tr("отменена")
+    "PENDING" -> tr("ждёт оплаты")
+    "SUSPENDED" -> tr("приостановлена")
     else -> status.lowercase()
 }

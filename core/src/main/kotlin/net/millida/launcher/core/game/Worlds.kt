@@ -3,6 +3,7 @@ package net.millida.launcher.core.game
 import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.SafeUnzip
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.profile.profileFolder
 import java.io.File
 import java.io.IOException
@@ -72,9 +73,9 @@ class Worlds(private val layout: GameLayout) {
     @Throws(IOException::class)
     fun rename(profileDir: File, folder: String, newName: String): WorldCard {
         val clean = newName.trim().filter { it.code >= 0x20 }.take(MAX_NAME)
-        if (clean.isEmpty()) throw IOException("название мира не может быть пустым")
+        if (clean.isEmpty()) throw IOException(tr("название мира не может быть пустым"))
         val source = worldDir(profileDir, folder)
-        if (!source.isDirectory) throw IOException("мир не найден: $folder")
+        if (!source.isDirectory) throw IOException(tr("мир не найден: {folder}", folder))
 
         val saves = savesDir(profileDir)
         val wanted = SafePath.fileName(clean)
@@ -83,7 +84,7 @@ class Worlds(private val layout: GameLayout) {
             val target = SafePath.join(saves, uniqueFolder(saves, wanted))
             // The folder move happens first because it is the step that can fail
             // on a busy file; failing here leaves the world exactly as it was.
-            if (!source.renameTo(target)) throw IOException("папку мира не удалось переименовать: ${source.name}")
+            if (!source.renameTo(target)) throw IOException(tr("папку мира не удалось переименовать: {name}", source.name))
             dir = target
         }
         try {
@@ -93,30 +94,30 @@ class Worlds(private val layout: GameLayout) {
             throw failed
         }
         return card(dir, backups(profileDir).count { it.folder == dir.name })
-            ?: throw IOException("мир не читается после переименования: ${dir.name}")
+            ?: throw IOException(tr("мир не читается после переименования: {name}", dir.name))
     }
 
     @Throws(IOException::class)
     fun duplicate(profileDir: File, folder: String): WorldCard {
         val source = worldDir(profileDir, folder)
-        if (!source.isDirectory) throw IOException("мир не найден: $folder")
+        if (!source.isDirectory) throw IOException(tr("мир не найден: {folder}", folder))
         val saves = savesDir(profileDir)
         val target = SafePath.join(saves, uniqueFolder(saves, "${source.name}-copy"))
         if (!source.copyRecursively(target, overwrite = false, onError = { _, error -> throw error })) {
             target.deleteRecursively()
-            throw IOException("не удалось скопировать мир: ${source.name}")
+            throw IOException(tr("не удалось скопировать мир: {name}", source.name))
         }
         // The session lock belongs to the original; a copy carrying it makes the
         // game claim the world is already open.
         File(target, SESSION_LOCK).delete()
-        val copied = card(target, 0) ?: throw IOException("копия мира не читается: ${target.name}")
-        return runCatching { rename(profileDir, target.name, "${copied.name} (копия)") }.getOrDefault(copied)
+        val copied = card(target, 0) ?: throw IOException(tr("копия мира не читается: {name}", target.name))
+        return runCatching { rename(profileDir, target.name, tr("{name} (копия)", copied.name)) }.getOrDefault(copied)
     }
 
     @Throws(IOException::class)
     fun backup(profileDir: File, folder: String): WorldBackup {
         val source = worldDir(profileDir, folder)
-        if (!source.isDirectory) throw IOException("мир не найден: $folder")
+        if (!source.isDirectory) throw IOException(tr("мир не найден: {folder}", folder))
         val dir = backupsDir(profileDir)
         dir.mkdirs()
         val stamp = System.currentTimeMillis()
@@ -126,7 +127,7 @@ class Worlds(private val layout: GameLayout) {
             partial.outputStream().use { pack(source, it) }
             // The backup becomes visible only once the archive is closed: a half
             // written zip in the list is a restore that fails when it is needed.
-            if (!partial.renameTo(file)) throw IOException("копию не удалось сохранить: ${file.name}")
+            if (!partial.renameTo(file)) throw IOException(tr("копию не удалось сохранить: {name}", file.name))
         } finally {
             partial.delete()
         }
@@ -153,11 +154,11 @@ class Worlds(private val layout: GameLayout) {
     @Throws(IOException::class)
     fun restoreBackup(profileDir: File, backupFile: String): WorldCard {
         val archive = backupPath(profileDir, backupFile)
-        if (!archive.isFile) throw IOException("копия не найдена: $backupFile")
+        if (!archive.isFile) throw IOException(tr("копия не найдена: {backupFile}", backupFile))
         val staging = newTempDir(profileDir, "restore")
         try {
             unpack(archive, staging)
-            val root = worldRoot(staging) ?: throw IOException("в копии нет мира: level.dat не найден")
+            val root = worldRoot(staging) ?: throw IOException(tr("в копии нет мира: level.dat не найден"))
             val saves = savesDir(profileDir)
             saves.mkdirs()
             // The folder name comes back from the archive and keeps its spaces:
@@ -166,7 +167,7 @@ class Worlds(private val layout: GameLayout) {
             val target = SafePath.join(saves, folder)
             swapIn(root, target)
             return card(target, backups(profileDir).count { it.folder == target.name })
-                ?: throw IOException("восстановленный мир не читается: ${target.name}")
+                ?: throw IOException(tr("восстановленный мир не читается: {name}", target.name))
         } finally {
             staging.deleteRecursively()
         }
@@ -181,7 +182,7 @@ class Worlds(private val layout: GameLayout) {
     @Throws(IOException::class)
     fun exportWorld(profileDir: File, folder: String, target: OutputStream) {
         val source = worldDir(profileDir, folder)
-        if (!source.isDirectory) throw IOException("мир не найден: $folder")
+        if (!source.isDirectory) throw IOException(tr("мир не найден: {folder}", folder))
         pack(source, target)
     }
 
@@ -195,7 +196,7 @@ class Worlds(private val layout: GameLayout) {
         val spooled = File(staging.parentFile, "${staging.name}$ZIP")
         try {
             unpack(SafeUnzip.spool(source, spooled), staging)
-            val root = worldRoot(staging) ?: throw IOException("в архиве нет мира: level.dat не найден")
+            val root = worldRoot(staging) ?: throw IOException(tr("в архиве нет мира: level.dat не найден"))
             val saves = savesDir(profileDir)
             saves.mkdirs()
             val base = when {
@@ -207,11 +208,11 @@ class Worlds(private val layout: GameLayout) {
             if (!root.renameTo(target)) {
                 if (!root.copyRecursively(target, overwrite = false, onError = { _, error -> throw error })) {
                     target.deleteRecursively()
-                    throw IOException("не удалось перенести мир из архива")
+                    throw IOException(tr("не удалось перенести мир из архива"))
                 }
             }
             File(target, SESSION_LOCK).delete()
-            return card(target, 0) ?: throw IOException("мир из архива не читается: ${target.name}")
+            return card(target, 0) ?: throw IOException(tr("мир из архива не читается: {name}", target.name))
         } finally {
             spooled.delete()
             staging.deleteRecursively()
@@ -221,14 +222,14 @@ class Worlds(private val layout: GameLayout) {
     private fun swapIn(prepared: File, target: File) {
         val replaced = if (target.exists()) File(target.parentFile, "${target.name}$REPLACED${System.currentTimeMillis()}") else null
         if (replaced != null && !target.renameTo(replaced)) {
-            throw IOException("мир занят и не заменяется: ${target.name}")
+            throw IOException(tr("мир занят и не заменяется: {name}", target.name))
         }
         val moved = prepared.renameTo(target) ||
-            prepared.copyRecursively(target, overwrite = true, onError = { _, _ -> throw IOException("не удалось положить мир на место") })
+            prepared.copyRecursively(target, overwrite = true, onError = { _, _ -> throw IOException(tr("не удалось положить мир на место")) })
         if (!moved) {
             target.deleteRecursively()
             replaced?.renameTo(target)
-            throw IOException("не удалось положить мир на место: ${target.name}")
+            throw IOException(tr("не удалось положить мир на место: {name}", target.name))
         }
         File(target, SESSION_LOCK).delete()
         replaced?.deleteRecursively()
@@ -280,9 +281,9 @@ class Worlds(private val layout: GameLayout) {
 
     private fun writeLevelName(dir: File, name: String) {
         val level = File(dir, LEVEL)
-        val document = Nbt.read(level) ?: throw IOException("level.dat не читается — мир повреждён")
-        if (!document.complete) throw IOException("level.dat прочитан не полностью — переименование отменено")
-        val data = document.root.compound("Data") ?: throw IOException("level.dat не похож на файл мира")
+        val document = Nbt.read(level) ?: throw IOException(tr("level.dat не читается — мир повреждён"))
+        if (!document.complete) throw IOException(tr("level.dat прочитан не полностью — переименование отменено"))
+        val data = document.root.compound("Data") ?: throw IOException(tr("level.dat не похож на файл мира"))
         val updated = NbtDocument(
             document.name,
             document.root.with("Data", data.with("LevelName", NbtString(name))),
@@ -296,7 +297,7 @@ class Worlds(private val layout: GameLayout) {
             level.copyTo(File(dir, "${LEVEL}_old"), overwrite = true)
             if (!temp.renameTo(level)) {
                 level.delete()
-                if (!temp.renameTo(level)) throw IOException("level.dat не удалось заменить")
+                if (!temp.renameTo(level)) throw IOException(tr("level.dat не удалось заменить"))
             }
         } finally {
             temp.delete()
@@ -324,7 +325,7 @@ class Worlds(private val layout: GameLayout) {
 
     private fun unpack(archive: File, staging: File) {
         val files = SafeUnzip.unpack(archive, staging, UNZIP_LIMITS)
-        if (files == 0) throw IOException("архив пуст")
+        if (files == 0) throw IOException(tr("архив пуст"))
     }
 
     private fun worldRoot(dir: File, depth: Int = WORLD_ROOT_DEPTH): File? {
@@ -346,7 +347,7 @@ class Worlds(private val layout: GameLayout) {
     }
 
     private fun backupPath(profileDir: File, backupFile: String): File {
-        if (!backupFile.endsWith(ZIP, ignoreCase = true)) throw IOException("это не файл копии: $backupFile")
+        if (!backupFile.endsWith(ZIP, ignoreCase = true)) throw IOException(tr("это не файл копии: {backupFile}", backupFile))
         return SafePath.join(backupsDir(profileDir), backupFile)
     }
 
@@ -394,12 +395,12 @@ class Worlds(private val layout: GameLayout) {
         const val MAX_ENTRIES = 100_000
         const val MAX_UNPACKED_BYTES = 8L * 1024 * 1024 * 1024
         const val COPY_BUFFER = 1 shl 16
-        val UNZIP_LIMITS = SafeUnzip.Limits(
+        val UNZIP_LIMITS get() = SafeUnzip.Limits(
             maxEntries = MAX_ENTRIES,
             maxBytes = MAX_UNPACKED_BYTES,
-            broken = { cause -> "архив мира повреждён ($cause) — возьми файл заново" },
-            tooMany = "в архиве слишком много файлов",
-            tooBig = "архив распаковывается в слишком большой мир",
+            broken = { cause -> tr("архив мира повреждён ({cause}) — возьми файл заново", cause) },
+            tooMany = tr("в архиве слишком много файлов"),
+            tooBig = tr("архив распаковывается в слишком большой мир"),
         )
     }
 }

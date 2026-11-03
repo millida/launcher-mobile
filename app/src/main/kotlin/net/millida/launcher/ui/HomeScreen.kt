@@ -22,10 +22,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.millida.launcher.Area
+import net.millida.launcher.FriendsTab
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.Screen
 import net.millida.launcher.UiState
 import net.millida.launcher.core.account.AccountKind
+import net.millida.launcher.core.hub.LobbyPromo
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.profile.StartHere
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.mojang.VersionManifest
 import net.millida.launcher.core.profile.Profile
@@ -33,6 +37,7 @@ import net.millida.launcher.core.rating.RatedServer
 import net.millida.launcher.ui.character.characterLookOf
 import net.millida.launcher.ui.home.BuildHero
 import net.millida.launcher.ui.home.BuildMenuSheet
+import net.millida.launcher.ui.home.shelfNeighbours
 import net.millida.launcher.ui.home.FirstBuildHero
 import net.millida.launcher.ui.home.HubTiles
 import net.millida.launcher.ui.home.JoinServerSheet
@@ -42,6 +47,8 @@ import net.millida.launcher.ui.home.LobbyTopRow
 import net.millida.launcher.ui.home.WideLobby
 import net.millida.launcher.ui.home.WideLobbyActions
 import net.millida.launcher.ui.home.LobbyAccountMenu
+import net.millida.launcher.ui.home.LobbyBanner
+import net.millida.launcher.ui.home.lobbyBanners
 import net.millida.launcher.ui.home.ONEBLOCK_PACK
 import net.millida.launcher.ui.home.recommendedPack
 import net.millida.launcher.ui.home.LoaderChip
@@ -78,6 +85,8 @@ fun HomeScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     var openedServer by remember { mutableStateOf<RatedServer?>(null) }
+    var helpSheet by rememberSaveable { mutableIntStateOf(0) }
+    val support by model.support.state.collectAsStateWithLifecycle()
     var creating by rememberSaveable { mutableStateOf(false) }
     var createPreset by rememberSaveable { mutableStateOf<String?>(null) }
     var menuFor by rememberSaveable { mutableStateOf<String?>(null) }
@@ -226,7 +235,7 @@ fun HomeScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
                 )
             },
             actions = {
-                MPrimaryButton("Новая сборка", onClick = { openCreate(null) }, icon = MIcons.plus, size = MButtonSize.Small)
+                MPrimaryButton(tr("Новая сборка"), onClick = { openCreate(null) }, icon = MIcons.plus, size = MButtonSize.Small)
             },
         ) {
             shelves()
@@ -234,6 +243,21 @@ fun HomeScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
             sections()
         }
     } else if (wide) {
+        val social by model.social.state.collectAsStateWithLifecycle()
+        val signedIn = state.millidaSignedIn
+        LaunchedEffect(signedIn) {
+            val invites = model.social.state.value.invites
+            if (signedIn && invites.overview == null && !invites.loading) model.social.loadInvites()
+        }
+        val ownPlayable = OwnServers.playable(OwnServers.ONEBLOCK)
+        val arcania = Premium.forPhone(hub.catalog.orEmpty()).firstOrNull { it.slug == ARCANIA_SLUG }
+        val banners = lobbyBanners(
+            promoOn = hub.promoLobby,
+            ownPlayable = ownPlayable,
+            ownOnline = hub.ownOnline,
+            arcania = arcania,
+            invitePlusDays = if (signedIn) social.invites.overview?.perFriendPlusDays else null,
+        )
         WideLobby(
             state = state,
             lobby = lobby,
@@ -243,6 +267,8 @@ fun HomeScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
             shopAlert = shop.badge > 0,
             bonusReady = shop.dailyReady > 0,
             recommend = recommendedPack(hub),
+            banners = banners,
+            bannerStart = LobbyPromo.start(banners.size, hub.day, state.account?.id.orEmpty().hashCode()),
             accountMenu = { maxHeight, close, placement ->
                 LobbyAccountMenu(state, model, maxHeight = maxHeight, onClose = close, modifier = placement)
             },
@@ -261,10 +287,28 @@ fun HomeScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
                 onShop = { model.open(Screen.SHOP) },
                 onHosting = { model.open(Screen.HOSTING) },
                 onFriends = { model.open(Screen.FRIENDS) },
-                onMessages = { model.open(Screen.CHAT) },
-                onMore = { model.open(Screen.MORE) },
                 onSettings = { model.open(Screen.SETTINGS) },
+                onChest = { model.open(Screen.SHOP) },
+                onHelp = { helpSheet = 1 },
+                onFeedback = { helpSheet = 2 },
+                onParty = { model.open(Screen.FRIENDS) },
+                onInvite = {
+                    model.social.setTab(FriendsTab.INVITE)
+                    model.open(Screen.FRIENDS)
+                },
                 onRecommend = { pack -> if (pack.slug == ONEBLOCK_PACK) playOwn() else model.premium.open(pack) },
+                onBanner = { banner ->
+                    when (banner) {
+                        LobbyBanner.Discord -> model.openLinkOrNotice(context, LobbyPromo.DISCORD_INVITE)
+                        LobbyBanner.Telegram -> model.openLinkOrNotice(context, LobbyPromo.TELEGRAM_CHAT)
+                        is LobbyBanner.OwnEvent -> playOwn()
+                        is LobbyBanner.Pack -> model.premium.open(banner.pack)
+                        is LobbyBanner.Invite -> {
+                            model.social.setTab(FriendsTab.INVITE)
+                            model.open(Screen.FRIENDS)
+                        }
+                    }
+                },
             ),
             modifier = modifier,
         )
@@ -282,6 +326,20 @@ fun HomeScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
             servers()
             sections()
         }
+    }
+
+    if (helpSheet == 1) {
+        net.millida.launcher.ui.settings.BugSheet(
+            sending = support.sendingBug,
+            onSend = { kind, text, attach, _ -> model.support.sendBug(kind, text, attach) { helpSheet = 0 } },
+            onDismiss = { helpSheet = 0 },
+        )
+    } else if (helpSheet == 2) {
+        net.millida.launcher.ui.settings.ReviewSheet(
+            sending = support.sendingReview,
+            onSend = { text, stars, _ -> model.support.sendReview(text, stars) { helpSheet = 0 } },
+            onDismiss = { helpSheet = 0 },
+        )
     }
 
     hub.mode?.let { sheet ->
@@ -321,8 +379,12 @@ fun HomeScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
 
     val menuProfile = state.profiles.firstOrNull { it.id == menuFor }
     if (menuProfile != null) {
+        val (earlier, later) = shelfNeighbours(state.profiles, lobby, menuProfile.id)
         BuildMenuSheet(
             profile = menuProfile,
+            onEarlier = earlier?.let { neighbour -> { model.swapBuilds(menuProfile, neighbour) } },
+            onLater = later?.let { neighbour -> { model.swapBuilds(menuProfile, neighbour) } },
+
             onPlay = {
                 menuFor = null
                 model.selectBuild(menuProfile)
@@ -343,9 +405,9 @@ fun HomeScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
     val deletingProfile = state.profiles.firstOrNull { it.id == deleting }
     if (deletingProfile != null) {
         MConfirmDialog(
-            title = "Удалить сборку?",
-            text = "«${deletingProfile.name}» удалится с модами и мирами. Вернуть нельзя.",
-            confirm = "Удалить",
+            title = tr("Удалить сборку?"),
+            text = tr("«{name}» удалится с модами и мирами. Вернуть нельзя.", deletingProfile.name),
+            confirm = tr("Удалить"),
             onConfirm = {
                 deleting = null
                 model.deleteProfile(deletingProfile.id)
@@ -374,7 +436,7 @@ fun HomeScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
 private fun activeBuild(state: UiState, lobby: LobbyState): Profile? =
     state.profiles.firstOrNull { it.id == state.activeProfileId }
         ?: state.profiles.firstOrNull { it.id == lobby.lastPlayedId }
-        ?: state.profiles.firstOrNull()
+        ?: StartHere.default(state.profiles, state.phoneVersions)
 
 @Composable
 internal fun CreateProfileSheet(
@@ -390,8 +452,13 @@ internal fun CreateProfileSheet(
     val colors = millida
     val source = versions.ifEmpty { state.versions }
     var name by rememberSaveable { mutableStateOf("") }
-    var version by rememberSaveable { mutableStateOf(preset ?: state.versions.firstOrNull()?.id.orEmpty()) }
-    var loader by rememberSaveable { mutableStateOf(LoaderKind.FABRIC) }
+    val phone = state.phoneVersions
+    var version by rememberSaveable { mutableStateOf(preset ?: phone.recommended(state.versions)?.id.orEmpty()) }
+    // The list can arrive after the sheet opened: the newest version is not the one a phone plays.
+    LaunchedEffect(source, phone) {
+        if (version.isEmpty()) phone.recommended(source)?.let { version = it.id }
+    }
+    var loader by rememberSaveable { mutableStateOf(LoaderKind.VANILLA) }
     var query by rememberSaveable { mutableStateOf("") }
     var snapshots by rememberSaveable { mutableStateOf(false) }
     var shown by rememberSaveable { mutableIntStateOf(VERSION_PAGE) }
@@ -399,14 +466,14 @@ internal fun CreateProfileSheet(
     val entry = source.firstOrNull { it.id == version }
     val gate = loaderGate(loader, entry)
 
-    MBottomSheet(onDismiss = onDismiss, title = "Новая сборка") {
-        MSectionTitle("НАЗВАНИЕ")
+    MBottomSheet(onDismiss = onDismiss, title = tr("Новая сборка")) {
+        MSectionTitle(tr("НАЗВАНИЕ"))
         Spacer(Modifier.height(8.dp))
-        MField(name, { name = it }, placeholder = "Например, Выживание с друзьями")
+        MField(name, { name = it }, placeholder = tr("Например, Выживание с друзьями"))
 
         Spacer(Modifier.height(18.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MSectionTitle("ВЕРСИЯ ИГРЫ", Modifier.weight(1f))
+            MSectionTitle(tr("ВЕРСИЯ ИГРЫ"), Modifier.weight(1f))
             if (version.isNotEmpty()) {
                 Text(version, style = MillidaType.pixel, color = colors.accentText, maxLines = 1)
             }
@@ -418,11 +485,11 @@ internal fun CreateProfileSheet(
                 query = it
                 shown = VERSION_PAGE
             },
-            placeholder = "Найти версию",
+            placeholder = tr("Найти версию"),
             leadingIcon = MIcons.search,
             clearable = true,
         )
-        MSwitchRow("Снапшоты и старые", null, snapshots) {
+        MSwitchRow(tr("Снапшоты и старые"), null, snapshots) {
             snapshots = it
             shown = VERSION_PAGE
         }
@@ -430,12 +497,16 @@ internal fun CreateProfileSheet(
         when {
             versionsError != null && (source.isEmpty() || snapshots) -> MErrorCard(versionsError, onRetry = onRetryVersions)
             source.isEmpty() || (versionsLoading && filtered.isEmpty()) -> MSkeleton(height = 96.dp)
-            filtered.isEmpty() -> Text("Такой версии нет", style = MillidaType.body, color = colors.fgSubtle)
+            filtered.isEmpty() -> Text(tr("Такой версии нет"), style = MillidaType.body, color = colors.fgSubtle)
             else -> {
                 MButtonRow {
                     filtered.take(shown).forEach { option ->
                         MChip(
-                            text = option.id,
+                            text = if (phone.isRisky(option.id, option.releaseTime.ifEmpty { option.time })) {
+                                tr("{0} · тест", option.id)
+                            } else {
+                                option.id
+                            },
                             selected = option.id == version,
                             onClick = {
                                 version = option.id
@@ -447,28 +518,31 @@ internal fun CreateProfileSheet(
                 if (filtered.size > shown) {
                     Spacer(Modifier.height(4.dp))
                     MTextButton(
-                        text = "Ещё ${minOf(VERSION_PAGE, filtered.size - shown)}",
+                        text = tr("Ещё {0}", minOf(VERSION_PAGE, filtered.size - shown)),
                         onClick = { shown += VERSION_PAGE },
                         icon = MIcons.chevronDown,
                     )
                 }
             }
         }
-        if (isLegacyVersion(entry) || isNewRenderer(entry)) {
+        val risky = entry != null && phone.isRisky(entry.id, entry.releaseTime.ifEmpty { entry.time })
+        if (isLegacyVersion(entry) || isNewRenderer(entry) || risky) {
             Spacer(Modifier.height(10.dp))
             MButtonRow {
                 if (isLegacyVersion(entry)) {
-                    MBadge("Старая версия: может не запуститься", colors.warning, colors.warningSoft, icon = MIcons.alert)
-                    MBadge("Forge до 1.13 не поддерживается", colors.warning, colors.warningSoft, icon = MIcons.alert)
+                    MBadge(tr("Старая версия: может не запуститься"), colors.warning, colors.warningSoft, icon = MIcons.alert)
+                    MBadge(tr("Forge до 1.13 не поддерживается"), colors.warning, colors.warningSoft, icon = MIcons.alert)
                 }
-                if (isNewRenderer(entry)) {
-                    MBadge("Картинка может рваться", colors.warning, colors.warningSoft, icon = MIcons.alert)
+                if (risky) {
+                    MBadge(tr("Тест: экран может быть чёрным"), colors.warning, colors.warningSoft, icon = MIcons.alert)
+                } else if (isNewRenderer(entry)) {
+                    MBadge(tr("Картинка может рваться"), colors.warning, colors.warningSoft, icon = MIcons.alert)
                 }
             }
         }
 
         Spacer(Modifier.height(18.dp))
-        MSectionTitle("ЗАГРУЗЧИК")
+        MSectionTitle(tr("ЗАГРУЗЧИК"))
         Spacer(Modifier.height(8.dp))
         MButtonRow {
             LoaderKind.entries.forEach { kind ->
@@ -483,8 +557,8 @@ internal fun CreateProfileSheet(
 
         Spacer(Modifier.height(22.dp))
         MPrimaryButton(
-            text = "Создать",
-            onClick = { onCreate(name.trim().ifEmpty { "Сборка $version" }, version, loader) },
+            text = tr("Создать"),
+            onClick = { onCreate(name.trim().ifEmpty { tr("Сборка {version}", version) }, version, loader) },
             modifier = Modifier.fillMaxWidth(),
             enabled = version.isNotEmpty() && gate == LoaderGate.Ready,
             icon = MIcons.plus,
@@ -492,3 +566,5 @@ internal fun CreateProfileSheet(
         )
     }
 }
+
+private const val ARCANIA_SLUG = "arcania"

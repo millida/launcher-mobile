@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,15 +29,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,12 +42,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.translate
-import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,28 +52,25 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import net.millida.launcher.ChestOpening
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.RevealCard
 import net.millida.launcher.RewardKind
 import net.millida.launcher.RewardReveal
-import net.millida.launcher.XrayRun
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trPlural
 import net.millida.launcher.core.media.UiSoundEvent
-import net.millida.launcher.core.rubies.ChestOdds
 import net.millida.launcher.core.rubies.PendingChest
-import net.millida.launcher.core.rubies.PityLeft
 import net.millida.launcher.ui.DropWindowDim
 import net.millida.launcher.ui.ExtendWindowUnderCutout
+import net.millida.launcher.ui.HideSystemBarsWhenWide
 import net.millida.launcher.ui.rememberWindowOverflow
 import net.millida.launcher.ui.LocalReducedMotion
 import net.millida.launcher.ui.LocalUiFeedback
 import net.millida.launcher.ui.MBadge
 import net.millida.launcher.ui.MButtonSize
-import net.millida.launcher.ui.MIconButton
 import net.millida.launcher.ui.MIcons
-import net.millida.launcher.ui.MPixelLoader
 import net.millida.launcher.ui.MPrimaryButton
 import net.millida.launcher.ui.MRarityPlate
 import net.millida.launcher.ui.MSecondaryButton
@@ -92,33 +81,16 @@ import net.millida.launcher.ui.MillidaPixel
 import net.millida.launcher.ui.MillidaType
 import net.millida.launcher.ui.PixelFrame
 import net.millida.launcher.ui.Rarity
-import net.millida.launcher.ui.UiFeedback
 import net.millida.launcher.ui.drawRays
 import net.millida.launcher.ui.groupDigits
 import net.millida.launcher.ui.millida
 import net.millida.launcher.ui.mixSrgb
 import net.millida.launcher.ui.pixelSurface
 import net.millida.launcher.ui.steppedPath
-import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sin
-import kotlin.random.Random
 
-private const val SHAKE_MIN_MS = 1500L
-private const val SHAKE_RAMP_MS = 1300f
-private const val HIT_EVERY_MS = 300L
-private const val MAX_HITS = 4
-private const val LID_MS = 420f
-private const val FLASH_MS = 500f
-private const val JUMP_MS = 300f
-private const val SQUASH_MS = 120f
-private const val UNSQUASH_MS = 180f
-private const val RAYS_MS = 500f
-private const val PILLAR_MS = 350f
 private const val FIRST_CARD_MS = 260L
 private const val BEAT_MS = 460L
 private const val PLOP_MS = 520
@@ -128,62 +100,47 @@ private const val FRAGMENT_CELLS = 10
 private const val FRAGMENT_STEP_MS = 160
 private const val FRAGMENT_FILL_MS = 360
 private const val RAY_SPIN_PER_S = 0.25f
-private const val IDLE_ASK_MS = 2600L
-private const val BURST_SPARKS = 40
-private const val TRICKLE_PER_S = 10f
-private const val DETACH_AFTER_MS = 8_000L
 
 private val CARD_WIDTH = 136.dp
 
-private const val VOXEL_PER_CELL = 0.8f
-private const val VOXEL_SEAM = 10f
-
-private enum class Phase { Idle, Shaking, Opened, Done, Failed }
-
-private class Spark(
-    val born: Long,
-    val x: Float,
-    val y: Float,
-    val vx: Float,
-    val vy: Float,
-    val size: Float,
-    val color: Color,
-    val life: Long,
-)
-
-/** Frame-loop state; composition reads only phase and shown, so the page does not recompose every frame. */
-@Stable
-private class ChestSceneState(val reduced: Boolean, seed: Int) {
-    var clock by mutableLongStateOf(0L)
-    var bornAt = 0L
-    var phase by mutableStateOf(Phase.Idle)
-    var shown by mutableIntStateOf(0)
-    var shakeAt = 0L
-    var openAt = 0L
-    var hits = 0
-    var sparkDebt = 0f
-    var lastFrame = 0L
-    val sparks = ArrayList<Spark>()
-    val random = Random(seed)
-}
-
-/** The lid waits at least 1.5 s even when the answer is instant. */
+/** A chest of the bonus, the pass, playtime or a gift: the shared opening, its hits from the answer once known. */
 @Composable
 internal fun ChestScene(
     opening: ChestOpening,
-    odds: ChestOdds?,
-    oddsFailed: Boolean,
-    pityAfter: Int,
-    pityLegendAfter: Int,
     onStart: () -> Unit,
     onNext: () -> Unit,
     onClose: () -> Unit,
+    onFail: (String) -> Unit,
     onWardrobe: () -> Unit,
-    onRetryOdds: () -> Unit,
+    onRetry: () -> Unit,
     topUp: ChestTopUp? = null,
 ) {
     key(opening.serial) {
-        ChestSceneBody(opening, odds, oddsFailed, pityAfter, pityLegendAfter, onStart, onNext, onClose, onWardrobe, onRetryOdds, topUp)
+        val tier = opening.chest.tier
+        val result = opening.result
+        val opens = remember(result) { result?.let { listOf(RevealOpen(opening.cards, OPEN_ITEM, null)) } }
+        val hits = result?.hits?.takeIf { it > 0 }?.coerceIn(1, 6) ?: chestHits(tier)
+        CaseReveal(
+            title = chestTitle(tier),
+            tier = tier,
+            tint = null,
+            color = chestTone(tier),
+            hits = hits,
+            floor = null,
+            deal = false,
+            asked = opening.started,
+            attempt = opening.attempt,
+            opens = opens,
+            error = opening.error,
+            onBegin = onStart,
+            onRetry = onRetry,
+            onFail = onFail,
+            onFinished = {},
+            onClose = onClose,
+            onWear = onWardrobe,
+            again = if (opening.left > 0) RevealAgain(tr("Следующий · ещё {left}", opening.left), null, true, onNext) else null,
+            extra = topUp?.let { up -> { card, _ -> ChestTopUpButton(card, up) } },
+        )
     }
 }
 
@@ -194,206 +151,20 @@ internal class ChestTopUp(
     val onTopUp: (RevealCard) -> Unit,
 )
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ChestSceneBody(
-    opening: ChestOpening,
-    odds: ChestOdds?,
-    oddsFailed: Boolean,
-    pityAfter: Int,
-    pityLegendAfter: Int,
-    onStart: () -> Unit,
-    onNext: () -> Unit,
-    onClose: () -> Unit,
-    onWardrobe: () -> Unit,
-    onRetryOdds: () -> Unit,
-    topUp: ChestTopUp?,
-) {
-    val reduced = LocalReducedMotion.current
-    val feedback = LocalUiFeedback.current
-    val stage = remember { ChestSceneState(reduced, opening.serial.toInt()) }
-    val latest by rememberUpdatedState(opening)
-    val cards = remember(opening.result) { opening.cards }
-    val latestCards by rememberUpdatedState(cards)
-    val tier = opening.chest.tier
-
-    LaunchedEffect(stage) {
-        while (true) {
-            val now = withFrameMillis { it }
-            if (stage.bornAt == 0L) stage.bornAt = now
-            stage.clock = now
-            stage.step(now, latest, latestCards, feedback, tier)
-        }
-    }
-
-    val start: () -> Unit = {
-        if (stage.phase == Phase.Idle) {
-            stage.phase = Phase.Shaking
-            stage.shakeAt = stage.clock
-            stage.hits = 0
-            feedback.chestHit(0)
-            onStart()
-        }
-    }
-    val skip: () -> Unit = {
-        if (stage.phase == Phase.Opened && stage.shown < latestCards.size) {
-            stage.shown = latestCards.size
-            feedback.chestCard(bestRank(latestCards))
-        }
-    }
-    var detachable by remember { mutableStateOf(false) }
-    LaunchedEffect(stage.phase) {
-        detachable = false
-        if (stage.phase == Phase.Shaking) {
-            delay(DETACH_AFTER_MS)
-            detachable = true
-        }
-    }
-    val back: () -> Unit = {
-        when (stage.phase) {
-            Phase.Idle, Phase.Done, Phase.Failed -> onClose()
-            Phase.Opened -> skip()
-            Phase.Shaking -> if (detachable) onClose() else Unit
-        }
-    }
-
-    SceneWindow(onBack = back) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .clickable(remember { MutableInteractionSource() }, indication = null) { skip() },
-        ) {
-            val closable = stage.phase == Phase.Idle ||
-                stage.phase == Phase.Done ||
-                stage.phase == Phase.Failed ||
-                (stage.phase == Phase.Shaking && detachable)
-            SceneHeader(
-                kicker = if (opening.left > 0) "Ещё ${opening.left}" else "Сундук",
-                title = chestName(tier) + " сундук",
-                tone = chestTone(tier),
-                onClose = if (closable) onClose else null,
-            )
-            val stageHeight = (LocalConfiguration.current.screenHeightDp * 0.36f).dp.coerceIn(200.dp, 320.dp)
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(stageHeight)
-                    .clickable(
-                        remember { MutableInteractionSource() },
-                        indication = null,
-                        enabled = stage.phase == Phase.Idle,
-                        role = Role.Button,
-                        onClickLabel = "Открыть сундук",
-                    ) { start() },
-            ) {
-                ChestStage(stage, tier, latestCards, Modifier.fillMaxSize())
-            }
-            Column(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                when (stage.phase) {
-                    Phase.Idle -> {
-                        OddsPanel(tier, odds, pityAfter, pityLegendAfter, oddsFailed, onRetryOdds, Modifier.fillMaxWidth())
-                        MPrimaryButton(
-                            text = "Открыть",
-                            onClick = start,
-                            modifier = Modifier.fillMaxWidth(),
-                            icon = MIcons.chest,
-                            size = MButtonSize.Large,
-                        )
-                    }
-                    Phase.Shaking -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            MPixelLoader(color = MillidaPixel.white)
-                            Spacer(Modifier.width(10.dp))
-                            Text("Открываем…", style = MillidaType.rowTitle, color = MillidaPixel.whiteSoft)
-                        }
-                        if (detachable) {
-                            Text(
-                                "Отвечает долго — закрой, награда придёт сама",
-                                style = MillidaType.small,
-                                color = MillidaPixel.whiteSoft,
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                    }
-                    Phase.Failed -> {
-                        Text(
-                            opening.error ?: "Сундук не открылся — попробуй ещё раз",
-                            style = MillidaType.body,
-                            color = MillidaPixel.white,
-                            textAlign = TextAlign.Center,
-                        )
-                        MSecondaryButton("Закрыть", onClick = onClose)
-                    }
-                    Phase.Opened, Phase.Done -> {
-                        FlowRow(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            for (index in 0 until min(stage.shown, cards.size)) {
-                                key(index) {
-                                    val card = cards[index]
-                                    val item = card.item
-                                    if (stage.phase == Phase.Done && topUp != null && card.topUp > 0 && item != null) {
-                                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            RevealCardView(card)
-                                            if (item.code in topUp.done) {
-                                                MBadge("Твоя", color = MillidaPixel.white, background = MillidaPixel.glintSoft, icon = MIcons.check)
-                                            } else {
-                                                MSecondaryButton(
-                                                    "Докупить ${groupDigits(card.topUp)}",
-                                                    onClick = { topUp.onTopUp(card) },
-                                                    icon = MIcons.ruby,
-                                                    size = MButtonSize.Small,
-                                                    loading = topUp.busy("fragments:" + item.code),
-                                                )
-                                            }
-                                        }
-                                    } else {
-                                        RevealCardView(card)
-                                    }
-                                }
-                            }
-                        }
-                        if (stage.phase == Phase.Done) {
-                            ChestSummary(opening, onNext, onClose, onWardrobe)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChestSummary(opening: ChestOpening, onNext: () -> Unit, onClose: () -> Unit, onWardrobe: () -> Unit) {
-    val pity: PityLeft? = opening.result?.pityLeft
-    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (pity != null && (pity.epic > 0 || pity.legend > 0)) {
-            Text(
-                "До эпической ${pity.epic} · до легендарной ${pity.legend}",
-                style = MillidaType.small,
-                color = MillidaPixel.whiteSoft,
-                textAlign = TextAlign.Center,
-            )
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (opening.fresh) MSecondaryButton("В гардероб", onClick = onWardrobe, icon = MIcons.shirt)
-            if (opening.left > 0) {
-                MPrimaryButton("Следующий", onClick = onNext, size = MButtonSize.Large)
-            } else {
-                MPrimaryButton("Готово", onClick = onClose, size = MButtonSize.Large)
-            }
-        }
+private fun ChestTopUpButton(card: RevealCard, topUp: ChestTopUp) {
+    val item = card.item ?: return
+    if (card.kind != RewardKind.FRAGMENTS || card.topUp <= 0) return
+    if (item.code in topUp.done) {
+        MBadge(tr("Твоя"), color = MillidaPixel.white, background = MillidaPixel.glintSoft, icon = MIcons.check)
+    } else {
+        MSecondaryButton(
+            tr("Докупить {0}", groupDigits(card.topUp)),
+            onClick = { topUp.onTopUp(card) },
+            icon = MIcons.ruby,
+            size = MButtonSize.Small,
+            loading = topUp.busy("fragments:" + item.code),
+        )
     }
 }
 
@@ -401,190 +172,6 @@ private fun cardRank(card: RevealCard): Int = when (card.kind) {
     RewardKind.ITEM, RewardKind.FRAGMENTS -> rarityIndex(Rarity.of(card.rarity) ?: Rarity.of(card.item?.rarity))
     RewardKind.CHEST -> rarityIndex(chestRarity(card.tier))
     else -> 1
-}
-
-private fun bestRank(cards: List<RevealCard>): Int = cards.maxOfOrNull(::cardRank) ?: 1
-
-private fun ChestSceneState.step(now: Long, opening: ChestOpening, cards: List<RevealCard>, feedback: UiFeedback, tier: String) {
-    val dt = if (lastFrame == 0L) 0L else min(100L, now - lastFrame)
-    lastFrame = now
-    when (phase) {
-        Phase.Idle, Phase.Failed -> Unit
-        Phase.Shaking -> {
-            val elapsed = now - shakeAt
-            if (!reduced) {
-                val due = min(MAX_HITS, (elapsed / HIT_EVERY_MS).toInt())
-                while (hits < due) {
-                    hits += 1
-                    feedback.chestHit(hits)
-                }
-                val k = min(1f, elapsed / SHAKE_RAMP_MS)
-                spawn(now, (4f + 18f * k) * dt / 1000f, tier, burst = false)
-            }
-            when {
-                opening.error != null -> {
-                    phase = Phase.Failed
-                    feedback.play(UiSoundEvent.Error)
-                }
-                opening.result != null && (reduced || elapsed >= SHAKE_MIN_MS) -> {
-                    phase = Phase.Opened
-                    openAt = now
-                    feedback.chestBurst()
-                    if (!reduced) spawn(now, BURST_SPARKS.toFloat(), tier, burst = true)
-                }
-            }
-        }
-        Phase.Opened -> {
-            val elapsed = now - openAt
-            val first = LID_MS.toLong() + FIRST_CARD_MS
-            val due = when {
-                reduced -> cards.size
-                elapsed < first -> 0
-                else -> min(cards.size, 1 + ((elapsed - first) / BEAT_MS).toInt())
-            }
-            if (due > shown) {
-                if (reduced || due - shown > 1) {
-                    feedback.chestCard(bestRank(cards.subList(shown, due)))
-                } else {
-                    feedback.chestCard(cardRank(cards[shown]))
-                }
-                shown = due
-            }
-            if (!reduced) spawn(now, TRICKLE_PER_S * dt / 1000f, tier, burst = false)
-            if (shown >= cards.size && (reduced || elapsed >= first + BEAT_MS * max(0, cards.size - 1) + PLOP_MS)) {
-                phase = Phase.Done
-            }
-        }
-        Phase.Done -> if (!reduced) spawn(now, TRICKLE_PER_S * dt / 1000f, tier, burst = false)
-    }
-    sparks.removeAll { now - it.born > it.life }
-}
-
-private fun ChestSceneState.spawn(now: Long, amount: Float, tier: String, burst: Boolean) {
-    sparkDebt += amount
-    val palette = chestPalette(tier)
-    while (sparkDebt >= 1f) {
-        sparkDebt -= 1f
-        val angle = if (burst) random.nextFloat() * 2f * PI.toFloat() else (-PI / 2).toFloat() + (random.nextFloat() - 0.5f) * 1.6f
-        val speed = if (burst) 10f + random.nextFloat() * 26f else 6f + random.nextFloat() * 12f
-        sparks += Spark(
-            born = now,
-            x = (random.nextFloat() - 0.5f) * 12f,
-            y = 0f,
-            vx = cos(angle) * speed,
-            vy = sin(angle) * speed - if (burst) 8f else 4f,
-            size = if (random.nextFloat() < 0.3f) 1f else 0.6f,
-            color = if (random.nextBoolean()) palette.sparkColor else palette.glowColor,
-            life = 700L + random.nextInt(500),
-        )
-    }
-}
-
-@Composable
-private fun ChestStage(stage: ChestSceneState, tier: String, cards: List<RevealCard>, modifier: Modifier) {
-    val model = remember(tier) { ChestModel(tier) }
-    val pose = remember { ChestPose() }
-    val baseTone = chestTone(tier)
-    Canvas(modifier) {
-        val now = stage.clock
-        val phase = stage.phase
-        val cell = max(2f, floor(min(size.width * 0.46f / CHEST_COLUMNS, size.height * 0.56f / CHEST_ROWS)))
-        val chestHeight = cell * CHEST_ROWS
-        val baseTop = floor(size.height * 0.62f - chestHeight / 2f)
-        val unit = cell * VOXEL_PER_CELL
-        val floorY = baseTop + chestHeight
-        val seam = Offset(size.width / 2f, floorY - unit * VOXEL_SEAM)
-        val shownTone = cards.getOrNull(stage.shown - 1)?.tone() ?: baseTone
-        val tone = if (phase == Phase.Opened || phase == Phase.Done) shownTone else baseTone
-        val sinceOpen = (now - stage.openAt).toFloat()
-        val opened = phase == Phase.Opened || phase == Phase.Done
-
-        if (opened) {
-            val growth = if (stage.reduced) 1f else min(1f, sinceOpen / RAYS_MS)
-            val spin = if (stage.reduced) 0f else sinceOpen / 1000f * RAY_SPIN_PER_S
-            drawRays(seam, max(size.width, size.height) * 0.75f * growth, tone.copy(alpha = 0.26f), rotation = spin)
-            val pillar = if (stage.reduced) 1f else min(1f, sinceOpen / PILLAR_MS)
-            val pillarHeight = seam.y * pillar
-            drawRect(tone.copy(alpha = 0.16f), Offset(seam.x - cell * 4f, seam.y - pillarHeight), Size(cell * 8f, pillarHeight))
-            drawRect(tone.copy(alpha = 0.26f), Offset(seam.x - cell * 2f, seam.y - pillarHeight), Size(cell * 4f, pillarHeight))
-        } else if (phase == Phase.Shaking && !stage.reduced) {
-            val k = min(1f, (now - stage.shakeAt) / SHAKE_RAMP_MS)
-            drawRays(seam, max(size.width, size.height) * 0.5f, tone.copy(alpha = 0.06f + 0.1f * k))
-        }
-
-        var dx = 0f
-        var dy = 0f
-        var degrees = 0f
-        var scaleX = 1f
-        var scaleY = 1f
-        val seconds = (now - stage.bornAt) / 1000f
-        pose.yaw = REST_YAW
-        pose.lid = if (opened) LID_OPEN else 0f
-        pose.lit = opened
-        when {
-            stage.reduced -> Unit
-            phase == Phase.Idle -> {
-                dy = -abs(sin(2.4f * seconds)) * 1.4f * cell
-                degrees = sin(1.3f * seconds) * 2.2f
-                pose.yaw = REST_YAW + sin(0.9f * seconds) * 0.12f
-                val ask = ((now - stage.bornAt) % IDLE_ASK_MS).toFloat() / IDLE_ASK_MS
-                if (ask > 0.82f) pose.lid = -sin(PI.toFloat() * (ask - 0.82f) / 0.18f) * 0.22f
-            }
-            phase == Phase.Shaking -> {
-                val k = min(1f, (now - stage.shakeAt) / SHAKE_RAMP_MS)
-                val wave = 2f * PI.toFloat() * (30f + 26f * k) * seconds
-                degrees = (0.04f + 0.16f * k) * sin(wave) * 28f
-                dx = sin(wave * 1.37f) * k * 0.8f * cell
-                pose.lid = -abs(sin(wave * 0.5f)) * (0.05f + k * 0.2f)
-            }
-            opened -> {
-                pose.lid = LID_OPEN * chestEaseOutBack(min(1f, sinceOpen / LID_MS))
-                pose.yaw = REST_YAW + sin(0.7f * seconds) * 0.08f
-                if (sinceOpen < JUMP_MS) dy = -sin(PI.toFloat() * sinceOpen / JUMP_MS) * 3f * cell
-                scaleY = when {
-                    sinceOpen < SQUASH_MS -> 1f - 0.12f * sinceOpen / SQUASH_MS
-                    sinceOpen < SQUASH_MS + UNSQUASH_MS -> 0.88f + 0.12f * (sinceOpen - SQUASH_MS) / UNSQUASH_MS
-                    else -> 1f
-                }
-                scaleX = 1f + (1f - scaleY) * 0.5f
-            }
-        }
-
-        val pivot = Offset(size.width / 2f, floorY)
-        withTransform({
-            translate(floor(dx), floor(dy))
-            rotate(degrees, pivot)
-            scale(scaleX, scaleY, pivot)
-        }) {
-            drawChest(model, size.width / 2f, floorY, unit, pose)
-        }
-
-        for (spark in stage.sparks) {
-            val age = (now - spark.born) / 1000f
-            val life = spark.life / 1000f
-            val fade = 1f - floor(age / life * 3f) / 3f
-            if (fade <= 0f) continue
-            val px = seam.x + (spark.x + spark.vx * age) * cell
-            val py = seam.y + (spark.y + spark.vy * age + 14f * age * age) * cell
-            val side = max(2f, floor(spark.size * cell))
-            drawRect(spark.color.copy(alpha = fade), Offset(floor(px), floor(py)), Size(side, side))
-        }
-
-        if (opened && !stage.reduced && sinceOpen < FLASH_MS) {
-            val alpha = 0.85f * (1f - floor(sinceOpen / FLASH_MS * 4f) / 4f)
-            drawFlash(seam, cell, tone.mixSrgb(MillidaPixel.white, 0.4f).copy(alpha = alpha))
-        }
-    }
-}
-
-/** Hard arms instead of a blurred glow: the pixel language has no blur. */
-private fun DrawScope.drawFlash(center: Offset, cell: Float, color: Color) {
-    val core = cell * 8f
-    val arm = cell * 26f
-    val thick = cell * 3f
-    drawRect(color, Offset(center.x - core / 2f, center.y - core / 2f), Size(core, core))
-    drawRect(color, Offset(center.x - arm, center.y - thick / 2f), Size(arm * 2f, thick))
-    drawRect(color, Offset(center.x - thick / 2f, center.y - arm), Size(thick, arm * 2f))
 }
 
 @Composable
@@ -599,6 +186,7 @@ internal fun SceneWindow(onBack: () -> Unit, content: @Composable BoxScope.() ->
     ) {
         DropWindowDim()
         ExtendWindowUnderCutout()
+        HideSystemBarsWhenWide()
         val overflow = rememberWindowOverflow()
         Box(
             Modifier
@@ -607,36 +195,6 @@ internal fun SceneWindow(onBack: () -> Unit, content: @Composable BoxScope.() ->
                 .padding(bottom = overflow),
             content = content,
         )
-    }
-}
-
-@Composable
-private fun SceneHeader(kicker: String, title: String, tone: Color, onClose: (() -> Unit)?) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = 64.dp)
-            .padding(start = 20.dp, end = 12.dp, top = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                kicker.uppercase(),
-                style = MillidaType.caption,
-                color = tone,
-                maxLines = 1,
-            )
-            Text(
-                title,
-                style = MillidaType.barTitle,
-                color = MillidaPixel.white,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        if (onClose != null) {
-            MIconButton(MIcons.close, onClick = onClose, label = "Закрыть")
-        }
     }
 }
 
@@ -766,10 +324,10 @@ private fun CardTitle(card: RevealCard) {
                 maxLines = 1,
             )
         }
-        RewardKind.PLUS -> Text("PLUS открыт", style = style, color = colors.fg, textAlign = TextAlign.Center, maxLines = 1)
-        RewardKind.STARS -> Text("Путь пройден", style = style, color = colors.fg, textAlign = TextAlign.Center, maxLines = 1)
+        RewardKind.PLUS -> Text(tr("PLUS открыт"), style = style, color = colors.fg, textAlign = TextAlign.Center, maxLines = 1)
+        RewardKind.STARS -> Text(tr("Путь пройден"), style = style, color = colors.fg, textAlign = TextAlign.Center, maxLines = 1)
         RewardKind.CREATOR -> Text(
-            "Ты поддерживаешь " + card.item?.name.orEmpty(),
+            tr("Ты поддерживаешь {name}", card.item?.name.orEmpty()),
             style = style,
             color = colors.fg,
             textAlign = TextAlign.Center,
@@ -777,7 +335,7 @@ private fun CardTitle(card: RevealCard) {
             overflow = TextOverflow.Ellipsis,
         )
         RewardKind.CHEST -> Text(
-            chestName(card.tier) + " сундук",
+            chestTitle(card.tier),
             style = style,
             color = colors.fg,
             textAlign = TextAlign.Center,
@@ -793,7 +351,7 @@ private fun CardTitle(card: RevealCard) {
             overflow = TextOverflow.Ellipsis,
         )
         else -> Text(
-            card.item?.name?.takeIf { it.isNotBlank() } ?: "Вещь",
+            card.item?.name?.takeIf { it.isNotBlank() } ?: tr("Вещь"),
             style = style,
             color = colors.fg,
             textAlign = TextAlign.Center,
@@ -808,7 +366,7 @@ private fun CardFoot(card: RevealCard, tone: Color) {
     val colors = millida
     when {
         card.kind == RewardKind.FRAGMENTS && card.item == null -> Text(
-            "${card.amount} ${fragmentWord(card.amount)} → осколки",
+            trPlural(card.amount, tr("{amount} фрагмент → осколки", card.amount), tr("{amount} фрагмента → осколки", card.amount), tr("{amount} фрагментов → осколки", card.amount)),
             style = MillidaType.small,
             color = colors.fgSubtle,
             textAlign = TextAlign.Center,
@@ -816,7 +374,7 @@ private fun CardFoot(card: RevealCard, tone: Color) {
         card.kind == RewardKind.FRAGMENTS && card.need > 0 -> {
             FragmentCells(have = card.have, need = card.need, gain = card.gain, completed = card.completed, tone = tone)
             Text(
-                if (card.completed) "Собрано!" else "+${card.gain} · ${card.have.coerceAtMost(card.need)}/${card.need}",
+                if (card.completed) tr("Собрано!") else "+${card.gain} · ${card.have.coerceAtMost(card.need)}/${card.need}",
                 style = MillidaType.pixelSmall,
                 color = if (card.completed) tone else colors.fgSubtle,
                 maxLines = 1,
@@ -829,16 +387,16 @@ private fun CardFoot(card: RevealCard, tone: Color) {
             textAlign = TextAlign.Center,
         )
         card.kind == RewardKind.ITEM && card.duplicate -> Text(
-            "Повтор: +${card.shards} ${shardWord(card.shards)}",
+            trPlural(card.shards, tr("Повтор: +{shards} осколок", card.shards), tr("Повтор: +{shards} осколка", card.shards), tr("Повтор: +{shards} осколков", card.shards)),
             style = MillidaType.small,
             color = colors.fgSubtle,
             textAlign = TextAlign.Center,
         )
-        card.kind == RewardKind.ITEM -> Text("Навсегда", style = MillidaType.small, color = colors.fgSubtle)
-        card.kind == RewardKind.PLUS -> Text("Вторая награда дня", style = MillidaType.small, color = colors.fgSubtle, textAlign = TextAlign.Center)
-        card.kind == RewardKind.STARS -> Text("Забирай вещь", style = MillidaType.small, color = colors.fgSubtle, textAlign = TextAlign.Center)
+        card.kind == RewardKind.ITEM -> Text(tr("Навсегда"), style = MillidaType.small, color = colors.fgSubtle)
+        card.kind == RewardKind.PLUS -> Text(tr("Вторая награда дня"), style = MillidaType.small, color = colors.fgSubtle, textAlign = TextAlign.Center)
+        card.kind == RewardKind.STARS -> Text(tr("Забирай вещь"), style = MillidaType.small, color = colors.fgSubtle, textAlign = TextAlign.Center)
         card.kind == RewardKind.CREATOR -> Text(
-            "Часть с твоих покупок — автору",
+            tr("Часть с твоих покупок — автору"),
             style = MillidaType.small,
             color = colors.fgSubtle,
             textAlign = TextAlign.Center,
@@ -1000,56 +558,14 @@ private fun RewardSceneBody(reveal: RewardReveal, onDone: () -> Unit, onOpenChes
             if (finished) {
                 if (reveal.chests.isNotEmpty()) {
                     MPrimaryButton(
-                        text = if (reveal.chests.size > 1) "Открыть сундуки (${reveal.chests.size})" else "Открыть сундук",
+                        text = if (reveal.chests.size > 1) tr("Открыть сундуки ({size})", reveal.chests.size) else tr("Открыть сундук"),
                         onClick = { onOpenChests(reveal.chests) },
                         size = MButtonSize.Large,
                         icon = MIcons.chest,
                     )
-                    MTextButton("Позже", onClick = onDone, color = MillidaPixel.whiteSoft)
+                    MTextButton(tr("Позже"), onClick = onDone, color = MillidaPixel.whiteSoft)
                 } else {
-                    MPrimaryButton("Готово", onClick = onDone, size = MButtonSize.Large)
-                }
-            }
-        }
-    }
-}
-
-private const val XRAY_SHAKE_MIN_MS = 1500L
-private const val XRAY_LIGHT_MS = 380L
-
-/**
- * The paid X-ray case: it shakes until the purchase answers and at least for a
- * moment, then the lid flies and the shared reward moment shows the item.
- */
-@Composable
-internal fun XrayScene(run: XrayRun, onOpened: (Long) -> Unit) {
-    key(run.serial) {
-        val feedback = LocalUiFeedback.current
-        var minDone by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) {
-            feedback.chestHit(0)
-            delay(XRAY_SHAKE_MIN_MS)
-            minDone = true
-        }
-        val open = minDone && run.item != null
-        LaunchedEffect(open) { if (open) feedback.chestBurst() }
-        SceneWindow(onBack = {}) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .windowInsetsPadding(WindowInsets.safeDrawing),
-            ) {
-                SceneHeader(kicker = "Рентген-кейс", title = chestName(run.tier) + " сундук", tone = chestTone(run.tier), onClose = null)
-                Chest3D(
-                    tier = run.tier,
-                    mode = if (open) ChestMode.Open else ChestMode.Shake,
-                    modifier = Modifier.fillMaxWidth().weight(1f),
-                )
-                if (open) {
-                    LaunchedEffect(run.serial) {
-                        delay(CHEST_LID_MS.toLong() + XRAY_LIGHT_MS)
-                        onOpened(run.serial)
-                    }
+                    MPrimaryButton(tr("Готово"), onClick = onDone, size = MButtonSize.Large)
                 }
             }
         }

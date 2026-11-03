@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Job
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.skins.CapeOffer
 import net.millida.launcher.core.skins.Reward
 import net.millida.launcher.ui.CapeFigure
@@ -65,13 +66,13 @@ internal fun ItemTile(
     locked: Boolean = false,
     onRemove: (() -> Unit)? = null,
     toolIcon: MillidaIcon = MIcons.trash,
-    toolLabel: String = "Удалить",
+    toolLabel: String = tr("Удалить"),
     art: @Composable () -> Unit,
 ) {
     val colors = millida
     val status: Pair<String, Color>? = when (mark) {
-        TileMark.Worn -> "Надето" to colors.accentText
-        TileMark.Trying -> "Примерка" to colors.info
+        TileMark.Worn -> tr("Надето") to colors.accentText
+        TileMark.Trying -> tr("Примерка") to colors.info
         TileMark.None -> note?.let { it to colors.fgFaint }
     }
     MRarityFrame(
@@ -190,7 +191,7 @@ internal fun RewardCard(
                     .size(width = 60.dp, height = 84.dp)
                     .clickable(
                         enabled = reward.capeUrl.isNotEmpty(),
-                        onClickLabel = "Примерить плащ",
+                        onClickLabel = tr("Примерить плащ"),
                         role = Role.Button,
                         onClick = onTry,
                     ),
@@ -227,10 +228,10 @@ internal fun RewardCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 when {
-                    reward.claimed -> "Получено"
-                    ready -> "Можно забрать"
-                    reward.goal > 0 -> "${reward.progress} из ${reward.goal}"
-                    else -> "В процессе"
+                    reward.claimed -> tr("Получено")
+                    ready -> tr("Можно забрать")
+                    reward.goal > 0 -> tr("{progress} из {goal}", reward.progress, reward.goal)
+                    else -> tr("В процессе")
                 },
                 modifier = Modifier.weight(1f),
                 style = MillidaType.pixel,
@@ -239,7 +240,7 @@ internal fun RewardCard(
             )
             if (ready) {
                 MPrimaryButton(
-                    "Забрать",
+                    tr("Забрать"),
                     onClick = {
                         claiming = true
                         val job = onClaim()
@@ -255,7 +256,7 @@ internal fun RewardCard(
 }
 
 internal fun capeProgress(cape: CapeOffer): String = when {
-    cape.progressTarget > 0 -> "${cape.progressCurrent} из ${cape.progressTarget} ${cape.progressUnit}".trim()
+    cape.progressTarget > 0 -> tr("{progressCurrent} из {progressTarget} {progressUnit}", cape.progressCurrent, cape.progressTarget, cape.progressUnit).trim()
     cape.requirement.isNotEmpty() -> cape.requirement
-    else -> "Пока закрыт"
+    else -> tr("Пока закрыт")
 }

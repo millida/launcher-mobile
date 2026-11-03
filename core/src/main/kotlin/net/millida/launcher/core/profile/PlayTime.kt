@@ -1,7 +1,8 @@
 package net.millida.launcher.core.profile
 
-import net.millida.launcher.core.friends.ruPlural
 
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trPlural
 /**
  * Played time as the desktop lobby shows it (src/lib/format.ts fmtPlaytime and
  * src/lib/playTiers.ts): tiers grow like trophies and are never taken away.
@@ -25,17 +26,17 @@ object PlayTime {
 
     fun format(seconds: Long): String {
         val total = seconds.coerceAtLeast(0)
-        if (total < 60) return "меньше минуты"
+        if (total < 60) return tr("меньше минуты")
         val hours = total / 3600
         val minutes = total % 3600 / 60
-        if (hours == 0L) return "$minutes мин"
-        return if (hours >= 100) "$hours ч" else "$hours ч $minutes м"
+        if (hours == 0L) return tr("{minutes} мин", minutes)
+        return if (hours >= 100) tr("{hours} ч", hours) else tr("{hours} ч {minutes} м", hours, minutes)
     }
 
     /** The line under «Играть»; null below an hour, which the desktop does not show. */
     fun inGame(seconds: Long): String? {
         if (seconds < SHOWN_FROM_SECONDS) return null
         val hours = seconds / 3600
-        return "$hours ${ruPlural(hours, "час", "часа", "часов")} в игре"
+        return trPlural(hours, tr("{hours} час в игре", hours), tr("{hours} часа в игре", hours), tr("{hours} часов в игре", hours))
     }
 }

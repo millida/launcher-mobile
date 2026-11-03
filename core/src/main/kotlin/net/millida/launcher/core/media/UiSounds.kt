@@ -14,6 +14,7 @@ import net.millida.launcher.core.Hashing
 import net.millida.launcher.core.atomicWriteText
 import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.http.RemoteFile
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.AssetIndex
 import net.millida.launcher.core.mojang.MOJANG_RESOURCES_URL
 import net.millida.launcher.core.mojang.MojangJson
@@ -91,14 +92,14 @@ class UiSounds(
             }
         }
         if (picks != known) remember(picks)
-        if (picks.isEmpty()) return UiSoundsResult.Failed(problem ?: IOException("в индексе игры нет звуков интерфейса"))
+        if (picks.isEmpty()) return UiSoundsResult.Failed(problem ?: IOException(tr("в индексе игры нет звуков интерфейса")))
 
         val fetched = fetch(picks)
         val missing = UiSoundEvent.entries.filterNot { it in fetched.files }.toSet()
         return when {
             missing.isEmpty() -> UiSoundsResult.Ready(fetched.files)
             fetched.files.isEmpty() -> UiSoundsResult.Failed(
-                fetched.error ?: problem ?: IOException("звуки интерфейса не скачались"),
+                fetched.error ?: problem ?: IOException(tr("звуки интерфейса не скачались")),
             )
             else -> UiSoundsResult.Partial(fetched.files, missing, fetched.error ?: problem)
         }
@@ -126,9 +127,9 @@ class UiSounds(
     private suspend fun latestIndex(): AssetIndex {
         val manifest = resolver.manifest()
         val release = manifest.latest.release.ifEmpty { manifest.releases().firstOrNull()?.id.orEmpty() }
-        if (release.isEmpty()) throw IOException("в списке версий нет релиза")
+        if (release.isEmpty()) throw IOException(tr("в списке версий нет релиза"))
         resolver.ensureVersionJson(release)
-        val ref = resolver.readLocal(release).assetIndex ?: throw IOException("у версии $release нет индекса ресурсов")
+        val ref = resolver.readLocal(release).assetIndex ?: throw IOException(tr("у версии {release} нет индекса ресурсов", release))
         val target = layout.assetIndex(ref.id)
         downloader.fetch(RemoteFile(ref.url, target, ref.sha1, ref.size))
         return parse(target)

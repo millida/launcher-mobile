@@ -4,7 +4,11 @@ import net.millida.launcher.core.account.Account
 import net.millida.launcher.core.account.AccountKind
 import net.millida.launcher.core.account.AccountStore
 import net.millida.launcher.core.account.GameSession
+import net.millida.launcher.core.account.MemoryVault
 import net.millida.launcher.core.account.OfflineAuth
+import net.millida.launcher.core.account.RetiredElyBy
+import net.millida.launcher.core.mojang.MojangJson
+import kotlinx.serialization.json.jsonArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -138,5 +142,96 @@ class AccountStoreTest {
             assertEquals("${case.why}: licensed", case.licensed, case.session.licensed)
         }
         assertEquals("офлайн-сессия несёт офлайн uuid", OfflineAuth.offlineUuid("Steve"), OfflineAuth.session("Steve").uuid)
+    }
+
+    private data class RetireCase(
+        val name: String,
+        val rows: String,
+        val active: String,
+        val ids: List<String>,
+        val kinds: List<AccountKind>,
+        val nextActive: String,
+        val retired: List<String>,
+        val why: String,
+    )
+
+    @Test
+    fun `аккаунты Ely_by становятся офлайн-никами, как на ПК`() {
+        val ely = """{"id":"elyby:steve","kind":"ELYBY","nick":"Steve","uuid":"ely-uuid","addedAt":30}"""
+        val twin = """{"id":"offline:steve","kind":"OFFLINE","nick":"Steve","uuid":"u","addedAt":5}"""
+        val other = """{"id":"offline:alex","kind":"OFFLINE","nick":"Alex","uuid":"u","addedAt":6}"""
+        val licence = """{"id":"microsoft:steve","kind":"MICROSOFT","nick":"Steve","uuid":"m","addedAt":7}"""
+        val cases = listOf(
+            RetireCase(
+                "один Ely.by", "[$ely]", "elyby:steve",
+                listOf("elyby:steve"), listOf(AccountKind.OFFLINE), "elyby:steve", listOf("elyby:steve"),
+                "игрок остаётся под своим ником и «Играть» работает, а не пропадает аккаунт",
+            ),
+            RetireCase(
+                "есть офлайн-близнец", "[$twin,$ely]", "elyby:steve",
+                listOf("offline:steve"), listOf(AccountKind.OFFLINE), "offline:steve", listOf("elyby:steve"),
+                "второй такой же ник в списке был бы дублем; активным становится близнец",
+            ),
+            RetireCase(
+                "близнец есть, активен другой", "[$other,$twin,$ely]", "offline:alex",
+                listOf("offline:alex", "offline:steve"), listOf(AccountKind.OFFLINE, AccountKind.OFFLINE), "offline:alex", listOf("elyby:steve"),
+                "выбранный игроком аккаунт миграция не трогает",
+            ),
+            RetireCase(
+                "лицензия с тем же ником — не близнец", "[$licence,$ely]", "elyby:steve",
+                listOf("microsoft:steve", "elyby:steve"), listOf(AccountKind.MICROSOFT, AccountKind.OFFLINE), "elyby:steve", listOf("elyby:steve"),
+                "близнец только офлайн-ник, как на ПК: лицензия — другой способ игры",
+            ),
+            RetireCase(
+                "ник в другом регистре — не близнец", """[{"id":"offline:steve2","kind":"OFFLINE","nick":"steve","uuid":"u"},$ely]""", "",
+                listOf("offline:steve2", "elyby:steve"), listOf(AccountKind.OFFLINE, AccountKind.OFFLINE), "", listOf("elyby:steve"),
+                "офлайн uuid считается от точного написания, steve и Steve — разные игроки",
+            ),
+            RetireCase(
+                "Ely.by нет", "[$other,$licence]", "microsoft:steve",
+                listOf("offline:alex", "microsoft:steve"), listOf(AccountKind.OFFLINE, AccountKind.MICROSOFT), "microsoft:steve", emptyList(),
+                "без Ely.by список и выбор остаются как были",
+            ),
+        )
+        for (case in cases) {
+            val result = RetiredElyBy.retire(MojangJson.parseToJsonElement(case.rows).jsonArray, case.active)
+            assertEquals("${case.name}: ${case.why} (id)", case.ids, result.accounts.map { it.id })
+            assertEquals("${case.name}: ${case.why} (вид)", case.kinds, result.accounts.map { it.kind })
+            assertEquals("${case.name}: ${case.why} (активный)", case.nextActive, result.active)
+            assertEquals("${case.name}: ${case.why} (снятые)", case.retired, result.retired)
+        }
+        val converted = RetiredElyBy.retire(MojangJson.parseToJsonElement("[$ely]").jsonArray, "").accounts.single()
+        assertEquals("офлайн-ник с офлайн uuid: иначе на офлайн-сервере чужой инвентарь", OfflineAuth.offlineUuid("Steve"), converted.uuid)
+        assertEquals("ник не меняется", "Steve", converted.nick)
+    }
+
+    @Test
+    fun `миграция Ely_by записывает файл и удаляет токен один раз`() {
+        File(tmp.root, "accounts.json").writeText(
+            """[{"id":"elyby:steve","kind":"ELYBY","nick":"Steve","uuid":"e"},{"id":"a2","kind":"MICROSOFT","nick":"Alex","uuid":"u2"}]""",
+        )
+        val vault = MemoryVault()
+        vault.write(RetiredElyBy.tokenKey("elyby:steve"), "ely-token")
+        vault.write("a2:ms-token", "ms-token")
+
+        val first = store().migrate("elyby:steve", vault)
+        val second = store().migrate(first.active, vault)
+
+        assertEquals("сохранённая сессия Ely.by удалена — ей больше нечем воспользоваться", null, vault.read(RetiredElyBy.tokenKey("elyby:steve")))
+        assertEquals("токены других аккаунтов не трогаются", "ms-token", vault.read("a2:ms-token"))
+        assertEquals("снятые аккаунты называются, чтобы вызывающий почистил своё", listOf("elyby:steve"), first.retired)
+        assertTrue("второй запуск ничего не снимает: файл уже переписан", second.retired.isEmpty())
+        assertFalse("в файле не осталось вида ELYBY", File(tmp.root, "accounts.json").readText().contains("ELYBY"))
+        assertEquals("обычная загрузка видит офлайн-ник на месте Ely.by", listOf(AccountKind.OFFLINE, AccountKind.MICROSOFT), store().load().map { it.kind })
+    }
+
+    @Test
+    fun `обычная загрузка не падает на старом файле с Ely_by`() {
+        File(tmp.root, "accounts.json").writeText("""[{"id":"elyby:steve","kind":"ELYBY","nick":"Steve","uuid":"e"}]""")
+
+        val loaded = store().load()
+
+        assertEquals("неизвестный теперь вид не отправляет весь файл в .broken", listOf("elyby:steve"), loaded.map { it.id })
+        assertTrue("файл остаётся на месте", File(tmp.root, "accounts.json").exists())
     }
 }

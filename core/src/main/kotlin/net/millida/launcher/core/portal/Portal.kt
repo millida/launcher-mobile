@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import net.millida.launcher.core.account.MillidaAuth
 
+import net.millida.launcher.core.i18n.tr
 @Serializable
 data class PortalProfile(
     val nickname: String = "",
@@ -29,7 +30,7 @@ data class Privacy(
 ) {
     companion object {
         const val DUO_INVITES_DEFAULT = "all"
-        val DUO_INVITES = listOf("all" to "Все", "friends" to "Друзья", "none" to "Никто")
+        val DUO_INVITES = listOf("all" to tr("Все"), "friends" to tr("Друзья"), "none" to tr("Никто"))
 
         fun duoInvitesValid(value: String): Boolean = DUO_INVITES.any { it.first == value }
     }
@@ -172,7 +173,7 @@ class PortalClient(private val auth: MillidaAuth) {
         auth.authorized("/users/me/privacy", "PATCH", buildJsonObject { put(field, value) }).toPrivacy()
 
     suspend fun updateDuoInvites(value: String): Privacy {
-        require(Privacy.duoInvitesValid(value)) { "неизвестное значение приглашений: $value" }
+        require(Privacy.duoInvitesValid(value)) { tr("неизвестное значение приглашений: {value}", value) }
         return auth.authorized("/users/me/privacy", "PATCH", buildJsonObject { put("duoInvites", value) }).toPrivacy()
     }
 

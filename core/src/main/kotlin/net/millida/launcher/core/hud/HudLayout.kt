@@ -3,6 +3,8 @@ package net.millida.launcher.core.hud
 import kotlinx.serialization.Serializable
 import kotlin.math.roundToInt
 
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 @Serializable
 enum class HudKind {
     STICK,
@@ -111,13 +113,31 @@ data class HudControl(
     }
 }
 
+/**
+ * How the screen itself is used, as in Bedrock's three schemes. Touch: a tap places or
+ * uses, holding hits and breaks. Crosshair: a tap is a click at the aim point (a hit),
+ * placing has its own button. Buttons: the stick and the buttons do everything and a tap
+ * hits.
+ */
+@Serializable
+enum class ControlScheme {
+    TOUCH,
+    CROSSHAIR,
+    BUTTONS,
+}
+
 @Serializable
 data class HudLayout(
-    val name: String = "Своя раскладка",
+    val name: String = tr("Своя раскладка"),
     val controls: List<HudControl> = emptyList(),
     val opacity: Float = DEFAULT_OPACITY,
     val lookTap: Int = HudKeys.MOUSE_LEFT,
     val holdDelay: Int = DEFAULT_HOLD_MS,
+    /** Absent in layouts saved before the schemes: [shownScheme] works it out from what they hold. */
+    val scheme: ControlScheme? = null,
+    /** Every button and stick drawn this many times its own size. */
+    val sizeScale: Float = 1f,
+    val invertY: Boolean = false,
 ) {
     fun replace(control: HudControl): HudLayout =
         copy(controls = controls.map { if (it.id == control.id) control else it })
@@ -138,7 +158,43 @@ data class HudLayout(
 
     fun withHoldDelay(ms: Int): HudLayout = copy(holdDelay = ms.coerceIn(MIN_HOLD_MS, MAX_HOLD_MS))
 
-    fun switchTo(preset: HudLayout): HudLayout = preset.copy(opacity = opacity, lookTap = lookTap, holdDelay = holdDelay)
+    /** A scheme's own preset brings the tap it is built for; the others keep the player's. */
+    fun switchTo(preset: HudLayout): HudLayout = preset.copy(
+        opacity = opacity,
+        lookTap = if (preset.scheme == ControlScheme.TOUCH || preset.scheme == ControlScheme.CROSSHAIR) preset.lookTap else lookTap,
+        holdDelay = holdDelay,
+        sizeScale = sizeScale,
+        invertY = invertY,
+    )
+
+    fun withSizeScale(value: Float): HudLayout = copy(sizeScale = value.takeIf { it.isFinite() }?.coerceIn(MIN_SIZE, MAX_SIZE) ?: 1f)
+
+    fun withInvertY(on: Boolean): HudLayout = copy(invertY = on)
+
+    /**
+     * Takes the scheme's own arrangement and what a tap does with it, and keeps the
+     * player's look-and-feel settings: transparency, size, holding time, inversion.
+     */
+    fun withScheme(next: ControlScheme): HudLayout {
+        val preset = HudPresets.forScheme(next)
+        return preset.copy(
+            opacity = opacity,
+            holdDelay = holdDelay,
+            sizeScale = sizeScale,
+            invertY = invertY,
+        )
+    }
+
+    /** The stored scheme, or for an older layout the one its stick and tap point at. */
+    val shownScheme: ControlScheme
+        get() = scheme ?: when {
+            controls.none { it.kind == HudKind.FLOAT_STICK } -> ControlScheme.BUTTONS
+            lookTap == HudKeys.MOUSE_RIGHT -> ControlScheme.TOUCH
+            else -> ControlScheme.CROSSHAIR
+        }
+
+    val shownSizeScale: Float
+        get() = sizeScale.takeIf { it.isFinite() }?.coerceIn(MIN_SIZE, MAX_SIZE) ?: 1f
 
     /** Puts a control back the way the layout's template has it; a control the template lacks stays. */
     fun reset(id: String): HudLayout {
@@ -159,6 +215,8 @@ data class HudLayout(
     companion object {
         const val DEFAULT_OPACITY = 0.85f
         const val MIN_OPACITY = 0.3f
+        const val MIN_SIZE = 0.6f
+        const val MAX_SIZE = 1.6f
         const val DEFAULT_HOLD_MS = 250
         const val MIN_HOLD_MS = 150
         const val MAX_HOLD_MS = 500
@@ -220,8 +278,8 @@ object HudKeys {
         LEFT_SHIFT, LEFT_CONTROL, ONE, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE,
     )
 
-    private val special: List<Pair<Int, String>> = listOf(
-        SPACE to "Пробел",
+    private val special: List<Pair<Int, String>> get() = listOf(
+        SPACE to tr("Пробел"),
         LEFT_SHIFT to "Shift",
         LEFT_CONTROL to "Ctrl",
         LEFT_ALT to "Alt",
@@ -229,10 +287,10 @@ object HudKeys {
         ESCAPE to "Esc",
         ENTER to "Enter",
         BACKSPACE to "Backspace",
-        UP to "Вверх",
-        DOWN to "Вниз",
-        LEFT to "Влево",
-        RIGHT to "Вправо",
+        UP to tr("Вверх"),
+        DOWN to tr("Вниз"),
+        LEFT to tr("Влево"),
+        RIGHT to tr("Вправо"),
     )
 
     /** Keys a player can put on a button: what a Minecraft keybinding usually lands on. */
@@ -317,8 +375,10 @@ object HudIcons {
     const val UP = "up"
     const val DOWN = "down"
     const val CLOSE = "close"
+    const val DROP = "drop"
+    const val USE = "use"
 
-    val all: Set<String> = setOf(PAUSE, CHAT, CAMERA, PLAYERS, MORE, JUMP, SNEAK, UP, DOWN, CLOSE)
+    val all: Set<String> = setOf(PAUSE, CHAT, CAMERA, PLAYERS, MORE, JUMP, SNEAK, UP, DOWN, CLOSE, DROP, USE)
 }
 
 object HudPresets {
@@ -327,17 +387,18 @@ object HudPresets {
     const val NOMINAL_WIDTH = 640f
     const val NOMINAL_HEIGHT = 360f
 
-    const val BEDROCK = "Как в Bedrock"
+    val BEDROCK: String = trKey("Как в Bedrock")
+    val CROSSHAIR: String = trKey("Прицел")
 
     fun base(kind: HudKind): HudControl = when (kind) {
-        HudKind.STICK -> HudControl("stick", "Ходьба", HudKind.STICK, width = 176f, height = 176f)
-        HudKind.FLOAT_STICK -> HudControl("stick", "Ходьба", HudKind.FLOAT_STICK, width = 120f, height = 120f)
-        HudKind.KEY -> HudControl("key", "Клавиша", HudKind.KEY, width = 64f, height = 46f)
-        HudKind.MOUSE -> HudControl("mouse", "Кнопка мыши", HudKind.MOUSE, width = 104f, height = 46f)
-        HudKind.ACTION -> HudControl("action", "Действие", HudKind.ACTION, width = 104f, height = 44f)
-        HudKind.SCROLL -> HudControl("scroll", "Колесо", HudKind.SCROLL, width = 64f, height = 46f)
-        HudKind.JUMP -> HudControl("jump", "Прыжок", HudKind.JUMP, code = HudKeys.SPACE, width = 64f, height = 64f)
-        HudKind.HOTBAR_MORE -> HudControl("more", "Инвентарь", HudKind.HOTBAR_MORE, code = HudKeys.E, width = 32f, height = 32f)
+        HudKind.STICK -> HudControl("stick", tr("Ходьба"), HudKind.STICK, width = 176f, height = 176f)
+        HudKind.FLOAT_STICK -> HudControl("stick", tr("Ходьба"), HudKind.FLOAT_STICK, width = 120f, height = 120f)
+        HudKind.KEY -> HudControl("key", tr("Клавиша"), HudKind.KEY, width = 64f, height = 46f)
+        HudKind.MOUSE -> HudControl("mouse", tr("Кнопка мыши"), HudKind.MOUSE, width = 104f, height = 46f)
+        HudKind.ACTION -> HudControl("action", tr("Действие"), HudKind.ACTION, width = 104f, height = 44f)
+        HudKind.SCROLL -> HudControl("scroll", tr("Колесо"), HudKind.SCROLL, width = 64f, height = 46f)
+        HudKind.JUMP -> HudControl("jump", tr("Прыжок"), HudKind.JUMP, code = HudKeys.SPACE, width = 64f, height = 64f)
+        HudKind.HOTBAR_MORE -> HudControl("more", tr("Инвентарь"), HudKind.HOTBAR_MORE, code = HudKeys.E, width = 32f, height = 32f)
     }
 
     private fun at(control: HudControl, centreX: Float, centreY: Float): HudControl =
@@ -370,10 +431,11 @@ object HudPresets {
         visibility: HudVisibility = HudVisibility.LOOK,
         latch: Boolean = false,
         hidden: Boolean = false,
+        mouse: Boolean = false,
     ) = HudControl(
         id,
         label,
-        HudKind.KEY,
+        if (mouse) HudKind.MOUSE else HudKind.KEY,
         code = code,
         width = side,
         height = side,
@@ -403,18 +465,18 @@ object HudPresets {
         )
 
     private fun actions(): List<HudControl> = listOf(
-        at(action("mode", "Курсор", HudAction.POINTER_MODE, 104f), 308f, 28f),
-        at(action("keyboard", "Клавиатура", HudAction.KEYBOARD, 140f), 446f, 28f),
-        at(action("menu", "Меню", HudAction.MENU, 96f), 580f, 28f),
+        at(action("mode", tr("Курсор"), HudAction.POINTER_MODE, 104f), 308f, 28f),
+        at(action("keyboard", tr("Клавиатура"), HudAction.KEYBOARD, 140f), 446f, 28f),
+        at(action("menu", tr("Меню"), HudAction.MENU, 96f), 580f, 28f),
     )
 
     private fun rightHand(): List<HudControl> = listOf(
-        at(key("sneak", "Присесть", HudKeys.LEFT_SHIFT, width = 104f, toggle = true), 452f, 190f),
-        at(key("jump", "Прыжок", HudKeys.SPACE, width = 104f), 572f, 190f),
-        at(mouse("hit", "Удар", HudKeys.MOUSE_LEFT), 452f, 250f),
-        at(mouse("use", "Действие", HudKeys.MOUSE_RIGHT), 572f, 250f),
-        at(key("inventory", "Инвентарь", HudKeys.E, width = 104f), 452f, 310f),
-        at(key("chat", "Чат", HudKeys.T, width = 104f), 572f, 310f),
+        at(key("sneak", tr("Присесть"), HudKeys.LEFT_SHIFT, width = 104f, toggle = true), 452f, 190f),
+        at(key("jump", tr("Прыжок"), HudKeys.SPACE, width = 104f), 572f, 190f),
+        at(mouse("hit", tr("Удар"), HudKeys.MOUSE_LEFT), 452f, 250f),
+        at(mouse("use", tr("Действие"), HudKeys.MOUSE_RIGHT), 572f, 250f),
+        at(key("inventory", tr("Инвентарь"), HudKeys.E, width = 104f), 452f, 310f),
+        at(key("chat", tr("Чат"), HudKeys.T, width = 104f), 572f, 310f),
     )
 
     private fun iconAction(id: String, label: String, what: HudAction, icon: String, visibility: HudVisibility) =
@@ -437,47 +499,81 @@ object HudPresets {
     fun bedrock(): HudLayout = HudLayout(
         name = BEDROCK,
         lookTap = HudKeys.MOUSE_RIGHT,
+        scheme = ControlScheme.TOUCH,
         controls = listOf(
             at(base(HudKind.FLOAT_STICK), 88f, 270f),
             at(base(HudKind.JUMP).copy(icon = HudIcons.JUMP), 584f, 280f),
-            at(square("sneak", "Присесть", HudKeys.LEFT_SHIFT, 52f, HudIcons.SNEAK, HudVisibility.WALKING, latch = true), 520f, 312f),
-            at(square("fly-down", "Вниз", HudKeys.LEFT_SHIFT, 52f, HudIcons.DOWN, HudVisibility.FLYING), 520f, 312f),
-            at(iconAction("menu", "Меню", HudAction.MENU, HudIcons.PAUSE, HudVisibility.ALWAYS), 616f, 22f),
-            at(iconAction("chat", "Чат", HudAction.CHAT, HudIcons.CHAT, HudVisibility.LOOK), 576f, 22f),
+            at(square("sneak", tr("Присесть"), HudKeys.LEFT_SHIFT, 52f, HudIcons.SNEAK, HudVisibility.WALKING, latch = true), 520f, 312f),
+            at(square("fly-down", tr("Вниз"), HudKeys.LEFT_SHIFT, 52f, HudIcons.DOWN, HudVisibility.FLYING), 520f, 312f),
+            at(iconAction("menu", tr("Меню"), HudAction.MENU, HudIcons.PAUSE, HudVisibility.ALWAYS), 616f, 22f),
+            at(iconAction("chat", tr("Чат"), HudAction.CHAT, HudIcons.CHAT, HudVisibility.LOOK), 576f, 22f),
             at(square("escape", "Esc", HudKeys.ESCAPE, 36f, HudIcons.CLOSE, HudVisibility.CURSOR), 576f, 22f),
-            at(square("camera", "Вид", HudKeys.F5, 36f, HudIcons.CAMERA), 536f, 22f),
-            at(square("players", "Игроки", HudKeys.TAB, 36f, HudIcons.PLAYERS, hidden = true), 496f, 22f),
+            at(square("camera", tr("Вид"), HudKeys.F5, 36f, HudIcons.CAMERA), 536f, 22f),
+            at(square("players", tr("Игроки"), HudKeys.TAB, 36f, HudIcons.PLAYERS, hidden = true), 496f, 22f),
+            at(square("drop", tr("Бросить"), HudKeys.Q, 36f, HudIcons.DROP, hidden = true), 456f, 22f),
+            base(HudKind.HOTBAR_MORE).copy(icon = HudIcons.MORE, x = 0.5f, y = 0.95f),
+        ),
+    )
+
+    /**
+     * Bedrock's Crosshair: a tap anywhere is a click at the aim point, so fighting is
+     * tapping at the enemy; placing a block or using an item is the button under the
+     * right thumb.
+     */
+    fun crosshair(): HudLayout = HudLayout(
+        name = CROSSHAIR,
+        lookTap = HudKeys.MOUSE_LEFT,
+        scheme = ControlScheme.CROSSHAIR,
+        controls = listOf(
+            at(base(HudKind.FLOAT_STICK), 88f, 270f),
+            at(base(HudKind.JUMP).copy(icon = HudIcons.JUMP), 584f, 280f),
+            at(square("use", tr("Действие"), HudKeys.MOUSE_RIGHT, 56f, HudIcons.USE, mouse = true), 520f, 232f),
+            at(square("sneak", tr("Присесть"), HudKeys.LEFT_SHIFT, 52f, HudIcons.SNEAK, HudVisibility.WALKING, latch = true), 520f, 312f),
+            at(square("fly-down", tr("Вниз"), HudKeys.LEFT_SHIFT, 52f, HudIcons.DOWN, HudVisibility.FLYING), 520f, 312f),
+            at(iconAction("menu", tr("Меню"), HudAction.MENU, HudIcons.PAUSE, HudVisibility.ALWAYS), 616f, 22f),
+            at(iconAction("chat", tr("Чат"), HudAction.CHAT, HudIcons.CHAT, HudVisibility.LOOK), 576f, 22f),
+            at(square("escape", "Esc", HudKeys.ESCAPE, 36f, HudIcons.CLOSE, HudVisibility.CURSOR), 576f, 22f),
+            at(square("camera", tr("Вид"), HudKeys.F5, 36f, HudIcons.CAMERA), 536f, 22f),
+            at(square("players", tr("Игроки"), HudKeys.TAB, 36f, HudIcons.PLAYERS, hidden = true), 496f, 22f),
+            at(square("drop", tr("Бросить"), HudKeys.Q, 36f, HudIcons.DROP, hidden = true), 456f, 22f),
             base(HudKind.HOTBAR_MORE).copy(icon = HudIcons.MORE, x = 0.5f, y = 0.95f),
         ),
     )
 
     fun stick(): HudLayout = HudLayout(
-        name = "Джойстик",
+        name = tr("Джойстик"),
+        scheme = ControlScheme.BUTTONS,
         controls = listOf(
-            at(HudControl("stick", "Ходьба", HudKind.STICK, width = 176f, height = 176f), 104f, 252f),
+            at(HudControl("stick", tr("Ходьба"), HudKind.STICK, width = 176f, height = 176f), 104f, 252f),
         ) + rightHand() + gameKeys(camera = true) + actions(),
     )
 
     fun buttons(): HudLayout = HudLayout(
-        name = "Кнопки",
+        name = tr("Кнопки"),
         controls = listOf(
             at(key("forward", "W", HudKeys.W, width = 56f), 116f, 168f),
             at(key("left", "A", HudKeys.A, width = 56f), 56f, 222f),
             at(key("back", "S", HudKeys.S, width = 56f), 116f, 222f),
             at(key("right", "D", HudKeys.D, width = 56f), 176f, 222f),
-            at(key("sprint", "Бег", HudKeys.LEFT_CONTROL, width = 104f, toggle = true), 68f, 282f),
+            at(key("sprint", tr("Бег"), HudKeys.LEFT_CONTROL, width = 104f, toggle = true), 68f, 282f),
         ) + rightHand() + gameKeys(camera = true) + actions(),
     )
 
     fun minimal(): HudLayout = HudLayout(
-        name = "Только обзор",
+        name = tr("Только обзор"),
         controls = listOf(
-            at(HudControl("stick", "Ходьба", HudKind.STICK, width = 150f, height = 150f), 92f, 262f),
-            at(key("jump", "Прыжок", HudKeys.SPACE, width = 104f), 572f, 250f),
+            at(HudControl("stick", tr("Ходьба"), HudKind.STICK, width = 150f, height = 150f), 92f, 262f),
+            at(key("jump", tr("Прыжок"), HudKeys.SPACE, width = 104f), 572f, 250f),
         ) + gameKeys(camera = false) + actions(),
     )
 
-    fun all(): List<HudLayout> = listOf(bedrock(), stick(), buttons(), minimal())
+    fun all(): List<HudLayout> = listOf(bedrock(), crosshair(), stick(), buttons(), minimal())
+
+    fun forScheme(scheme: ControlScheme): HudLayout = when (scheme) {
+        ControlScheme.TOUCH -> bedrock()
+        ControlScheme.CROSSHAIR -> crosshair()
+        ControlScheme.BUTTONS -> stick()
+    }
 
     fun byName(name: String): HudLayout? = all().firstOrNull { it.name == name }
 }

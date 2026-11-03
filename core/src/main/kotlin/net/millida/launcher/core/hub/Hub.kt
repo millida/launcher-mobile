@@ -10,6 +10,7 @@ import kotlinx.serialization.json.longOrNull
 import java.time.Duration
 import java.time.Instant
 
+import net.millida.launcher.core.i18n.tr
 /** A rating category as an activity: BedWars is chosen first, the server inside it second. */
 data class HubMode(
     val code: String,
@@ -75,47 +76,47 @@ object Hub {
     )
 
     /** The same titles the desktop hub and millida.net/katalog print for a rating code. */
-    private val TITLES = mapOf(
+    private val TITLES get() = mapOf(
         "BEDWARS" to "BedWars",
         "SKYWARS" to "SkyWars",
         "SKYBLOCK" to "SkyBlock",
-        "ANARCHY" to "Анархия",
+        "ANARCHY" to tr("Анархия"),
         "ONEBLOCK" to "OneBlock",
         "LIFESTEAL" to "LifeSteal",
         "BOXPVP" to "BoxPvP",
-        "PRISON" to "Тюрьма",
-        "MINIGAMES" to "Мини-игры",
-        "SURVIVAL" to "Выживание",
+        "PRISON" to tr("Тюрьма"),
+        "MINIGAMES" to tr("Мини-игры"),
+        "SURVIVAL" to tr("Выживание"),
         "PVP" to "PvP",
-        "GRIEF" to "Гриф",
-        "FACTIONS" to "Кланы",
-        "MMORPG" to "РПГ",
-        "HARDCORE" to "Хардкор",
-        "CREATIVE" to "Креатив",
-        "PARKOUR" to "Паркур",
-        "LUCKY" to "Лаки-блоки",
-        "VANILLA" to "Ванилла",
+        "GRIEF" to tr("Гриф"),
+        "FACTIONS" to tr("Кланы"),
+        "MMORPG" to tr("РПГ"),
+        "HARDCORE" to tr("Хардкор"),
+        "CREATIVE" to tr("Креатив"),
+        "PARKOUR" to tr("Паркур"),
+        "LUCKY" to tr("Лаки-блоки"),
+        "VANILLA" to tr("Ванилла"),
         "ROLEPLAY" to "RP",
-        "TECHNIC" to "Техно",
-        "ADVENTURE" to "Приключения",
-        "ECONOMY" to "Экономика",
-        "MODDED" to "Моды",
-        "OTHER" to "Разное",
+        "TECHNIC" to tr("Техно"),
+        "ADVENTURE" to tr("Приключения"),
+        "ECONOMY" to tr("Экономика"),
+        "MODDED" to tr("Моды"),
+        "OTHER" to tr("Разное"),
         "RP" to "RP",
-        "HIDE_SEEK" to "Прятки",
+        "HIDE_SEEK" to tr("Прятки"),
         "KITPVP" to "KitPvP",
         "BUILD_BATTLE" to "Build Battle",
-        "TECHNICAL" to "Техно",
+        "TECHNICAL" to tr("Техно"),
         "SPLEEF" to "Spleef",
         "UHC" to "UHC",
         "TNTRUN" to "TNT Run",
-        "HUNGER_GAMES" to "Голодные игры",
+        "HUNGER_GAMES" to tr("Голодные игры"),
         "TOWNY" to "Towny",
-        "COBBLEMON" to "Пиксельмон",
+        "COBBLEMON" to tr("Пиксельмон"),
         "MURDER" to "Murder Mystery",
-        "EARTH" to "Земля",
-        "MANHUNT" to "Манхант",
-        "BINGO" to "Бинго",
+        "EARTH" to tr("Земля"),
+        "MANHUNT" to tr("Манхант"),
+        "BINGO" to tr("Бинго"),
     )
 
     fun modeTitle(code: String): String =
@@ -146,17 +147,17 @@ object Hub {
 
     /** 163 400 → «163 тыс», so the name keeps its line. */
     fun shortOnline(value: Int): String = when {
-        value >= 10_000 -> "${Math.round(value / 1000.0)} тыс"
+        value >= 10_000 -> tr("{0} тыс", Math.round(value / 1000.0))
         value >= 1_000 -> {
             val tenths = Math.round(value / 100.0)
             val whole = tenths / 10
             val rest = tenths % 10
-            if (rest == 0L) "$whole тыс" else "$whole,$rest тыс"
+            if (rest == 0L) tr("{whole} тыс", whole) else tr("{whole},{rest} тыс", whole, rest)
         }
         else -> value.toString()
     }
 
-    fun onlineLabel(value: Int?): String? = value?.takeIf { it >= ONLINE_SHOWN_FROM }?.let { "${shortOnline(it)} играют" }
+    fun onlineLabel(value: Int?): String? = value?.takeIf { it >= ONLINE_SHOWN_FROM }?.let { tr("{0} играют", shortOnline(it)) }
 
     fun health(body: JsonElement?, slug: String): PackHealth? {
         val key = slug.trim().lowercase()
@@ -178,20 +179,20 @@ object Hub {
     fun healthLine(health: PackHealth?, now: Instant = Instant.now()): HealthLine? {
         if (health == null || health.status == "unknown") return null
         val since = health.lastOkAt?.let { ago(it, now) }.orEmpty()
-        val whenText = if (since.isNotEmpty()) "запускали $since" else ""
-        if (health.status == "warn") return HealthLine(HealthTone.WARN, "Бывают сбои", whenText, health.successPct, report = true)
+        val whenText = if (since.isNotEmpty()) tr("запускали {since}", since) else ""
+        if (health.status == "warn") return HealthLine(HealthTone.WARN, tr("Бывают сбои"), whenText, health.successPct, report = true)
         if (whenText.isEmpty() && health.successPct == null) return null
-        return HealthLine(HealthTone.OK, "Работает", whenText, health.successPct, report = false)
+        return HealthLine(HealthTone.OK, tr("Работает"), whenText, health.successPct, report = false)
     }
 
     fun ago(iso: String, now: Instant): String {
         val at = runCatching { Instant.parse(iso.trim()) }.getOrNull() ?: return ""
         val minutes = Duration.between(at, now).toMillis() / 60_000.0
         return when {
-            minutes < 5 -> "только что"
-            minutes < 60 -> "${Math.round(minutes)} мин назад"
-            minutes < 1440 -> "${Math.round(minutes / 60)} ч назад"
-            else -> "${Math.round(minutes / 1440)} дн назад"
+            minutes < 5 -> tr("только что")
+            minutes < 60 -> tr("{0} мин назад", Math.round(minutes))
+            minutes < 1440 -> tr("{0} ч назад", Math.round(minutes / 60))
+            else -> tr("{0} дн назад", Math.round(minutes / 1440))
         }
     }
 

@@ -35,6 +35,7 @@ import net.millida.launcher.core.friends.OverlaySnapshot
 import net.millida.launcher.core.friends.OverlayThread
 import net.millida.launcher.core.friends.OverlayWire
 
+import net.millida.launcher.core.i18n.tr
 /** Message codes between the game process and the launcher process. */
 object BridgeCodes {
     const val REGISTER = 1
@@ -165,7 +166,7 @@ class FriendsBridgeService : Service() {
         val dialogs = result.getOrNull()
         if (dialogs == null) {
             val failure = result.exceptionOrNull()
-            publish(snapshot.copy(signedIn = !failure.signInLost(), loading = false, error = failure.readable("Список переписок не загрузился")))
+            publish(snapshot.copy(signedIn = !failure.signInLost(), loading = false, error = failure.readable(tr("Список переписок не загрузился"))))
             return
         }
         val rows = dialogs.map(OverlayWire::dialog)
@@ -182,9 +183,9 @@ class FriendsBridgeService : Service() {
             val page = attempt { withContext(Dispatchers.IO) { container.friends.history(chat, limit = 1) } }.getOrNull()
             val last = page?.messages?.lastOrNull()?.takeIf { !it.me }
             val text = when {
-                last == null -> "Новое сообщение"
-                last.attachment?.kind == "voice" -> "Голосовое сообщение"
-                last.attachment != null && last.text.isEmpty() -> "Картинка"
+                last == null -> tr("Новое сообщение")
+                last.attachment?.kind == "voice" -> tr("Голосовое сообщение")
+                last.attachment != null && last.text.isEmpty() -> tr("Картинка")
                 else -> last.text.replace('\n', ' ').take(CARD_CHARS)
             }
             val author = last?.fromNick?.takeIf { dialog.kind == OverlayWire.KIND_ROOM && it.isNotEmpty() }
@@ -216,7 +217,7 @@ class FriendsBridgeService : Service() {
         val current = snapshot.thread ?: return
         val page = result.getOrNull()
         if (page == null) {
-            publish(snapshot.copy(thread = current.copy(loading = false, error = result.exceptionOrNull().readable("Переписка не открылась"))))
+            publish(snapshot.copy(thread = current.copy(loading = false, error = result.exceptionOrNull().readable(tr("Переписка не открылась")))))
             return
         }
         val lines = page.messages.takeLast(THREAD_LINES).map(OverlayWire::line)
@@ -250,7 +251,7 @@ class FriendsBridgeService : Service() {
             val thread = snapshot.thread ?: return@launch
             val message = sent.getOrNull()
             if (message == null) {
-                publish(snapshot.copy(thread = thread.copy(sending = false, error = sent.exceptionOrNull().readable("Сообщение не ушло — повтори"))))
+                publish(snapshot.copy(thread = thread.copy(sending = false, error = sent.exceptionOrNull().readable(tr("Сообщение не ушло — повтори")))))
                 return@launch
             }
             val lines = (thread.lines + OverlayWire.line(message)).distinctBy { it.id.ifEmpty { "local:" + it.ts } }.takeLast(THREAD_LINES)
@@ -321,6 +322,6 @@ private fun Throwable?.signInLost(): Boolean {
 }
 
 private fun Throwable?.readable(fallback: String): String {
-    if (signInLost()) return "Вход Millida истёк — открой лаунчер и войди заново"
+    if (signInLost()) return tr("Вход Millida истёк — открой лаунчер и войди заново")
     return this?.message?.trim()?.takeIf { it.isNotEmpty() }?.replaceFirstChar { it.uppercase() } ?: fallback
 }

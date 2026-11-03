@@ -53,6 +53,7 @@ import net.millida.launcher.ConsoleLink
 import net.millida.launcher.ConsoleTone
 import net.millida.launcher.HostingModel
 import net.millida.launcher.HostingPanel
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.LocalReducedMotion
 import net.millida.launcher.ui.MButton
 import net.millida.launcher.ui.MButtonSize
@@ -72,7 +73,7 @@ import net.millida.launcher.ui.pixelSurface
 import net.millida.launcher.ui.screenPadding
 import net.millida.launcher.ui.wellFrame
 
-private val CONSOLE_HINTS = listOf("list", "say привет", "time set day", "weather clear")
+private val CONSOLE_HINTS get() = listOf("list", tr("say привет"), "time set day", "weather clear")
 private const val COMMAND_LIMIT = 256
 private const val CHIPS_SHOWN = 8
 
@@ -133,13 +134,13 @@ fun HostingConsoleTab(
             Spacer(Modifier.weight(1f))
             if (panel.consoleLink == ConsoleLink.Failed) {
                 MTextButton(
-                    "Подключить",
+                    tr("Подключить"),
                     onClick = { hosting.openConsole(serverId) },
                     icon = MIcons.refresh,
                     color = colors.accentText,
                 )
             }
-            MTextButton("Очистить", onClick = { hosting.clearConsole(serverId) }, enabled = lines.isNotEmpty())
+            MTextButton(tr("Очистить"), onClick = { hosting.clearConsole(serverId) }, enabled = lines.isNotEmpty())
         }
         val linkError = panel.consoleError
         if (linkError != null && panel.consoleLink != ConsoleLink.Live) {
@@ -180,7 +181,7 @@ fun HostingConsoleTab(
             }
             if (!follow && lines.isNotEmpty()) {
                 MButton(
-                    text = "К концу",
+                    text = tr("К концу"),
                     onClick = { follow = true },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
@@ -205,7 +206,7 @@ fun HostingConsoleTab(
             MField(
                 value = command,
                 onValueChange = { command = it.take(COMMAND_LIMIT) },
-                placeholder = if (running) "Команда серверу" else "Сервер выключен",
+                placeholder = if (running) tr("Команда серверу") else tr("Сервер выключен"),
                 modifier = Modifier.weight(1f),
                 imeAction = ImeAction.Send,
                 onImeAction = send,
@@ -218,7 +219,7 @@ fun HostingConsoleTab(
                 onClick = send,
                 tint = if (canSend) colors.accentText else colors.fgFaint,
                 enabled = canSend,
-                label = "Отправить",
+                label = tr("Отправить"),
             )
         }
     }
@@ -237,11 +238,11 @@ private fun ConsoleLinkChip(link: ConsoleLink, retryAt: Long) {
     }
     val seconds = ((retryAt - now + 999) / 1_000).coerceAtLeast(0)
     val label = when (link) {
-        ConsoleLink.Idle -> "Консоль закрыта"
-        ConsoleLink.Connecting -> "Подключаемся"
-        ConsoleLink.Live -> "На связи"
-        ConsoleLink.Waiting -> "Повтор через $seconds с"
-        ConsoleLink.Failed -> "Нет связи"
+        ConsoleLink.Idle -> tr("Консоль закрыта")
+        ConsoleLink.Connecting -> tr("Подключаемся")
+        ConsoleLink.Live -> tr("На связи")
+        ConsoleLink.Waiting -> tr("Повтор через {seconds} с", seconds)
+        ConsoleLink.Failed -> tr("Нет связи")
     }
     val dot = when (link) {
         ConsoleLink.Live -> colors.accent
@@ -320,7 +321,7 @@ private fun ConsolePlaceholder(running: Boolean, link: ConsoleLink) {
         MIcon(if (running) MIcons.list else MIcons.power, size = 32.dp, color = colors.fgSubtle)
         Spacer(Modifier.height(10.dp))
         Text(
-            if (running) "Пока тихо" else "Сервер выключен",
+            if (running) tr("Пока тихо") else tr("Сервер выключен"),
             style = MillidaType.rowTitle,
             color = colors.fgMuted,
         )

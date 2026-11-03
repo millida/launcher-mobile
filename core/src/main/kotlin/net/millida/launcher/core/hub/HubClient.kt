@@ -21,6 +21,14 @@ class HubClient(private val auth: MillidaAuth) {
         return Hub.health(auth.publicCall("/launcher/pack-health?slugs=" + URLEncoder.encode(key, "UTF-8"), "GET", null), key)
     }
 
+    /** Packs that do not start on phones; throws on a network error, a 404 arrives as [net.millida.launcher.core.http.HttpError]. */
+    @Throws(IOException::class)
+    suspend fun phoneBlocked(): Set<String> {
+        val body = auth.publicCall(PhoneBlocked.PATH, "GET", null)
+        PhoneBlocked.setStats(PhoneBlocked.parseStats(body))
+        return PhoneBlocked.parse(body)
+    }
+
     @Throws(IOException::class)
     suspend fun catalogPacks(): List<PremiumPack> = Premium.catalogPacks(auth.publicCall("/catalog/packs", "GET", null))
 
@@ -31,6 +39,10 @@ class HubClient(private val auth: MillidaAuth) {
         val online = ((body as? JsonObject)?.get("online") as? JsonPrimitive)?.takeIf { !it.isString }?.longOrNull
         return online?.takeIf { it >= 0 }?.toInt()
     }
+
+    /** Whether the lobby banner is on: the API can take it away without a release. */
+    @Throws(IOException::class)
+    suspend fun lobbyPromo(): Boolean = LobbyPromo.lobbyShown(auth.publicCall(LobbyPromo.PATH, "GET", null, withSession = false))
 
     /** The fixed top three stands in for a missing answer, the way the desktop does it. */
     @Throws(IOException::class)

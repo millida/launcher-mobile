@@ -33,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import net.millida.launcher.CrashNote
 import net.millida.launcher.CrashStatus
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.core.support.BugKind
 import net.millida.launcher.core.support.BugReport
@@ -61,7 +62,7 @@ import net.millida.launcher.ui.rememberPressed
 
 private const val REVIEW_MAX = 2_000
 private const val BUG_TEXT_MAX = 2_000
-private val STAR_WORDS = listOf("Оценка — по желанию", "Плохо", "Так себе", "Нормально", "Хорошо", "Отлично")
+private val STAR_WORDS get() = listOf(tr("Оценка — по желанию"), tr("Плохо"), tr("Так себе"), tr("Нормально"), tr("Хорошо"), tr("Отлично"))
 
 @Composable
 internal fun ReviewSheet(
@@ -73,7 +74,7 @@ internal fun ReviewSheet(
     var text by rememberSaveable { mutableStateOf("") }
     var stars by rememberSaveable { mutableIntStateOf(0) }
     val ready = text.trim().length >= BugReport.TEXT_MIN
-    MBottomSheet(onDismiss = onDismiss, title = "Что думаешь о лаунчере?") {
+    MBottomSheet(onDismiss = onDismiss, title = tr("Что думаешь о лаунчере?")) {
         Spacer(Modifier.height(4.dp))
         StarPicker(stars) { stars = it }
         Spacer(Modifier.height(4.dp))
@@ -88,14 +89,14 @@ internal fun ReviewSheet(
         MField(
             value = text,
             onValueChange = { text = it.take(REVIEW_MAX) },
-            placeholder = "Что нравится, что мешает",
+            placeholder = tr("Что нравится, что мешает"),
             singleLine = false,
             imeAction = ImeAction.Default,
         )
         ShortTextHint(text, ready)
         Spacer(Modifier.height(16.dp))
         MPrimaryButton(
-            text = "Отправить",
+            text = tr("Отправить"),
             onClick = { onSend(text, stars, onDismiss) },
             modifier = Modifier.fillMaxWidth(),
             enabled = ready,
@@ -116,7 +117,7 @@ internal fun BugSheet(
     var text by rememberSaveable { mutableStateOf("") }
     var attach by rememberSaveable { mutableStateOf(true) }
     val ready = text.trim().length >= BugReport.TEXT_MIN
-    MBottomSheet(onDismiss = onDismiss, title = "Что сломалось?") {
+    MBottomSheet(onDismiss = onDismiss, title = tr("Что сломалось?")) {
         Spacer(Modifier.height(4.dp))
         MButtonRow {
             BugKind.entries.forEach { option ->
@@ -127,16 +128,16 @@ internal fun BugSheet(
         MField(
             value = text,
             onValueChange = { text = it.take(BUG_TEXT_MAX) },
-            placeholder = "Что делал и что случилось",
+            placeholder = tr("Что делал и что случилось"),
             singleLine = false,
             imeAction = ImeAction.Default,
         )
         ShortTextHint(text, ready)
         Spacer(Modifier.height(4.dp))
-        MSwitchRow("Приложить журнал", "Последняя игра, без токенов и ников", attach) { attach = it }
+        MSwitchRow(tr("Приложить журнал"), tr("Последняя игра, без токенов и ников"), attach) { attach = it }
         Spacer(Modifier.height(12.dp))
         MPrimaryButton(
-            text = "Отправить",
+            text = tr("Отправить"),
             onClick = { onSend(kind, text, attach, onDismiss) },
             modifier = Modifier.fillMaxWidth(),
             enabled = ready,
@@ -151,7 +152,7 @@ internal fun BugSheet(
 private fun ShortTextHint(text: String, ready: Boolean) {
     if (text.isBlank() || ready) return
     Spacer(Modifier.height(6.dp))
-    SettingHint("Ещё пару слов — от ${BugReport.TEXT_MIN} символов")
+    SettingHint(tr("Ещё пару слов — от {TEXT_MIN} символов", BugReport.TEXT_MIN))
 }
 
 @Composable
@@ -182,7 +183,7 @@ private fun Star(position: Int, on: Boolean, onClick: () -> Unit) {
             .size(52.dp)
             .pressShift(progress, MillidaMotion.tilePressOffset)
             .selectable(on, interaction, null, role = Role.RadioButton, onClick = onClick)
-            .semantics { contentDescription = "$position из 5" },
+            .semantics { contentDescription = tr("{position} из 5", position) },
         contentAlignment = Alignment.Center,
     ) {
         MIcon(
@@ -216,7 +217,7 @@ internal fun CrashCard(
             MIcon(MIcons.alert, size = 20.dp)
             Spacer(Modifier.width(10.dp))
             Text(
-                "Прошлый запуск упал",
+                tr("Прошлый запуск упал"),
                 modifier = Modifier.weight(1f),
                 style = MillidaType.rowTitle,
                 color = colors.fg,
@@ -226,8 +227,8 @@ internal fun CrashCard(
             Spacer(Modifier.width(8.dp))
             when (note.status) {
                 CrashStatus.Sending -> MPixelLoader()
-                CrashStatus.Sent -> MBadge("Отправлен", colors.accentText, colors.accentSoft, icon = MIcons.check)
-                CrashStatus.Failed, CrashStatus.Kept -> MBadge("Не отправлен", colors.fgSubtle, colors.surface2)
+                CrashStatus.Sent -> MBadge(tr("Отправлен"), colors.accentText, colors.accentSoft, icon = MIcons.check)
+                CrashStatus.Failed, CrashStatus.Kept -> MBadge(tr("Не отправлен"), colors.fgSubtle, colors.surface2)
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -240,11 +241,11 @@ internal fun CrashCard(
         )
         Spacer(Modifier.height(12.dp))
         MButtonRow {
-            MSecondaryButton("Скопировать", onClick = onCopy, icon = MIcons.copy, size = MButtonSize.Small)
+            MSecondaryButton(tr("Скопировать"), onClick = onCopy, icon = MIcons.copy, size = MButtonSize.Small)
             if (note.status == CrashStatus.Kept || note.status == CrashStatus.Failed) {
-                MSecondaryButton("Отправить", onClick = onSend, icon = MIcons.send, size = MButtonSize.Small)
+                MSecondaryButton(tr("Отправить"), onClick = onSend, icon = MIcons.send, size = MButtonSize.Small)
             }
-            MTextButton("Убрать", onClick = onDismiss)
+            MTextButton(tr("Убрать"), onClick = onDismiss)
         }
     }
 }

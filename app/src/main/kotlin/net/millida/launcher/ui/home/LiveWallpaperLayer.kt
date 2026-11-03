@@ -25,6 +25,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -33,6 +34,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import kotlinx.coroutines.delay
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.LiveWallpaper
 import net.millida.launcher.core.media.LiveWallpaperKind
 import net.millida.launcher.core.media.SceneSpark
@@ -90,6 +92,21 @@ internal fun LiveWallpaperLayer(chosen: LiveWallpaper, motionOn: Boolean, modifi
     }
 }
 
+/**
+ * The desktop's waves and sparks over the plain landscape stage, on by
+ * default as on the desktop: the player's «Анимация» switch, the phone's
+ * less-motion setting and the app leaving the front all leave the still
+ * stage underneath.
+ */
+@Composable
+internal fun StageSceneMotion(motionOn: Boolean, modifier: Modifier = Modifier) {
+    val reduced = LocalReducedMotion.current
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    if (LiveWallpaper.stageAnimates(motionOn, reduced, lifecycle.isAtLeast(Lifecycle.State.RESUMED))) {
+        PixelSceneMotion(modifier)
+    }
+}
+
 private class Wave(val x: Float, val y: Float, val born: Long)
 
 private class Spark(
@@ -132,12 +149,25 @@ private class PixelScene {
             waves.add(spawnWave(now))
             nextWave = now + SceneWave.GAP_MIN_MS + Random.nextLong(SceneWave.GAP_SPREAD_MS)
         }
+        // Index loops: this runs every frame, and lambdas or iterators here
+        // would feed the collector all the time the lobby is open.
         val life = SceneWave.lifeMs(widthDp, heightDp)
-        waves.removeAll { now - it.born >= life }
-        sparks.removeAll { now - it.born >= it.life }
-        while (sparks.count { !it.star } < SPARKS) {
+        for (at in waves.lastIndex downTo 0) {
+            if (now - waves[at].born >= life) waves.removeAt(at)
+        }
+        var rising = 0
+        for (at in sparks.lastIndex downTo 0) {
+            val spark = sparks[at]
+            if (now - spark.born >= spark.life) {
+                sparks.removeAt(at)
+            } else if (!spark.star) {
+                rising++
+            }
+        }
+        while (rising < SPARKS) {
             val fresh = spawnSpark(now, star = false)
             sparks.add(fresh.copyBornEarlier(Random.nextFloat() * 0.9f))
+            rising++
         }
         if (now >= nextStar) {
             sparks.add(spawnSpark(now, star = true))
@@ -202,9 +232,11 @@ private fun PixelSceneMotion(modifier: Modifier) {
     }
     val flash = colors.accent.mixSrgb(MillidaPixel.serverDark, 0.9f)
     val light = colors.accent.mixSrgb(MillidaPixel.white, 0.38f)
+    // Its own layer: a frame of waves and sparks re-records only this node, not the whole lobby.
     Canvas(
         modifier
             .fillMaxSize()
+            .graphicsLayer()
             .onSizeChanged { size -> with(density) { scene.resize(size.width.toDp().value, size.height.toDp().value) } },
     ) {
         val now = clock
@@ -230,7 +262,8 @@ private fun DrawScope.drawWaves(scene: PixelScene, now: Long, flash: Color) {
             val cy = (top + cell / 2f) / unit
             val jitter = scene.jitter[(row * scene.cols + col) % scene.jitter.size]
             var level = 0f
-            for (wave in scene.waves) {
+            for (at in scene.waves.indices) {
+                val wave = scene.waves[at]
                 val since = SceneWave.sinceFront((now - wave.born).toFloat(), hypot(cx - wave.x, cy - wave.y), jitter)
                 level = max(level, SceneWave.level(since))
             }
@@ -244,7 +277,8 @@ private fun DrawScope.drawWaves(scene: PixelScene, now: Long, flash: Color) {
 
 private fun DrawScope.drawSparks(scene: PixelScene, now: Long, light: Color) {
     val unit = density
-    for (spark in scene.sparks) {
+    for (at in scene.sparks.indices) {
+        val spark = scene.sparks[at]
         val age = (now - spark.born).toFloat()
         val alpha = SceneSpark.alpha(age / spark.life, sin(age / 140f + spark.sway))
         if (alpha <= 0f) continue
@@ -316,14 +350,14 @@ private class ClipPlayer(
             }
             created.setOnPreparedListener { it.start() }
             created.setOnErrorListener { _, what, extra ->
-                fail("ролик $asset не играет: код $what/$extra")
+                fail(tr("ролик {asset} не играет: код {what}/{extra}", asset, what, extra))
                 true
             }
             created.prepareAsync()
         } catch (error: IOException) {
-            fail("ролик $asset не открылся: ${error.message}")
+            fail(tr("ролик {asset} не открылся: {message}", asset, error.message))
         } catch (error: IllegalStateException) {
-            fail("ролик $asset не запустился: ${error.message}")
+            fail(tr("ролик {asset} не запустился: {message}", asset, error.message))
         }
     }
 

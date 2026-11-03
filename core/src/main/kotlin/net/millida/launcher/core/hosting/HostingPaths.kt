@@ -3,6 +3,7 @@ package net.millida.launcher.core.hosting
 import net.millida.launcher.core.SafePath
 import java.io.File
 
+import net.millida.launcher.core.i18n.tr
 /**
  * A path typed on the phone must not be able to walk out of the server folder,
  * and the check happens here before anything reaches the network: a rejected
@@ -17,9 +18,9 @@ object HostingPaths {
 
     fun serverId(raw: String): String {
         val id = raw.trim()
-        if (id.isEmpty()) throw HostingError("не указан сервер")
+        if (id.isEmpty()) throw HostingError(tr("не указан сервер"))
         if (id.contains('/') || id.contains('\\') || id.contains("..")) {
-            throw HostingError("идентификатор сервера отклонён: $raw")
+            throw HostingError(tr("идентификатор сервера отклонён: {raw}", raw))
         }
         return id
     }
@@ -28,11 +29,11 @@ object HostingPaths {
     fun remote(raw: String): String {
         val value = raw.trim().replace('\\', '/')
         if (value.isEmpty() || value == ".") return "."
-        if (value.startsWith("/")) throw HostingError("путь на сервере отклонён как абсолютный: $raw")
+        if (value.startsWith("/")) throw HostingError(tr("путь на сервере отклонён как абсолютный: {raw}", raw))
         val target = try {
             SafePath.join(ROOT, value)
         } catch (rejected: Exception) {
-            throw HostingError("путь на сервере отклонён: $raw", rejected)
+            throw HostingError(tr("путь на сервере отклонён: {raw}", raw), rejected)
         }
         val base = ROOT.canonicalPath
         val inside = target.canonicalPath

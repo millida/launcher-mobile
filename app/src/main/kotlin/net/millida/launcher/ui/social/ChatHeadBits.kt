@@ -31,6 +31,7 @@ import net.millida.launcher.core.friends.FriendProfileCard
 import net.millida.launcher.core.friends.FriendProfileStats
 import net.millida.launcher.core.friends.ServerInvites
 import net.millida.launcher.core.hosting.HostingServerState
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MBottomSheet
 import net.millida.launcher.ui.MButtonSize
 import net.millida.launcher.ui.MField
@@ -63,19 +64,19 @@ internal fun InvitePlaySheet(
     val colors = millida
     var address by rememberSaveable { mutableStateOf("") }
     val mine = servers.orEmpty().filter { it.address.isNotBlank() }
-    MBottomSheet(onDismiss = onDismiss, title = "Позвать играть") {
+    MBottomSheet(onDismiss = onDismiss, title = tr("Позвать играть")) {
         mine.forEach { server ->
             MListRow(
                 ServerInvites.serverTitle(server),
                 icon = MIcons.server,
                 onClick = { onServer(server) },
                 plate = false,
-                trailing = { Text("Мой сервер", style = MillidaType.small, color = colors.accentText, maxLines = 1) },
+                trailing = { Text(tr("Мой сервер"), style = MillidaType.small, color = colors.accentText, maxLines = 1) },
             )
         }
         if (servers != null && mine.isEmpty()) {
             MListRow(
-                "Создать свой сервер",
+                tr("Создать свой сервер"),
                 icon = MIcons.plus,
                 onClick = onCreate,
                 plate = false,
@@ -92,7 +93,7 @@ internal fun InvitePlaySheet(
                 MField(
                     value = address,
                     onValueChange = { address = it },
-                    placeholder = "Адрес сервера",
+                    placeholder = tr("Адрес сервера"),
                     imeAction = ImeAction.Send,
                     onImeAction = { if (ServerInvites.isServerAddr(address)) onAddress(address.trim()) },
                     autoCorrectEnabled = false,
@@ -100,7 +101,7 @@ internal fun InvitePlaySheet(
             }
             Spacer(Modifier.width(8.dp))
             MSecondaryButton(
-                "Позвать",
+                tr("Позвать"),
                 onClick = { onAddress(address.trim()) },
                 enabled = ServerInvites.isServerAddr(address),
                 size = MButtonSize.Small,
@@ -165,7 +166,7 @@ private fun ProfileStats(card: FriendProfileCard, onJoin: (FriendProfileCard) ->
     val rows = FriendProfileStats.rows(card, System.currentTimeMillis() / 1000)
     val joinable = FriendProfileStats.joinable(card)
     if (rows.isEmpty() && !joinable) {
-        Text("Пока без игр", style = MillidaType.small, color = colors.fgFaint, modifier = Modifier.padding(top = 8.dp))
+        Text(tr("Пока без игр"), style = MillidaType.small, color = colors.fgFaint, modifier = Modifier.padding(top = 8.dp))
         return
     }
     Column(
@@ -177,7 +178,7 @@ private fun ProfileStats(card: FriendProfileCard, onJoin: (FriendProfileCard) ->
     ) {
         if (joinable) {
             MPrimaryButton(
-                "Зайти",
+                tr("Зайти"),
                 onClick = { onJoin(card) },
                 icon = MIcons.login,
                 size = MButtonSize.Small,

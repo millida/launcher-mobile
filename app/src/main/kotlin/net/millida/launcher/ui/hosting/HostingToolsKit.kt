@@ -45,6 +45,8 @@ import net.millida.launcher.HostingToolsModel
 import net.millida.launcher.HostingTransfer
 import net.millida.launcher.core.hosting.HOSTING_PERMISSIONS
 import net.millida.launcher.core.hosting.HostingJob
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trPlural
 import net.millida.launcher.ui.DISABLED_ALPHA
 import net.millida.launcher.ui.MBusyCard
 import net.millida.launcher.ui.MButtonRow
@@ -103,21 +105,12 @@ internal fun toolsMoment(iso: String): String {
 }
 
 internal fun toolsBytes(bytes: Long): String = when {
-    bytes <= 0 -> "0 Б"
-    bytes < 1024 -> "$bytes Б"
+    bytes <= 0 -> tr("0 Б")
+    bytes < 1024 -> tr("{bytes} Б", bytes)
     else -> humanSize(bytes)
 }
 
-internal fun toolsRightsCount(count: Int): String {
-    val tail = count % 100
-    val word = when {
-        tail in 11..14 -> "прав"
-        count % 10 == 1 -> "право"
-        count % 10 in 2..4 -> "права"
-        else -> "прав"
-    }
-    return "$count $word"
-}
+internal fun toolsRightsCount(count: Int): String = "$count " + trPlural(count, tr("право"), tr("права"), tr("прав"))
 
 internal val HostingJob.jobShare: Float?
     get() = if (total > 0) (bytes.toFloat() / total).coerceIn(0f, 1f) else null
@@ -202,14 +195,14 @@ internal fun ToolsTransferCard(transfer: HostingTransfer, onCancel: () -> Unit, 
         MProgressBar(share)
         val line = listOfNotNull(
             transfer.note.ifBlank { null },
-            if (transfer.total > 0) "${toolsBytes(transfer.done)} из ${toolsBytes(transfer.total)}" else null,
+            if (transfer.total > 0) tr("{0} из {1}", toolsBytes(transfer.done), toolsBytes(transfer.total)) else null,
         ).joinToString(" · ")
         if (line.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(line, style = MillidaType.small, color = colors.fgFaint, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.height(6.dp))
-        MTextButton("Остановить", onClick = onCancel, icon = MIcons.close)
+        MTextButton(tr("Остановить"), onClick = onCancel, icon = MIcons.close)
     }
 }
 
@@ -219,13 +212,13 @@ internal fun ToolsJobCard(label: String, job: HostingJob, modifier: Modifier = M
         label = label,
         progress = job.jobShare,
         modifier = modifier,
-        note = if (job.total > 0) "${toolsBytes(job.bytes)} из ${toolsBytes(job.total)}" else null,
+        note = if (job.total > 0) tr("{0} из {1}", toolsBytes(job.bytes), toolsBytes(job.total)) else null,
     )
 }
 
 @Composable
 internal fun ToolsNoRights() {
-    MEmptyState(icon = MIcons.lock, title = "Нет доступа к этому разделу")
+    MEmptyState(icon = MIcons.lock, title = tr("Нет доступа к этому разделу"))
 }
 
 @Composable
@@ -237,20 +230,20 @@ internal fun ToolsLockButton(text: String, onClick: () -> Unit) {
 internal fun ToolsPlanDialog(feature: String, serverId: String, tools: HostingToolsModel, onDismiss: () -> Unit) {
     val listeners by tools.planAskListeners.collectAsState()
     MDialog(
-        title = "$feature — на платном тарифе",
+        title = tr("{feature} — на платном тарифе", feature),
         onDismiss = onDismiss,
         body = {
             Text(
-                "Файлы, SFTP, свои миры и порты открываются на любом платном тарифе",
+                tr("Файлы, SFTP, свои миры и порты открываются на любом платном тарифе"),
                 style = MillidaType.body,
                 color = millida.fgMuted,
             )
         },
         actions = {
-            MTextButton("Закрыть", onClick = onDismiss)
+            MTextButton(tr("Закрыть"), onClick = onDismiss)
             if (listeners > 0) {
                 MPrimaryButton(
-                    "Выбрать тариф",
+                    tr("Выбрать тариф"),
                     onClick = {
                         tools.askForPlan(serverId)
                         onDismiss()
@@ -268,7 +261,7 @@ internal fun ToolsSecretDialog(title: String, secret: String, onCopy: () -> Unit
         title = title,
         onDismiss = {},
         body = {
-            Text("Сохрани сейчас — второй раз его не показать", style = MillidaType.body, color = colors.fgMuted)
+            Text(tr("Сохрани сейчас — второй раз его не показать"), style = MillidaType.body, color = colors.fgMuted)
             Spacer(Modifier.height(12.dp))
             Box(
                 Modifier
@@ -282,8 +275,8 @@ internal fun ToolsSecretDialog(title: String, secret: String, onCopy: () -> Unit
             }
         },
         actions = {
-            MSecondaryButton("Скопировать", onClick = onCopy, icon = MIcons.copy)
-            MPrimaryButton("Готово", onClick = onDone)
+            MSecondaryButton(tr("Скопировать"), onClick = onCopy, icon = MIcons.copy)
+            MPrimaryButton(tr("Готово"), onClick = onDone)
         },
     )
 }
@@ -354,7 +347,7 @@ internal fun rememberToolsCopy(tools: HostingToolsModel): (String, String) -> Un
     return remember(clipboard, tools) {
         { label: String, text: String ->
             clipboard.setText(AnnotatedString(text))
-            tools.tell("$label скопирован")
+            tools.tell(tr("{label} скопирован", label))
         }
     }
 }
@@ -366,12 +359,12 @@ internal fun rememberToolsSecretCopy(tools: HostingToolsModel): (String, String)
         { label: String, text: String ->
             val clipboard = context.getSystemService(ClipboardManager::class.java)
             if (clipboard == null) {
-                tools.tell("Буфер обмена недоступен — перепиши вручную", isError = true)
+                tools.tell(tr("Буфер обмена недоступен — перепиши вручную"), isError = true)
             } else {
                 val clip = ClipData.newPlainText(label, text)
                 clip.description.extras = PersistableBundle().apply { putBoolean(SENSITIVE_CLIP_EXTRA, true) }
                 clipboard.setPrimaryClip(clip)
-                tools.tell("$label скопирован")
+                tools.tell(tr("{label} скопирован", label))
             }
         }
     }

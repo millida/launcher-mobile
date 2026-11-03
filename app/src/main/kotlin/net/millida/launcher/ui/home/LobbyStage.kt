@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
@@ -31,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -40,9 +43,11 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Placeable
 import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -50,6 +55,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -59,11 +65,11 @@ import kotlinx.coroutines.launch
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.UiState
 import net.millida.launcher.core.account.Account
-import net.millida.launcher.core.account.AccountKind
 import net.millida.launcher.core.cosmetics.CosmeticItem
 import net.millida.launcher.core.cosmetics.EmoteBubble
 import net.millida.launcher.core.cosmetics.EmotePlay
 import net.millida.launcher.core.cosmetics.EmoteShow
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.LiveWallpaper
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.core.profile.PlayTime
@@ -79,6 +85,7 @@ import net.millida.launcher.ui.MillidaMotion
 import net.millida.launcher.ui.MillidaPixel
 import net.millida.launcher.ui.MillidaType
 import net.millida.launcher.ui.PixelFrame
+import net.millida.launcher.ui.RoomyFrame
 import net.millida.launcher.ui.SkinPose
 import net.millida.launcher.ui.SkinStage
 import net.millida.launcher.ui.TourTarget
@@ -86,9 +93,11 @@ import net.millida.launcher.ui.character.CharacterLook
 import net.millida.launcher.ui.character.StageOutfit
 import net.millida.launcher.ui.character.rememberStageOutfit
 import net.millida.launcher.ui.headAvatarUrl
+import net.millida.launcher.ui.accountKindLabel
 import net.millida.launcher.ui.millida
 import net.millida.launcher.ui.mixSrgb
 import net.millida.launcher.ui.pixelSurface
+import net.millida.launcher.ui.settings.rememberLookModel
 import net.millida.launcher.ui.plateFrame
 import net.millida.launcher.ui.pressShift
 import net.millida.launcher.ui.rememberPressProgress
@@ -100,7 +109,6 @@ import kotlin.random.Random
 
 private val STAGE_HEIGHT = 300.dp
 private val GROUND_HEIGHT = 46.dp
-private val GROUND_UNDER_FEET = 24.dp
 private val FIGURE_WIDTH = 190.dp
 private val FIGURE_HEIGHT = 226.dp
 private val FIGURE_TOP = STAGE_HEIGHT - 22.dp - FIGURE_HEIGHT
@@ -129,34 +137,34 @@ internal fun LobbyTopRow(
             onClick = onFriends,
             modifier = Modifier.tourTarget(TourTarget.FRIENDS),
             badge = state.friendsBadge,
-            label = "Друзья",
+            label = tr("Друзья"),
         )
         Spacer(Modifier.width(8.dp))
         MIconButton(
             icon = MIcons.settings,
             onClick = onSettings,
             modifier = Modifier.tourTarget(TourTarget.SETTINGS),
-            label = "Настройки",
+            label = tr("Настройки"),
         )
     }
 }
 
 /**
  * The landscape lobby's top right corner, the desktop's `.lb-btns`: separate
- * buttons over the scene - friends with who is online and their requests,
- * the account that drops its menu, the messages with the unread count, «Ещё»
- * for the sections the desktop keeps elsewhere, and the settings gear. It
- * takes the widest [CornerDensity] that fits the width it is given.
+ * buttons over the scene - friends with who is online, their requests and
+ * unread messages (the chat lives behind it), the account that drops its
+ * menu, and the settings gear that also leads to the sections the portrait
+ * «Ещё» holds. It takes the widest [CornerDensity] that fits the width it is
+ * given.
  */
 @Composable
 internal fun WideLobbyTopRow(
     state: UiState,
     onAccount: () -> Unit,
     onFriends: () -> Unit,
-    onMessages: () -> Unit,
-    onMore: () -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    onFeedback: (() -> Unit)? = null,
 ) {
     FirstFitting(CornerDensity.entries, modifier) { density ->
         Row(
@@ -167,8 +175,7 @@ internal fun WideLobbyTopRow(
                 state,
                 onFriends,
                 Modifier.tourTarget(TourTarget.FRIENDS),
-                badge = state.incomingRequests,
-                heads = density.heads,
+                badge = state.friendsBadge,
                 caption = density.friendsCaption,
             )
             AccountPlate(
@@ -179,17 +186,14 @@ internal fun WideLobbyTopRow(
                 showsName = density.accountName,
                 showsLine = density.accountLine,
             )
-            if (state.millidaSignedIn) {
-                CornerButton(onClick = onMessages, label = "Сообщения", badge = state.unreadMessages) {
-                    MIcon(MIcons.chat, size = 22.dp, color = millida.fg)
+            if (onFeedback != null) {
+                CornerButton(onClick = onFeedback, label = tr("Что думаешь о лаунчере?"), badge = 0) {
+                    MIcon(MIcons.gift, size = 22.dp, color = millida.accentText)
                 }
-            }
-            CornerButton(onClick = onMore, label = "Ещё", badge = 0) {
-                MIcon(MIcons.more, size = 22.dp, color = millida.fg)
             }
             CornerButton(
                 onClick = onSettings,
-                label = "Настройки",
+                label = tr("Настройки"),
                 badge = 0,
                 modifier = Modifier.tourTarget(TourTarget.SETTINGS),
             ) {
@@ -205,14 +209,13 @@ internal fun WideLobbyTopRow(
  * the names, so the row shrinks instead of running into the section tiles.
  */
 private enum class CornerDensity(
-    val heads: Int,
     val friendsCaption: Boolean,
     val accountName: Boolean,
     val accountLine: Boolean,
 ) {
-    FULL(CORNER_HEADS, friendsCaption = true, accountName = true, accountLine = true),
-    SHORT(1, friendsCaption = true, accountName = true, accountLine = false),
-    ICONS(1, friendsCaption = false, accountName = false, accountLine = false),
+    FULL(friendsCaption = true, accountName = true, accountLine = true),
+    SHORT(friendsCaption = true, accountName = true, accountLine = false),
+    ICONS(friendsCaption = false, accountName = false, accountLine = false),
 }
 
 /**
@@ -240,47 +243,27 @@ private fun <T> FirstFitting(options: List<T>, modifier: Modifier, content: @Com
     }
 }
 
-private val CORNER_HEIGHT = 52.dp
-private val CORNER_HEAD = 30.dp
-private val CORNER_HEAD_OVERLAP = 10.dp
-private const val CORNER_HEADS = 3
+private val CORNER_HEIGHT = 46.dp
+private val CORNER_HEAD = 28.dp
 
-/** Faces of who is online, overlapping as a party, and their number; grey heads when nobody is. */
+/** One face of who is online and their number, a grey head when nobody is: a single head keeps the corner narrow. */
 @Composable
 private fun FriendsCorner(
     state: UiState,
     onClick: () -> Unit,
     modifier: Modifier,
     badge: Int,
-    heads: Int = CORNER_HEADS,
     caption: Boolean = true,
 ) {
-    val colors = millida
     val online = state.friends.filter { it.online || it.playing }
-    CornerButton(onClick = onClick, label = "Друзья, в сети ${online.size}", badge = badge, modifier = modifier) {
+    CornerButton(onClick = onClick, label = tr("Друзья, в сети {size}", online.size), badge = badge, modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            val faces = online.take(heads).map { it.avatarUrl ?: headAvatarUrl(it.nickname) }
-            val shown = faces.ifEmpty { List(heads.coerceAtMost(2)) { null } }
-            Box {
-                shown.forEachIndexed { index, url ->
-                    MAvatar(
-                        url = url,
-                        modifier = Modifier.padding(start = (CORNER_HEAD - CORNER_HEAD_OVERLAP) * index),
-                        size = CORNER_HEAD,
-                        dimmed = faces.isEmpty(),
-                    )
-                }
-            }
-            Spacer(Modifier.width(if (caption) 10.dp else 6.dp))
-            Column {
-                Text(
-                    online.size.toString(),
-                    style = MillidaType.rowTitle.copy(fontSize = 18.sp, lineHeight = 18.sp, fontWeight = FontWeight.Black),
-                    color = colors.accentText,
-                    maxLines = 1,
-                )
-                if (caption) {
-                    Text("в сети", style = MillidaType.small, color = colors.fgSubtle, maxLines = 1)
+            if (online.isEmpty()) {
+                MAvatar(url = null, size = CORNER_HEAD, dimmed = true)
+            } else {
+                online.take(3).forEachIndexed { index, friend ->
+                    if (index > 0) Spacer(Modifier.width(4.dp))
+                    MAvatar(url = friend.avatarUrl ?: headAvatarUrl(friend.nickname), size = CORNER_HEAD)
                 }
             }
         }
@@ -288,7 +271,7 @@ private fun FriendsCorner(
 }
 
 @Composable
-private fun CornerButton(
+internal fun CornerButton(
     onClick: () -> Unit,
     label: String,
     badge: Int,
@@ -340,7 +323,7 @@ private fun AccountPlate(
             .pressShift(progress)
             .heightIn(min = 52.dp)
             .pixelSurface(if (pressed) colors.surface2 else colors.surface, MillidaCut.control, colors.plateFrame())
-            .clickable(interaction, indication = null, role = Role.Button, onClickLabel = "Аккаунт", onClick = onClick)
+            .clickable(interaction, indication = null, role = Role.Button, onClickLabel = tr("Аккаунт"), onClick = onClick)
             .padding(start = 6.dp, end = if (showsName) 14.dp else 6.dp, top = 5.dp, bottom = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -353,7 +336,7 @@ private fun AccountPlate(
             Spacer(Modifier.width(10.dp))
             Column {
                 Text(
-                    account?.nick?.takeIf { it.isNotBlank() } ?: "Войти",
+                    account?.nick?.takeIf { it.isNotBlank() } ?: tr("Войти"),
                     style = MillidaType.rowTitle.copy(fontSize = 16.sp, fontWeight = FontWeight.Black),
                     color = colors.fg,
                     maxLines = 1,
@@ -377,21 +360,95 @@ private fun AccountPlate(
     }
 }
 
-private fun accountLine(account: Account?): String = when (account?.kind) {
-    null -> "Аккаунт не выбран"
-    AccountKind.MILLIDA -> "Аккаунт Millida"
-    AccountKind.MICROSOFT -> "Лицензия Microsoft"
-    AccountKind.OFFLINE -> "Без лицензии"
-}
+private fun accountLine(account: Account?): String = account?.let { accountKindLabel(it.kind) } ?: tr("Аккаунт не выбран")
 
 /**
  * The stage spread over the whole landscape lobby, the desktop's full-window
- * scene: the figure is [figureHeight] tall and its feet stand [feet] above
- * the bottom edge, clear of the play dock.
+ * scene: the figure is [figureHeight] tall, its middle stands [centre] from
+ * the start edge and its feet [feet] above the bottom edge, clear of the play
+ * dock. Its bubble rises at most [bubbleRise] over the top of the figure's
+ * frame, a negative rise keeping it that far below, so it never goes off the
+ * window or under the corner buttons.
  */
 @Immutable
-internal class StageWindow(val figureHeight: Dp, val feet: Dp)
+internal class StageWindow(val figureHeight: Dp, val feet: Dp, val centre: Dp, val bubbleRise: Dp)
 
+/**
+ * How far right of the figure's middle the bubble of a figure [figureHeight]
+ * tall reaches at the top of its pop, so the lobby keeps the corner buttons
+ * and the cards clear of it.
+ */
+internal fun stageBubbleReach(figureHeight: Dp): Dp {
+    val side = BUBBLE_SIDE.value
+    val right = side * (BUBBLE_ORIGIN_X + (1f - BUBBLE_ORIGIN_X) * BUBBLE_OVER) - side / 2f
+    return BUBBLE_X * (figureHeight / FIGURE_HEIGHT) + right.dp
+}
+
+/** How far above the top of the frame of a figure [figureHeight] tall its bubble starts. */
+internal fun stageBubbleLift(figureHeight: Dp): Dp = (FIGURE_TOP - BUBBLE_Y) * (figureHeight / FIGURE_HEIGHT)
+
+/** How tall the bubble stands at the top of its pop, its tail included. */
+internal val STAGE_BUBBLE_SPAN: Dp get() = BUBBLE_SIDE * BUBBLE_OVER + BUBBLE_CELL * (TAIL_ROWS.size - 1)
+
+/** Where the landscape figure's frame stands in the lobby, so the figure and its bubble share one place. */
+private fun Modifier.stageFrame(window: StageWindow): Modifier {
+    val width = FIGURE_WIDTH * (window.figureHeight / FIGURE_HEIGHT)
+    return offset(x = window.centre - width / 2)
+        .padding(bottom = window.feet)
+        .size(width = width, height = window.figureHeight)
+}
+
+/** The emote bubble the figure says now and then, and which emoji it shows, by the desktop's pacing. */
+@Stable
+internal class StageSpeech {
+    private val gate = BubbleGate()
+    private var shown by mutableStateOf<Speech?>(null)
+
+    fun onEmote(item: CosmeticItem) {
+        gate.next(item)?.let { shown = it }
+    }
+
+    @Composable
+    fun Bubble(modifier: Modifier) {
+        val current = shown ?: return
+        key(current.key) {
+            EmoteSpeech(
+                id = current.id,
+                onGone = { if (shown === current) shown = null },
+                modifier = modifier,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun rememberStageSpeech(): StageSpeech = remember { StageSpeech() }
+
+/**
+ * The landscape figure's bubble over the frame [window] places the figure in.
+ * The lobby draws it as its own top layer: inside the stage it lay under the
+ * corner buttons and the cards the head rises between.
+ */
+@Composable
+internal fun BoxScope.StageSpeechLayer(speech: StageSpeech, window: StageWindow) {
+    val scale = window.figureHeight / FIGURE_HEIGHT
+    Box(
+        Modifier
+            .align(Alignment.BottomStart)
+            .stageFrame(window),
+    ) {
+        speech.Bubble(
+            Modifier
+                .align(Alignment.TopCenter)
+                .offset(x = BUBBLE_X * scale, y = maxOf((BUBBLE_Y - FIGURE_TOP) * scale, -window.bubbleRise)),
+        )
+    }
+}
+
+/**
+ * The lobby stage. With a [window] it is the landscape scene and leaves the
+ * [speech] bubble to the caller's [StageSpeechLayer].
+ */
 @Composable
 internal fun LobbyStage(
     state: UiState,
@@ -399,29 +456,23 @@ internal fun LobbyStage(
     totalSeconds: Long,
     onOpen: () -> Unit,
     window: StageWindow? = null,
+    speech: StageSpeech = rememberStageSpeech(),
 ) {
     val colors = millida
-    val bubble = remember { BubbleGate() }
-    var speech by remember { mutableStateOf<Speech?>(null) }
-    val outfit by rememberLobbyOutfit(state, look) { item -> bubble.next(item)?.let { speech = it } }
+    val outfit by rememberLobbyOutfit(state, look) { item -> speech.onEmote(item) }
     val sky = colors.accentDeep
     val ground = colors.accent.mixSrgb(MillidaPixel.serverDark, 0.38f)
     val grass = colors.accent
     val dirt = colors.accent.mixSrgb(MillidaPixel.serverDark, 0.22f)
-    val groundHeight = if (window == null) GROUND_HEIGHT else window.feet + GROUND_UNDER_FEET
-    val frame = if (window == null) {
+    val groundHeight = GROUND_HEIGHT
+    // Landscape spreads the desktop's own scene over the window; the portrait
+    // stage keeps its grass plate.
+    val scene = if (window == null) {
         Modifier
             .fillMaxWidth()
             .height(STAGE_HEIGHT)
             .tourTarget(TourTarget.CHARACTER)
             .pixelSurface(sky, MillidaCut.plate)
-    } else {
-        Modifier
-            .fillMaxSize()
-            .background(sky)
-    }
-    Box(
-        frame
             .drawBehind {
                 val cell = floor(6.dp.toPx())
                 for (index in SKY_DOTS.indices step 2) {
@@ -442,11 +493,27 @@ internal fun LobbyStage(
                     x += cell * (5 + row % 4)
                     row++
                 }
-            },
-    ) {
+            }
+    } else {
+        Modifier.fillMaxSize()
+    }
+    Box(scene) {
+        if (window != null) {
+            // The glow, rays and floor never change, but drawn inline they were rasterised again on
+            // every wave/spark frame. Their own offscreen layer is rendered once and then only blitted
+            // (Redmi Note 13, idle lobby, with the tile layers: GPU 18-20 ms -> 10 ms a frame, p50 32 -> 21 ms).
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .stageScene(colors.accent, window.feet + window.figureHeight * RoomyFrame.FEET_SHARE, window.centre),
+            )
+        }
         val live = LiveWallpaper.of(state.liveWallpaper)
         if (live != null) {
             LiveWallpaperLayer(live, state.wallpaperMotion, Modifier.fillMaxSize())
+        } else if (window != null && state.wallpaperPath.isEmpty()) {
+            StageSceneMotion(state.wallpaperMotion, Modifier.fillMaxSize())
         } else if (state.wallpaperPath.isNotEmpty()) {
             MLocalImage(path = state.wallpaperPath, modifier = Modifier.fillMaxSize())
             Box(
@@ -464,17 +531,11 @@ internal fun LobbyStage(
             ) {
                 LobbyFigure(look, outfit, onOpen, Modifier.size(width = FIGURE_WIDTH, height = FIGURE_HEIGHT))
             }
-            speech?.let { shown ->
-                key(shown.key) {
-                    EmoteSpeech(
-                        id = shown.id,
-                        onGone = { if (speech === shown) speech = null },
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .offset(x = BUBBLE_X, y = BUBBLE_Y),
-                    )
-                }
-            }
+            speech.Bubble(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .offset(x = BUBBLE_X, y = BUBBLE_Y),
+            )
             PlaytimeBadge(
                 totalSeconds,
                 Modifier
@@ -482,12 +543,10 @@ internal fun LobbyStage(
                     .padding(12.dp),
             )
         } else {
-            val scale = window.figureHeight / FIGURE_HEIGHT
             Box(
                 Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = window.feet)
-                    .size(width = FIGURE_WIDTH * scale, height = window.figureHeight),
+                    .align(Alignment.BottomStart)
+                    .stageFrame(window),
             ) {
                 LobbyFigure(
                     look,
@@ -497,17 +556,6 @@ internal fun LobbyStage(
                         .fillMaxSize()
                         .tourTarget(TourTarget.CHARACTER),
                 )
-                speech?.let { shown ->
-                    key(shown.key) {
-                        EmoteSpeech(
-                            id = shown.id,
-                            onGone = { if (speech === shown) speech = null },
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .offset(x = BUBBLE_X * scale, y = (BUBBLE_Y - FIGURE_TOP) * scale),
-                        )
-                    }
-                }
             }
         }
     }
@@ -530,6 +578,10 @@ private fun LobbyFigure(look: CharacterLook, outfit: StageOutfit?, onOpen: () ->
     )
 }
 
+private val BADGE_SIDE_PAD = 8.dp
+private val BADGE_GAP = 6.dp
+private val BADGE_ICON = 16.dp
+
 /** The hours played through the launcher with the way to the next tier, the desktop's `.lobby-hours`. */
 @Composable
 internal fun PlaytimeBadge(totalSeconds: Long, modifier: Modifier = Modifier) {
@@ -538,11 +590,11 @@ internal fun PlaytimeBadge(totalSeconds: Long, modifier: Modifier = Modifier) {
     Row(
         modifier
             .pixelSurface(MillidaPixel.textShadow, MillidaCut.badge)
-            .padding(horizontal = 8.dp, vertical = 5.dp),
+            .padding(horizontal = BADGE_SIDE_PAD, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(BADGE_GAP),
     ) {
-        MIcon(MIcons.trophy, size = 16.dp)
+        MIcon(MIcons.trophy, size = BADGE_ICON)
         Text(PlayTime.format(totalSeconds), style = MillidaType.pixel, color = MillidaPixel.white, maxLines = 1)
         if (tier.next != null) TierStrip(tier.progress)
     }
@@ -589,10 +641,15 @@ private const val MILLIS = 1_000f
  */
 @Composable
 private fun rememberLobbyOutfit(state: UiState, look: CharacterLook, onEmoteStart: (CosmeticItem) -> Unit): State<StageOutfit?> {
+    // The studio preview has no application to build the view model from; the
+    // figure stands there in the bare skin.
+    if (LocalInspectionMode.current) return remember { mutableStateOf<StageOutfit?>(null) }
     val model: LauncherViewModel = viewModel()
     val wardrobe = model.cosmeticWardrobe
     val cosmetics by wardrobe.state.collectAsState()
     val reduced = LocalReducedMotion.current
+    val lookPrefs by rememberLookModel().state.collectAsState()
+    val dance = lookPrefs.characterDance
     val accountId = state.account?.id.orEmpty()
     val signedIn = state.millidaSignedIn
     val uuid = state.gameProfile?.uuid
@@ -611,9 +668,9 @@ private fun rememberLobbyOutfit(state: UiState, look: CharacterLook, onEmoteStar
     val dressed = showing?.let { worn + it } ?: worn
     val outfit = rememberStageOutfit(dressed, look.slim, wardrobe) {}
     val emoteStarted by rememberUpdatedState(onEmoteStart)
-    LaunchedEffect(showable, wornEmote, reduced, signedIn) {
+    LaunchedEffect(showable, wornEmote, reduced, signedIn, dance) {
         showing = null
-        if (reduced || !signedIn || wornEmote || showable.isEmpty()) return@LaunchedEffect
+        if (reduced || !dance || !signedIn || wornEmote || showable.isEmpty()) return@LaunchedEffect
         delay(Random.nextLong(FIRST_SHOW_MIN_MS, FIRST_SHOW_MAX_MS))
         val bag = ArrayDeque<CosmeticItem>()
         var shown: EmotePlay? = null
@@ -641,6 +698,7 @@ private fun rememberLobbyOutfit(state: UiState, look: CharacterLook, onEmoteStar
 
 private val TIER_STRIP_WIDTH = 44.dp
 private val TIER_STRIP_HEIGHT = 6.dp
+private val TIER_STRIP_PAD = 4.dp
 
 /** The way to the next playtime tier, a bare strip as on the desktop: the number lives in the label beside it. */
 @Composable
@@ -648,11 +706,13 @@ private fun TierStrip(progress: Float) {
     val fill = millida.accent
     Box(
         Modifier
-            .padding(start = 4.dp)
+            .padding(start = TIER_STRIP_PAD)
             .size(TIER_STRIP_WIDTH, TIER_STRIP_HEIGHT)
             .drawBehind {
                 drawRect(MillidaPixel.divider)
-                drawRect(fill, size = Size(floor(size.width * progress.coerceIn(0f, 1f)), size.height))
+                val filled = floor(size.width * progress.coerceIn(0f, 1f))
+                val from = if (layoutDirection == LayoutDirection.Rtl) size.width - filled else 0f
+                drawRect(fill, topLeft = Offset(from, 0f), size = Size(filled, size.height))
             },
     )
 }
@@ -662,6 +722,9 @@ private val BUBBLE_X = 64.dp
 private val BUBBLE_Y = 25.dp
 private val BUBBLE_CELL = 3.dp
 private val BUBBLE_EMOJI = 44.dp
+private val BUBBLE_PAD = 8.dp
+private val BUBBLE_SIDE = BUBBLE_EMOJI + (BUBBLE_PAD + BUBBLE_CELL) * 2
+private const val BUBBLE_ORIGIN_X = 0.2f
 private const val BUBBLE_FROM = 0.3f
 private const val BUBBLE_OVER = 1.12f
 private const val BUBBLE_LEAVE = 0.5f
@@ -696,6 +759,7 @@ private fun EmoteSpeech(id: String, onGone: () -> Unit, modifier: Modifier = Mod
     val scale = remember { Animatable(BUBBLE_FROM) }
     val fade = remember { Animatable(0f) }
     val gone by rememberUpdatedState(onGone)
+    val originX = if (LocalLayoutDirection.current == LayoutDirection.Rtl) 1f - BUBBLE_ORIGIN_X else BUBBLE_ORIGIN_X
     LaunchedEffect(Unit) {
         launch { fade.animateTo(1f, tween(BUBBLE_IN_HALF_MS, easing = MillidaMotion.steps(2))) }
         scale.animateTo(BUBBLE_OVER, tween(BUBBLE_IN_HALF_MS, easing = MillidaMotion.steps(2)))
@@ -710,7 +774,7 @@ private fun EmoteSpeech(id: String, onGone: () -> Unit, modifier: Modifier = Mod
             scaleX = scale.value
             scaleY = scale.value
             alpha = fade.value
-            transformOrigin = TransformOrigin(0.2f, 1f)
+            transformOrigin = TransformOrigin(originX, 1f)
         },
     ) {
         Box(
@@ -727,7 +791,7 @@ private fun EmoteSpeech(id: String, onGone: () -> Unit, modifier: Modifier = Mod
                         bottomWidth = BUBBLE_CELL,
                     ),
                 )
-                .padding(8.dp + BUBBLE_CELL),
+                .padding(BUBBLE_PAD + BUBBLE_CELL),
         ) {
             EltImage(id, Modifier.size(BUBBLE_EMOJI))
         }
@@ -738,11 +802,13 @@ private fun EmoteSpeech(id: String, onGone: () -> Unit, modifier: Modifier = Mod
                 .size(BUBBLE_CELL * TAIL_ROWS.first().length, BUBBLE_CELL * TAIL_ROWS.size),
         ) {
             val cell = floor(BUBBLE_CELL.toPx())
+            val last = TAIL_ROWS.first().length - 1
+            val mirrored = layoutDirection == LayoutDirection.Rtl
             TAIL_ROWS.forEachIndexed { row, cells ->
                 cells.forEachIndexed { column, kind ->
                     drawRect(
                         if (kind == 'd') MillidaPixel.bubbleInk else MillidaPixel.bubbleFill,
-                        Offset(column * cell, row * cell),
+                        Offset((if (mirrored) last - column else column) * cell, row * cell),
                         Size(cell, cell),
                     )
                 }

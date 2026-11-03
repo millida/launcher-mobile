@@ -5,6 +5,7 @@ import net.millida.launcher.core.account.OfflineAuth
 import net.millida.launcher.core.launch.LaunchRequest
 import net.millida.launcher.core.launch.LaunchSpec
 import net.millida.launcher.core.launch.LaunchSpecBuilder
+import net.millida.launcher.core.launch.MillidaModToken
 import net.millida.launcher.core.mojang.LoggingConfig
 import net.millida.launcher.core.mojang.ResolvedLibrary
 import net.millida.launcher.core.mojang.ResolvedVersion
@@ -61,8 +62,10 @@ class LaunchSpecBuildTest {
         session: GameSession = OfflineAuth.session("Steve"),
         quickPlay: String? = null,
         authlib: File? = null,
+        prefetched: String? = null,
         extraJvm: List<String> = emptyList(),
         extraGame: List<String> = emptyList(),
+        millidaToken: String? = null,
     ) = LaunchRequest(
         version = version,
         session = session,
@@ -73,12 +76,43 @@ class LaunchSpecBuildTest {
         extraJvmArgs = extraJvm,
         extraGameArgs = extraGame,
         authlibInjector = authlib,
+        authlibPrefetched = prefetched,
         quickPlayServer = quickPlay,
+        millidaToken = millidaToken,
     )
 
     private fun build(request: LaunchRequest): LaunchSpec = LaunchSpecBuilder(layout).build(request)
 
     private fun valueAfter(args: List<String>, flag: String): String? = args.getOrNull(args.indexOf(flag) + 1)?.takeIf { flag in args }
+
+    @Test
+    fun `токен мода Millida уходит в свойство машины только вошедшему`() {
+        data class Case(val token: String?, val extraJvm: List<String>, val expected: List<String>, val why: String)
+        val cases = listOf(
+            Case("mod-abc", emptyList(), listOf("-Dmillida.token=mod-abc"), "вошёл в Millida: без токена гардероб в моде пишет «не знает, кто ты»"),
+            Case(" mod-abc \n", emptyList(), listOf("-Dmillida.token=mod-abc"), "пробелы из ответа сервера не становятся частью токена"),
+            Case(null, emptyList(), emptyList(), "не вошёл: свойство не передаётся вовсе"),
+            Case("  ", emptyList(), emptyList(), "пустой токен равен отсутствию входа"),
+            Case("mod-abc", listOf("-Dmillida.token=forged"), listOf("-Dmillida.token=mod-abc"), "чужое значение из флагов сборки не перебивает сессию игрока"),
+            Case(null, listOf("-Dmillida.token=forged"), emptyList(), "флаги сборки не подсовывают токен тому, кто не вошёл"),
+        )
+        cases.forEach { case ->
+            val jvm = build(request(millidaToken = case.token, extraJvm = case.extraJvm)).jvmArgs
+            assertEquals(case.why, case.expected, jvm.filter { it.startsWith("-Dmillida.token") })
+        }
+    }
+
+    @Test
+    fun `токен мода в журнале скрыт, прочие аргументы как есть`() {
+        data class Case(val argument: String, val expected: String, val why: String)
+        listOf(
+            Case("-Dmillida.token=mod-abc", "-Dmillida.token=***", "токен — секрет, журнал запуска уходит в поддержку"),
+            Case("-Dmillida.renderer=gl4es", "-Dmillida.renderer=gl4es", "соседние свойства лаунчера нужны для разбора"),
+            Case("-Xmx2048M", "-Xmx2048M", "память в журнале нужна для разбора вылетов"),
+        ).forEach { case ->
+            assertEquals(case.why, case.expected, MillidaModToken.redact(case.argument))
+        }
+    }
 
     @Test
     fun `быстрый вход на сервер получает порт по умолчанию`() {
@@ -141,6 +175,16 @@ class LaunchSpecBuildTest {
     }
 
     @Test
+    fun `описание сервера входа идёт агенту, только когда агент есть`() {
+        val agent = File(tmp.root, "authlib-injector.jar")
+        val millida = GameSession(nick = "Steve", uuid = "u", accessToken = "t", yggdrasil = "https://auth.millida.net/api/yggdrasil")
+        val property = "-Dauthlibinjector.yggdrasil.prefetched=e30="
+        assertTrue(build(request(session = millida, authlib = agent, prefetched = property)).jvmArgs.contains(property))
+        assertFalse("без агента свойство никому не нужно", build(request(session = millida, prefetched = property)).jvmArgs.contains(property))
+        assertFalse("и без сервера входа", build(request(authlib = agent, prefetched = property)).jvmArgs.contains(property))
+    }
+
+    @Test
     fun `путь к классам целиком и библиотеки до клиента`() {
         val libraries = listOf(
             ResolvedLibrary("com.mojang:brigadier:1.0.18", "com/mojang/brigadier.jar", "https://x/b.jar", null, 0),
@@ -154,6 +198,46 @@ class LaunchSpecBuildTest {
         )
         assertFalse("путь к классам задаёт хост — свойство с ним выбрасывается целиком", spec.jvmArgs.any { it.startsWith("-Dcp=") })
         assertTrue(spec.jvmArgs.contains("-Dkeep=1"))
+    }
+
+    @Test
+    fun `ванильный jar попадает в список пропуска Forge под своим настоящим именем`() {
+        data class Case(val jvm: List<String>, val expected: List<String>, val why: String)
+
+        val forge = resolved().copy(id = "neoforge-21.1.228", jarVersionId = "1.21.1")
+        val cases = listOf(
+            Case(
+                listOf("-DignoreList=client-extra,neoforge-,\${version_name}.jar"),
+                listOf("-DignoreList=client-extra,neoforge-,neoforge-21.1.228.jar,1.21.1.jar"),
+                "официальный лаунчер кладёт ванильный jar как <id версии>.jar; у нас он 1.21.1.jar — без своего имени в списке " +
+                    "он грузится вторым модулем _1._21._1 и игра падает на ResolutionException",
+            ),
+            Case(
+                listOf("-DignoreList=bootstraplauncher,1.21.1.jar"),
+                listOf("-DignoreList=bootstraplauncher,1.21.1.jar"),
+                "имя уже в списке — второй раз не дописывается",
+            ),
+            Case(
+                listOf("-DignoreList=asm,1.21"),
+                listOf("-DignoreList=asm,1.21"),
+                "загрузчик сверяет начало имени файла: фильтр 1.21 уже закрывает 1.21.1.jar",
+            ),
+            Case(
+                listOf("-DignoreList=asm,"),
+                listOf("-DignoreList=asm,,1.21.1.jar"),
+                "пустой фильтр после запятой не считается совпадением",
+            ),
+            Case(
+                listOf("-Dfml.ignoreInvalidMinecraftCertificates=true"),
+                listOf("-Dfml.ignoreInvalidMinecraftCertificates=true"),
+                "версии без списка пропуска (ваниль, Fabric, Forge до 1.17) не трогаются",
+            ),
+        )
+        for (case in cases) {
+            val spec = build(request(forge.copy(jvmArguments = case.jvm)))
+            assertEquals("список пропуска: ${case.why}", case.expected, spec.jvmArgs.filter { it in case.expected || it.startsWith("-DignoreList=") })
+            assertEquals("сам jar остаётся в пути к классам последним", layout.versionJar("1.21.1").absolutePath, spec.classpath.last().absolutePath)
+        }
     }
 
     @Test
@@ -264,5 +348,14 @@ class LaunchSpecBuildTest {
         )
         assertTrue("ключ доходит до JVM", spec.jvmArgs.contains("-Dmillida.launch.token=abc"))
         assertFalse("агент под видом ключа не проходит", spec.jvmArgs.any { it.startsWith("-javaagent") })
+    }
+
+    @Test
+    fun `папка natives создаётся до запуска`() {
+        val natives = File(layout.runtimes, "natives")
+        natives.deleteRecursively()
+        assertFalse(natives.exists())
+        build(request())
+        assertTrue("игра читает её при старте, даже пустую", natives.isDirectory)
     }
 }

@@ -2,6 +2,7 @@ package net.millida.launcher.core.friends
 
 import java.net.URLEncoder
 
+import net.millida.launcher.core.i18n.tr
 /**
  * The way out when the phone cannot call by itself: the voice engine failed to
  * load on this device. The conversation is then handed to the site, opening
@@ -24,5 +25,5 @@ object CallHandoff {
     }
 
     /** Shown next to the call button so the handover is not a surprise. */
-    const val HINT = "Звонок откроется на сайте Millida — разговор идёт там"
+    val HINT: String get() = tr("Звонок откроется на сайте Millida — разговор идёт там")
 }

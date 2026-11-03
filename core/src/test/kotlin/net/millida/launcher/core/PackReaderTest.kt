@@ -265,4 +265,22 @@ class PackReaderTest {
         put(noVersion, "manifest.json", """{"minecraft":{"version":"","modLoaders":[]},"files":[]}""")
         expectIo("без версии игры ставить не из чего") { runBlocking { reader().readCurseForge(noVersion) } }
     }
+    @Test
+    fun `MultiMC и Prism - компоненты, имя из instance cfg и папка игры целиком`() {
+        val root = tmp.newFolder("mmc")
+        put(root, "Prism Pack/mmc-pack.json", """{"formatVersion":1,"components":[{"uid":"net.minecraft","version":"1.20.1"},{"uid":"net.fabricmc.fabric-loader","version":"0.16.9"}]}""")
+        put(root, "Prism Pack/instance.cfg", "InstanceType=OneSix\nname=Мой Prism\n")
+        put(root, "Prism Pack/.minecraft/mods/a.jar")
+        val content = runBlocking { reader().read(root) }
+        assertEquals("имя экземпляра берётся из instance.cfg", "Мой Prism", content.plan.name)
+        assertEquals("1.20.1", content.plan.gameVersion)
+        assertEquals("загрузчик из компонента fabric-loader", LoaderKind.FABRIC, content.plan.loader)
+        assertEquals("0.16.9", content.plan.loaderVersion)
+        assertEquals("папка .minecraft копируется в сборку целиком", ".minecraft", content.trees.single().name)
+        assertTrue("скачивать нечего: моды уже в архиве", content.plan.files.isEmpty())
+
+        val noGame = tmp.newFolder("mmc-no-game")
+        put(noGame, "mmc-pack.json", """{"components":[{"uid":"net.fabricmc.fabric-loader","version":"0.16.9"}]}""")
+        expectIo("без версии игры сборка не ставится") { reader().readMultiMc(noGame) }
+    }
 }

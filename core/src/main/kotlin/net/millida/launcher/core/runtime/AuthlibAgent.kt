@@ -8,6 +8,7 @@ import net.millida.launcher.core.http.RemoteFile
 import java.io.File
 import java.io.IOException
 
+import net.millida.launcher.core.i18n.tr
 const val AUTHLIB_INJECTOR_VERSION = "1.2.8"
 const val AUTHLIB_INJECTOR_SHA256 = "9c7f4343e6c82034958ffb48c14a2cb0c85928be7283103ce17da00c6d5a7b10"
 const val AUTHLIB_INJECTOR_URL =
@@ -42,14 +43,14 @@ class AuthlibAgent(
             try {
                 downloader.fetch(RemoteFile(url = url, target = jar, sha1 = AUTHLIB_INJECTOR_SHA256))
                 if (ready()) return jar
-                failures += "${hostOf(url)}: файл не прошёл проверку"
+                failures += tr("{0}: файл не прошёл проверку", hostOf(url))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 failures += "${hostOf(url)}: ${error.message ?: error.javaClass.simpleName}"
             }
         }
-        throw IOException("authlib-injector не скачался (${failures.joinToString("; ")})")
+        throw IOException(tr("authlib-injector не скачался ({0})", failures.joinToString("; ")))
     }
 
     companion object {

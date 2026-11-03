@@ -17,6 +17,7 @@ import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 
+import net.millida.launcher.core.i18n.tr
 /**
  * One answer to a Server List Ping. [motd] keeps the section-sign colour codes
  * the server sent; rendering them is the caller's job.
@@ -32,7 +33,7 @@ data class ServerStatus(
 
 /** Bedrock speaks RakNet over UDP, which this launcher does not implement. */
 class BedrockPingUnsupportedException(address: String) : IOException(
-    "сервер $address похож на Bedrock — его состояние неизвестно",
+    tr("сервер {address} похож на Bedrock — его состояние неизвестно", address),
 )
 
 /**
@@ -52,7 +53,7 @@ object ServerPing {
     fun pingBlocking(address: String, timeoutMs: Int = DEFAULT_TIMEOUT_MS): ServerStatus {
         val (host, port) = splitHostPort(address)
         if (port == BEDROCK_PORT) throw BedrockPingUnsupportedException(address)
-        if (host.isEmpty()) throw IOException("пустой адрес сервера")
+        if (host.isEmpty()) throw IOException(tr("пустой адрес сервера"))
 
         val started = System.nanoTime()
         Socket().use { socket ->
@@ -61,7 +62,7 @@ object ServerPing {
             try {
                 socket.connect(InetSocketAddress(host, port), timeoutMs)
             } catch (refused: IOException) {
-                throw IOException("сервер не отвечает: ${refused.message ?: "нет соединения"}", refused)
+                throw IOException(tr("сервер не отвечает: {0}", refused.message ?: tr("нет соединения")), refused)
             }
 
             val output = socket.getOutputStream()
@@ -72,9 +73,9 @@ object ServerPing {
             val input = socket.getInputStream()
             readVarInt(input)
             val packetId = readVarInt(input)
-            if (packetId != 0x00) throw IOException("сервер ответил не статусом")
+            if (packetId != 0x00) throw IOException(tr("сервер ответил не статусом"))
             val length = readVarInt(input)
-            if (length <= 0 || length > MAX_JSON_BYTES) throw IOException("некорректный ответ сервера")
+            if (length <= 0 || length > MAX_JSON_BYTES) throw IOException(tr("некорректный ответ сервера"))
             val json = readFully(input, length)
             val latencyMs = (System.nanoTime() - started) / 1_000_000
             return parseStatus(String(json, Charsets.UTF_8), latencyMs)
@@ -87,7 +88,7 @@ object ServerPing {
             Json.parseToJsonElement(json) as? JsonObject
         } catch (broken: Exception) {
             null
-        } ?: throw IOException("сервер прислал неразборчивый ответ")
+        } ?: throw IOException(tr("сервер прислал неразборчивый ответ"))
 
         val players = root["players"] as? JsonObject
         val version = root["version"] as? JsonObject
@@ -190,11 +191,11 @@ object ServerPing {
         var shift = 0
         while (true) {
             val byte = input.read()
-            if (byte < 0) throw EOFException("соединение с сервером оборвалось")
+            if (byte < 0) throw EOFException(tr("соединение с сервером оборвалось"))
             value = value or ((byte and 0x7f) shl shift)
             if (byte and 0x80 == 0) return value
             shift += 7
-            if (shift >= 35) throw IOException("сервер прислал слишком длинное число")
+            if (shift >= 35) throw IOException(tr("сервер прислал слишком длинное число"))
         }
     }
 
@@ -204,7 +205,7 @@ object ServerPing {
         var read = 0
         while (read < length) {
             val step = input.read(buffer, read, length - read)
-            if (step < 0) throw EOFException("ответ сервера оборвался")
+            if (step < 0) throw EOFException(tr("ответ сервера оборвался"))
             read += step
         }
         return buffer

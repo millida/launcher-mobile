@@ -16,7 +16,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.LobbyMusic
+import net.millida.launcher.R
 import net.millida.launcher.core.media.MusicTrack
 import java.io.File
 import kotlin.random.Random
@@ -52,7 +54,7 @@ class AmbientModel(
     private val audio = app.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private val mutable = MutableStateFlow(
         AmbientState(
-            musicOn = prefs.getBoolean(KEY_MUSIC_ON, false),
+            musicOn = prefs.getBoolean(KEY_MUSIC_ON, true),
             musicAtStart = prefs.getBoolean(KEY_MUSIC_AT_START, true),
             musicVolume = prefs.getInt(KEY_MUSIC_VOLUME, DEFAULT_MUSIC_VOLUME).coerceIn(0, 100),
         ),
@@ -103,13 +105,20 @@ class AmbientModel(
         if (!shouldPlay()) {
             startJob?.cancel()
             startJob = null
-            player?.takeIf { it.isPlaying }?.pause()
+            val fading = player?.takeIf { it.isPlaying }
+            if (fading != null) {
+                scope.launch { fadeOutAndPause(fading) }
+            }
             mutable.update { it.copy(playing = false) }
             return
         }
         val existing = player
         if (existing != null) {
-            if (!existing.isPlaying) existing.start()
+            if (!existing.isPlaying) {
+                applyVolume(existing, 0)
+                existing.start()
+                scope.launch { fadeIn(existing) }
+            }
             mutable.update { it.copy(playing = true) }
             return
         }
@@ -121,12 +130,13 @@ class AmbientModel(
 
     private suspend fun playNext() {
         try {
+            if (startBundled()) return
             if (tracks.isEmpty()) {
                 tracks = music.tracks()
                 position = if (tracks.isEmpty()) -1 else Random.nextInt(tracks.size) - 1
             }
             if (tracks.isEmpty()) {
-                mutable.update { it.copy(musicError = "Музыки игры нет — проверь интернет", playing = false) }
+                mutable.update { it.copy(musicError = tr("Музыки игры нет — проверь интернет"), playing = false) }
                 return
             }
             position = (position + 1) % tracks.size
@@ -138,7 +148,7 @@ class AmbientModel(
             throw cancelled
         } catch (error: Exception) {
             Log.w(LOG_TAG, "музыка лобби не запустилась: ${error.message}")
-            mutable.update { it.copy(musicError = "Музыка не скачалась — проверь интернет", playing = false) }
+            mutable.update { it.copy(musicError = tr("Музыка не скачалась — проверь интернет"), playing = false) }
         }
     }
 
@@ -176,6 +186,53 @@ class AmbientModel(
         created.start()
         mutable.update { it.copy(playing = true, nowPlaying = track.title, musicError = null) }
         fadeIn(created)
+    }
+
+    /** Millida's own looped track ships inside the app: no network, no third-party music. */
+    private suspend fun startBundled(): Boolean {
+        if (!shouldPlay()) return true
+        release()
+        val created = MediaPlayer()
+        try {
+            created.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_GAME)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build(),
+            )
+            withContext(Dispatchers.IO) {
+                app.resources.openRawResourceFd(R.raw.lobby_ambient).use { afd ->
+                    created.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+                }
+                created.prepare()
+            }
+        } catch (error: Exception) {
+            created.release()
+            Log.w(LOG_TAG, "встроенный трек не запустился: ${error.message}")
+            return false
+        }
+        created.isLooping = true
+        created.setOnErrorListener { failed, _, _ ->
+            if (player === failed) release()
+            mutable.update { it.copy(playing = false) }
+            true
+        }
+        player = created
+        applyVolume(created, 0)
+        created.start()
+        mutable.update { it.copy(playing = true, nowPlaying = BUNDLED_TITLE, musicError = null) }
+        fadeIn(created)
+        return true
+    }
+
+    private suspend fun fadeOutAndPause(target: MediaPlayer) {
+        val from = mutable.value.musicVolume
+        for (step in FADE_STEPS - 1 downTo 0) {
+            if (player !== target || shouldPlay()) return
+            applyVolume(target, from * step / FADE_STEPS)
+            delay(FADE_OUT_STEP_MS)
+        }
+        if (player === target && !shouldPlay()) runCatching { target.pause() }
     }
 
     private suspend fun fadeIn(target: MediaPlayer) {
@@ -238,5 +295,7 @@ class AmbientModel(
         const val LOG_TAG = "millida"
         const val FADE_STEPS = 9
         const val FADE_STEP_MS = 100L
+        const val FADE_OUT_STEP_MS = 40L
+        const val BUNDLED_TITLE = "Тихий вечер"
     }
 }

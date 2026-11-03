@@ -762,6 +762,112 @@ static void GL_APIENTRY shim_shader_source(GLuint shader, GLsizei count, const G
     free(joined);
 }
 
+/*
+ * LWJGL picks the GL functions it loads by GL_MAJOR_VERSION/GL_MINOR_VERSION. GLES 3.2 answers
+ * 3.2, so LWJGL leaves out the 3.3 block, and Angelica 2.2 on 1.7.10 (OneBlock) dies on its first
+ * particle with «No context is current or a function that is not available» in
+ * GL33C.glVertexAttribDivisor (Redmi Note 13, 27.10), though GLES 3.0 has the function. On this
+ * native GLES path the shim reports 3.3; the 3.3 functions GLES lacks stay unloaded as before.
+ */
+typedef void (*GetIntegervFn)(GLenum, GLint*);
+static GetIntegervFn real_get_integerv;
+
+static void shim_get_integerv(GLenum pname, GLint* data) {
+    real_get_integerv(pname, data);
+    if (data == NULL) return;
+    if (pname == GL_MINOR_VERSION && *data < 3) {
+        GLint major = 0;
+        real_get_integerv(GL_MAJOR_VERSION, &major);
+        if (major == 3) *data = 3;
+    }
+}
+
+/*
+ * Write-only maps that discard the old contents (Angelica's uniform ring orphans
+ * and maps on every draw) stall the Adreno 6xx driver inside glMapBufferRange.
+ * Hand out heap memory instead and upload it with glBufferSubData on unmap.
+ * MILLIDA_GLES_MAP_SHADOW=0 turns this off.
+ */
+typedef void (*BufferSubDataFn)(GLenum, GLintptr, GLsizeiptr, const void*);
+typedef void (*FlushMappedRangeFn)(GLenum, GLintptr, GLsizeiptr);
+
+enum { SHADOW_SLOTS = 8, SHADOW_MAX_BYTES = 8 << 20 };
+
+typedef struct {
+    GLenum target;
+    GLintptr offset;
+    GLsizeiptr length;
+    uint8_t* data;
+    size_t capacity;
+    bool active;
+} ShadowMap;
+
+static MapBufferRangeFn real_map_range;
+static UnmapBufferFn real_unmap;
+static FlushMappedRangeFn real_flush_range;
+static BufferSubDataFn real_buffer_sub_data;
+static ShadowMap shadows[SHADOW_SLOTS];
+static atomic_int shadow_enabled = -1;
+static atomic_bool shadow_logged;
+
+static int shadow_on(void) {
+    int on = atomic_load(&shadow_enabled);
+    if (on < 0) {
+        const char* value = getenv("MILLIDA_GLES_MAP_SHADOW");
+        on = value == NULL || strcmp(value, "0") != 0;
+        atomic_store(&shadow_enabled, on);
+    }
+    return on && real_buffer_sub_data != NULL;
+}
+
+static ShadowMap* shadow_for(GLenum target, bool create) {
+    ShadowMap* free_slot = NULL;
+    for (int i = 0; i < SHADOW_SLOTS; i++) {
+        if (shadows[i].target == target && shadows[i].data != NULL) return &shadows[i];
+        if (free_slot == NULL && shadows[i].data == NULL) free_slot = &shadows[i];
+    }
+    if (!create || free_slot == NULL) return NULL;
+    free_slot->target = target;
+    return free_slot;
+}
+
+static void* GL_APIENTRY shim_map_buffer_range(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access) {
+    bool discards = (access & (GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_INVALIDATE_RANGE_BIT)) != 0;
+    bool write_only = (access & GL_MAP_WRITE_BIT) != 0 && (access & GL_MAP_READ_BIT) == 0;
+    if (!discards || !write_only || length <= 0 || length > SHADOW_MAX_BYTES || !shadow_on()) {
+        return real_map_range(target, offset, length, access);
+    }
+    ShadowMap* shadow = shadow_for(target, true);
+    if (shadow == NULL || shadow->active) return real_map_range(target, offset, length, access);
+    if (shadow->capacity < (size_t)length) {
+        uint8_t* grown = realloc(shadow->data, (size_t)length);
+        if (grown == NULL) return real_map_range(target, offset, length, access);
+        shadow->data = grown;
+        shadow->capacity = (size_t)length;
+    }
+    shadow->offset = offset;
+    shadow->length = length;
+    shadow->active = true;
+    if (!atomic_exchange(&shadow_logged, true)) {
+        __android_log_print(ANDROID_LOG_INFO, SHIM_LOG_TAG, "GLES shim: write-only buffer maps go through glBufferSubData");
+    }
+    return shadow->data;
+}
+
+static void GL_APIENTRY shim_flush_mapped_range(GLenum target, GLintptr offset, GLsizeiptr length) {
+    ShadowMap* shadow = shadow_for(target, false);
+    if (shadow != NULL && shadow->active) return;
+    if (real_flush_range != NULL) real_flush_range(target, offset, length);
+}
+
+static GLboolean GL_APIENTRY shim_unmap_buffer(GLenum target) {
+    ShadowMap* shadow = shadow_for(target, false);
+    if (shadow == NULL || !shadow->active) return real_unmap(target);
+    shadow->active = false;
+    real_buffer_sub_data(target, shadow->offset, shadow->length, shadow->data);
+    return GL_TRUE;
+}
+
 SHIM_EXPORT __eglMustCastToProperFunctionPointerType EGLAPIENTRY eglGetProcAddress(const char* procname) {
     if (procname != NULL && strcmp(procname, "glTexImage2D") == 0) {
         return (__eglMustCastToProperFunctionPointerType)glTexImage2D;
@@ -783,6 +889,26 @@ SHIM_EXPORT __eglMustCastToProperFunctionPointerType EGLAPIENTRY eglGetProcAddre
     }
     if (procname != NULL) found = traced(procname, found);
     if (procname != NULL) found = traced_fbo(procname, found);
+    if (procname != NULL && found != NULL && strcmp(procname, "glGetIntegerv") == 0) {
+        real_get_integerv = (GetIntegervFn)found;
+        found = (void*)shim_get_integerv;
+    }
+    if (procname != NULL && found != NULL && strcmp(procname, "glBufferSubData") == 0) {
+        real_buffer_sub_data = (BufferSubDataFn)found;
+    }
+    if (procname != NULL && found != NULL && strcmp(procname, "glMapBufferRange") == 0) {
+        real_map_range = (MapBufferRangeFn)found;
+        if (real_buffer_sub_data == NULL) real_buffer_sub_data = (BufferSubDataFn)symbol(real.gles, "glBufferSubData");
+        found = (void*)shim_map_buffer_range;
+    }
+    if (procname != NULL && found != NULL && strcmp(procname, "glUnmapBuffer") == 0) {
+        real_unmap = (UnmapBufferFn)found;
+        found = (void*)shim_unmap_buffer;
+    }
+    if (procname != NULL && found != NULL && strcmp(procname, "glFlushMappedBufferRange") == 0) {
+        real_flush_range = (FlushMappedRangeFn)found;
+        found = (void*)shim_flush_mapped_range;
+    }
     if (procname != NULL && found != NULL && strcmp(procname, "glShaderSource") == 0) {
         real_shader_source = (ShaderSourceFn)found;
         found = (void*)shim_shader_source;

@@ -1,0 +1,9 @@
+# Baseline profile: the launcher's own code is compiled ahead of time on the phone
+# (ProfileInstaller writes this profile on first run, the system compiles it in idle time).
+# Without it every screen of the app ran interpreted for the first minutes: on a Redmi Note 13
+# an idle debug lobby kept the UI thread at ~50% of a core and logged 56 slow UI frames in 15 s,
+# the same build compiled ahead of time logged 0-1. The Compose libraries bring their own profiles.
+# Hot + startup + post-startup for everything under the app's package; the wildcards are resolved
+# against the dex at build time, so R8 renaming is followed.
+HSPLnet/millida/launcher/**->**(**)**
+Lnet/millida/launcher/**;

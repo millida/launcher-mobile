@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,11 +23,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +38,9 @@ import coil.transform.Transformation
 import kotlinx.coroutines.delay
 import net.millida.launcher.RevealCard
 import net.millida.launcher.RewardKind
+import net.millida.launcher.core.i18n.I18n
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trPlural
 import net.millida.launcher.core.rubies.RubyItem
 import net.millida.launcher.core.rubies.RubyReward
 import net.millida.launcher.ui.LocalReducedMotion
@@ -54,21 +54,18 @@ import net.millida.launcher.ui.MillidaType
 import net.millida.launcher.ui.PixelFrame
 import net.millida.launcher.ui.Rarity
 import net.millida.launcher.ui.groupDigits
+import net.millida.launcher.ui.millida
 import net.millida.launcher.ui.pixelSurface
+import net.millida.launcher.ui.shop.chest.ChestShot
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
-import java.util.Locale
 import kotlin.math.abs
-import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
-
-internal const val CHEST_COLUMNS = 16
-internal const val CHEST_ROWS = 18
 
 /** Chest paint is an in-world colour, like a ruby: it ignores the launcher theme. */
 internal class ChestPalette(
@@ -154,10 +151,17 @@ internal fun chestPalette(tier: String): ChestPalette = when (tier.uppercase()) 
 }
 
 internal fun chestName(tier: String): String = when (tier.uppercase()) {
-    "RARE" -> "Редкий"
-    "EPIC" -> "Эпический"
-    "LEGEND", "LEGENDARY" -> "Легендарный"
-    else -> "Обычный"
+    "RARE" -> tr("Редкий")
+    "EPIC" -> tr("Эпический")
+    "LEGEND", "LEGENDARY" -> tr("Легендарный")
+    else -> tr("Обычный")
+}
+
+internal fun chestTitle(tier: String): String = when (tier.uppercase()) {
+    "RARE" -> tr("Редкий сундук")
+    "EPIC" -> tr("Эпический сундук")
+    "LEGEND", "LEGENDARY" -> tr("Легендарный сундук")
+    else -> tr("Обычный сундук")
 }
 
 internal fun chestRarity(tier: String): Rarity = when (tier.uppercase()) {
@@ -170,197 +174,16 @@ internal fun chestRarity(tier: String): Rarity = when (tier.uppercase()) {
 internal fun chestTone(tier: String): Color =
     if (chestRarity(tier) == Rarity.COMMON) chestPalette(tier).glowColor else chestRarity(tier).color
 
-private enum class Face { BODY_FRONT, LID_FRONT, LID_TOP, INSIDE, LATCH }
-
-/** Faces of the voxel chest, painted with the same texels as the flat one. */
-internal enum class ChestFace { BODY, LID_SIDE, LID_TOP, INSIDE, INSIDE_LIT, LATCH }
-
-private fun texelNoise(x: Int, y: Int, seed: Int): Double {
-    var h = x * 374761393 + y * 668265263 + seed * 2147483647
-    h = (h xor (h ushr 13)) * 1274126177
-    return ((h xor (h ushr 16)).toLong() and 0xFFFFFFFFL).toDouble() / 4294967295.0
-}
-
-private class TexelGrid(val columns: Int, val rows: Int) {
-    val cells = IntArray(columns * rows)
-
-    fun put(x: Int, y: Int, color: Int) {
-        if (x in 0 until columns && y in 0 until rows) cells[y * columns + x] = color
-    }
-
-    fun fill(x: Int, y: Int, width: Int, color: Int) {
-        for (dx in 0 until width) put(x + dx, y, color)
-    }
-}
-
-private fun TexelGrid.paint(face: Face, p: ChestPalette, gold: Boolean, w: Int, h: Int, ox: Int, oy: Int, seed: Int) {
-    if (face == Face.INSIDE) {
-        for (y in 0 until h) for (x in 0 until w) {
-            put(ox + x, oy + y, if (texelNoise(x, y, seed) > 0.8) p.out else p.inside)
-        }
-        return
-    }
-    if (face == Face.LATCH) {
-        for (y in 0 until h) for (x in 0 until w) {
-            val edge = x == 0 || y == 0 || x == w - 1 || y == h - 1
-            put(ox + x, oy + y, if (edge) p.trimDark else if (y == 1) p.trimLight else p.trim)
-        }
-        if (w >= 2 && h >= 3) put(ox + w / 2, oy + h - 2, p.out)
-        return
-    }
-    val lid = face == Face.LID_FRONT || face == Face.LID_TOP
-    for (y in 0 until h) {
-        for (x in 0 until w) {
-            val n = texelNoise(x, y, seed)
-            var c = when {
-                n < 0.18 -> p.dark
-                n < 0.72 -> p.main
-                n < 0.94 -> p.light
-                else -> p.hi
-            }
-            if (face != Face.LID_TOP && (y + if (lid) 1 else 0) % 4 == 3) c = if (n < 0.5) p.dark else p.out
-            if (face == Face.LID_TOP && x % 5 == 4) c = if (n < 0.5) p.dark else p.main
-            if (lid && face != Face.LID_TOP && y == 1) c = if (n < 0.6) p.light else p.hi
-            put(ox + x, oy + y, c)
-        }
-    }
-    if (gold) {
-        for (x in 1 until w - 1) {
-            put(ox + x, oy + 1, if (x % 3 == 0) p.trimLight else p.trim)
-            put(ox + x, oy + h - 2, p.trimDark)
-        }
-        for (y in 1 until h - 1) {
-            put(ox + 1, oy + y, if (y == 1) p.trimLight else p.trim)
-            put(ox + w - 2, oy + y, p.trimDark)
-        }
-        if (face == Face.LID_TOP) {
-            val cx = w / 2 - 1
-            val cy = h / 2 - 1
-            put(ox + cx, oy + cy, p.trimLight)
-            put(ox + cx + 1, oy + cy, p.trim)
-            put(ox + cx, oy + cy + 1, p.trim)
-            put(ox + cx + 1, oy + cy + 1, p.trimDark)
-            for ((dx, dy) in listOf(-1 to 0, 2 to 1, 0 to -1, 1 to 2)) put(ox + cx + dx, oy + cy + dy, p.hi)
-        }
-    } else {
-        for ((cx, cy) in listOf(1 to 1, w - 3 to 1, 1 to h - 3, w - 3 to h - 3)) {
-            if (cy < 0 || cy + 1 >= h) continue
-            put(ox + cx, oy + cy, p.trimLight)
-            put(ox + cx + 1, oy + cy, p.trim)
-            put(ox + cx, oy + cy + 1, p.trim)
-            put(ox + cx + 1, oy + cy + 1, p.trimDark)
-        }
-    }
-    for (x in 0 until w) {
-        put(ox + x, oy, p.out)
-        put(ox + x, oy + h - 1, p.out)
-    }
-    for (y in 0 until h) {
-        put(ox, oy + y, p.out)
-        put(ox + w - 1, oy + y, p.out)
-    }
-}
-
-internal object ChestPaint {
-    private val cache = HashMap<String, IntArray>()
-    private val faces = HashMap<String, IntArray>()
-
-    /** ARGB texels of one face, row by row; cached because every frame of the 3D chest reuses them. */
-    fun face(tier: String, face: ChestFace, width: Int, height: Int, seed: Int): IntArray = synchronized(faces) {
-        val key = "${tier.uppercase()}:$face:$width:$height:$seed"
-        faces.getOrPut(key) {
-            val p = chestPalette(tier)
-            val gold = chestRarity(tier) != Rarity.COMMON
-            val grid = TexelGrid(width, height)
-            when (face) {
-                ChestFace.BODY -> grid.paint(Face.BODY_FRONT, p, gold, width, height, 0, 0, seed)
-                ChestFace.LID_SIDE -> grid.paint(Face.LID_FRONT, p, gold, width, height, 0, 0, seed)
-                ChestFace.LID_TOP -> grid.paint(Face.LID_TOP, p, gold, width, height, 0, 0, seed)
-                ChestFace.INSIDE -> grid.paint(Face.INSIDE, p, gold, width, height, 0, 0, seed)
-                ChestFace.INSIDE_LIT -> {
-                    grid.paint(Face.INSIDE, p, gold, width, height, 0, 0, seed)
-                    for (y in 2 until height - 2) grid.fill(2, y, width - 4, p.glow)
-                    for (y in 4 until height - 4) grid.fill(4, y, width - 8, p.spark)
-                }
-                ChestFace.LATCH -> grid.paint(Face.LATCH, p, gold, width, height, 0, 0, seed)
-            }
-            grid.cells
-        }
-    }
-
-    fun grid(tier: String, open: Boolean): IntArray = synchronized(cache) {
-        val key = tier.uppercase() + if (open) ":open" else ":closed"
-        cache.getOrPut(key) { build(tier, open) }
-    }
-
-    private fun build(tier: String, open: Boolean): IntArray {
-        val p = chestPalette(tier)
-        val gold = chestRarity(tier) != Rarity.COMMON
-        val grid = TexelGrid(CHEST_COLUMNS, CHEST_ROWS)
-        if (open) {
-            grid.paint(Face.LID_FRONT, p, gold, CHEST_COLUMNS, 5, 0, 0, 7)
-            grid.paint(Face.INSIDE, p, gold, CHEST_COLUMNS, 3, 0, 5, 3)
-            grid.fill(3, 6, 10, p.glow)
-            grid.fill(5, 6, 6, p.spark)
-        } else {
-            grid.paint(Face.LID_TOP, p, gold, CHEST_COLUMNS, 3, 0, 0, 5)
-            grid.paint(Face.LID_FRONT, p, gold, CHEST_COLUMNS, 5, 0, 3, 7)
-        }
-        grid.paint(Face.BODY_FRONT, p, gold, CHEST_COLUMNS, 10, 0, 8, 11)
-        if (!open) grid.paint(Face.LATCH, p, gold, 2, 4, 7, 6, 1)
-        return grid.cells
-    }
-}
-
-internal fun DrawScope.drawTexels(
-    grid: IntArray,
-    left: Float,
-    top: Float,
-    cell: Float,
-    from: Int = 0,
-    to: Int = CHEST_ROWS,
-    rowHeight: Float = cell,
-    alpha: Float = 1f,
-    skip: (Int, Int) -> Boolean = { _, _ -> false },
-) {
-    for (row in from until to) {
-        val y = floor(top + (row - from) * rowHeight)
-        val bottom = floor(top + (row - from + 1) * rowHeight)
-        val height = bottom - y
-        if (height <= 0f) continue
-        var x = 0
-        while (x < CHEST_COLUMNS) {
-            val color = grid[row * CHEST_COLUMNS + x]
-            if (color == 0 || skip(x, row)) {
-                x++
-                continue
-            }
-            var end = x + 1
-            while (end < CHEST_COLUMNS && grid[row * CHEST_COLUMNS + end] == color && !skip(end, row)) end++
-            drawRect(
-                color = Color(color).copy(alpha = alpha),
-                topLeft = Offset(left + x * cell, y),
-                size = Size((end - x) * cell, height),
-            )
-            x = end
-        }
-    }
-}
-
+/** The desktop's snapshot of the same 3D chest, recoloured for a shop case by [tint]. */
 @Composable
 internal fun ChestArt(
     tier: String,
     modifier: Modifier = Modifier,
     side: Dp = 64.dp,
     alpha: Float = 1f,
+    tint: Int? = null,
 ) {
-    val grid = remember(tier) { ChestPaint.grid(tier, open = false) }
-    Canvas(modifier.size(side)) {
-        val cell = max(1f, floor(min(size.width / CHEST_COLUMNS, size.height / CHEST_ROWS)))
-        val left = floor((size.width - cell * CHEST_COLUMNS) / 2f)
-        val top = floor((size.height - cell * CHEST_ROWS) / 2f)
-        drawTexels(grid, left, top, cell, alpha = alpha)
-    }
+    ChestShot(tier, tint, modifier.size(side), alpha)
 }
 
 internal fun slotIcon(slot: String): MillidaIcon = when (slot.uppercase()) {
@@ -389,10 +212,13 @@ internal fun ItemArt(item: RubyItem, modifier: Modifier = Modifier, side: Dp = 7
         from.isNotBlank() && item.color.isNotBlank() && !from.trimStart('#').equals(item.color.trimStart('#'), ignoreCase = true)
     }
     var failed by remember(url) { mutableStateOf(false) }
+    var loaded by remember(url) { mutableStateOf(false) }
     Box(modifier.size(side), contentAlignment = Alignment.Center) {
-        if (url == null || failed) {
-            MIcon(slotIcon(item.slot), size = side * 0.5f)
-        } else {
+        // The slot icon stands in until the picture is on screen, so a slow or missing CDN never leaves an empty plate.
+        if (url == null || failed || !loaded) {
+            MIcon(slotIcon(item.slot), size = side * 0.5f, color = millida.fgMuted)
+        }
+        if (url != null && !failed) {
             val request = remember(url, tint, item.color) {
                 val builder = ImageRequest.Builder(context).data(url)
                 if (tint != null) builder.allowHardware(false).transformations(VariantTint(tint, item.color))
@@ -404,6 +230,7 @@ internal fun ItemArt(item: RubyItem, modifier: Modifier = Modifier, side: Dp = 7
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
                 filterQuality = FilterQuality.None,
+                onSuccess = { loaded = true },
                 onError = { failed = true },
             )
         }
@@ -555,8 +382,8 @@ internal fun RevealCard.tone(): Color = rewardTone(kind, tier, rarity, item)
 internal fun rewardLabel(kind: String, amount: Long, tier: String, rarity: String, item: RubyItem?): String = when (kind) {
     RewardKind.RUBIES, RewardKind.SHARDS -> groupDigits(amount)
     RewardKind.CHEST -> chestName(tier)
-    RewardKind.FRAGMENTS -> "Фрагменты"
-    else -> item?.name?.takeIf { it.isNotBlank() } ?: (rewardRarity(kind, tier, rarity, item)?.title ?: "Вещь")
+    RewardKind.FRAGMENTS -> tr("Фрагменты")
+    else -> item?.name?.takeIf { it.isNotBlank() } ?: (rewardRarity(kind, tier, rarity, item)?.title ?: tr("Вещь"))
 }
 
 internal fun RubyReward.label(): String = rewardLabel(kind, amount, tier, rarity, item)
@@ -564,31 +391,22 @@ internal fun RubyReward.label(): String = rewardLabel(kind, amount, tier, rarity
 internal fun RubyReward.spoken(): String = when (kind) {
     RewardKind.RUBIES -> "$amount ${rubyWord(amount)}"
     RewardKind.SHARDS -> "$amount ${shardWord(amount)}"
-    RewardKind.CHEST -> chestName(tier) + " сундук"
+    RewardKind.CHEST -> chestTitle(tier)
     RewardKind.FRAGMENTS -> "$amount ${fragmentWord(amount)}" + (item?.name?.let { " «$it»" } ?: "")
-    else -> (item?.name ?: "Вещь") + ", навсегда"
+    else -> tr("{0}, навсегда", item?.name ?: tr("Вещь"))
 }
 
 internal fun rarityIndex(rarity: Rarity?): Int = rarity?.ordinal ?: 1
 
-private fun plural(count: Long, one: String, few: String, many: String): String {
-    val tens = abs(count) % 100
-    val ones = tens % 10
-    return when {
-        tens in 11..19 -> many
-        ones == 1L -> one
-        ones in 2..4 -> few
-        else -> many
-    }
-}
+private fun plural(count: Long, one: String, few: String, many: String): String = trPlural(count, one, few, many)
 
-internal fun rubyWord(count: Long): String = plural(count, "рубин", "рубина", "рубинов")
+internal fun rubyWord(count: Long): String = plural(count, tr("рубин"), tr("рубина"), tr("рубинов"))
 
-internal fun shardWord(count: Long): String = plural(count, "осколок", "осколка", "осколков")
+internal fun shardWord(count: Long): String = plural(count, tr("осколок"), tr("осколка"), tr("осколков"))
 
-internal fun fragmentWord(count: Long): String = plural(count, "фрагмент", "фрагмента", "фрагментов")
+internal fun fragmentWord(count: Long): String = plural(count, tr("фрагмент"), tr("фрагмента"), tr("фрагментов"))
 
-internal fun chestWord(count: Long): String = plural(count, "сундук", "сундука", "сундуков")
+internal fun chestWord(count: Long): String = plural(count, tr("сундук"), tr("сундука"), tr("сундуков"))
 
 internal fun rubles(kopecks: Long): String {
     val whole = kopecks / 100
@@ -599,7 +417,7 @@ internal fun rubles(kopecks: Long): String {
 internal fun kopecksForRubies(rubies: Long): Long = (rubies * 100 + 6) / 7
 
 private val MOSCOW: ZoneId = ZoneId.of("Europe/Moscow")
-private val DAY_MONTH: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMMM", Locale.forLanguageTag("ru"))
+private val DAY_MONTH: DateTimeFormatter get() = DateTimeFormatter.ofPattern("d MMMM", I18n.javaLocale)
 
 internal fun parseInstant(iso: String?): Instant? {
     val text = iso?.trim().orEmpty()
@@ -615,15 +433,15 @@ internal fun parseInstant(iso: String?): Instant? {
 internal fun dayMonth(iso: String?): String? = parseInstant(iso)?.let { DAY_MONTH.format(it.atZone(MOSCOW)) }
 
 internal fun leftLabel(ms: Long): String {
-    if (ms <= 60_000L) return "меньше минуты"
+    if (ms <= 60_000L) return tr("меньше минуты")
     val minutes = ms / 60_000L
     val days = minutes / 1440
     val hours = (minutes % 1440) / 60
     val rest = minutes % 60
     return when {
-        days > 0 -> "${days}д ${hours}ч"
-        hours > 0 -> "${hours}ч ${rest.toString().padStart(2, '0')}м"
-        else -> "$rest мин"
+        days > 0 -> tr("{days}д {hours}ч", days, hours)
+        hours > 0 -> tr("{hours}ч {0}м", hours, rest.toString().padStart(2, '0'))
+        else -> tr("{rest} мин", rest)
     }
 }
 

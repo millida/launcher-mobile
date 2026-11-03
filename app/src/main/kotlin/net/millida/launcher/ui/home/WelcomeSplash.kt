@@ -8,6 +8,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import net.millida.launcher.ui.BrandLockup
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -23,9 +24,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.LocalReducedMotion
 import net.millida.launcher.ui.MillidaType
 import net.millida.launcher.ui.millida
@@ -37,6 +43,7 @@ private const val DISSOLVE_MS = 560
 private const val FLASH_SHARE = 0.12f
 private const val SCATTER = 3f
 private val CELL = 36.dp
+private const val BRAND = "Millida"
 
 /**
  * «С возвращением, <ник>» once per launch, about two seconds, a tap skips it.
@@ -90,23 +97,34 @@ fun WelcomeSplash(ask: WelcomeAsk, onDone: () -> Unit) {
         }
         if (!leaving) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Millida", style = MillidaType.brand, color = colors.accentText)
+                BrandLockup(signSize = 44.dp, color = colors.accentText)
                 Spacer(Modifier.height(18.dp))
+                val nick = ask.nick.ifBlank { tr("игрок") }
                 Text(
-                    if (ask.first) "Добро пожаловать" else "С возвращением,",
-                    style = MillidaType.body,
-                    color = colors.fgMuted,
+                    greeting(
+                        text = if (ask.first) tr("Добро пожаловать\nв Millida") else tr("С возвращением,\n{nick}", nick),
+                        accent = if (ask.first) BRAND else nick,
+                        quiet = MillidaType.body.copy(color = colors.fgMuted),
+                        loud = MillidaType.screenTitle.copy(color = colors.fg),
+                    ),
                     textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    if (ask.first) "в Millida" else ask.nick.ifBlank { "игрок" },
-                    style = MillidaType.screenTitle,
-                    color = colors.fg,
-                    textAlign = TextAlign.Center,
-                    maxLines = 1,
                 )
             }
+        }
+    }
+}
+
+/**
+ * The greeting is one translated phrase, so each language puts the name where its grammar wants it.
+ * The line holding [accent] is drawn large, the rest quiet, as the two lines of the desktop splash.
+ */
+private fun greeting(text: String, accent: String, quiet: TextStyle, loud: TextStyle): AnnotatedString = buildAnnotatedString {
+    val lines = text.split('\n')
+    val loudAt = lines.indexOfLast { accent in it }.takeIf { it >= 0 } ?: lines.lastIndex
+    lines.forEachIndexed { index, line ->
+        val style = if (index == loudAt) loud else quiet
+        withStyle(style.toParagraphStyle().copy(textAlign = TextAlign.Center)) {
+            withStyle(style.toSpanStyle()) { append(line) }
         }
     }
 }

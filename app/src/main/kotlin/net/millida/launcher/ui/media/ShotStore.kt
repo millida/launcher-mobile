@@ -10,17 +10,18 @@ import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import net.millida.launcher.core.i18n.I18n
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trPlural
 import net.millida.launcher.core.media.Screenshot
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
-import java.util.Locale
 
 private const val GALLERY_FOLDER = "Millida"
 private const val DAY_MS = 24L * 60 * 60 * 1000
-private val RUSSIAN: Locale = Locale.forLanguageTag("ru")
 
 internal val Screenshot.key: String get() = "$profileId/$name"
 
@@ -47,10 +48,10 @@ internal suspend fun saveToGallery(
     }
     val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
     val row = resolver.insert(collection, values)
-        ?: throw GalleryError("Галерея не приняла снимок — проверь свободное место")
+        ?: throw GalleryError(tr("Галерея не приняла снимок — проверь свободное место"))
     try {
         val output = resolver.openOutputStream(row)
-            ?: throw GalleryError("Галерея не открылась на запись — повтори через минуту")
+            ?: throw GalleryError(tr("Галерея не открылась на запись — повтори через минуту"))
         output.use { target -> source.inputStream().use { it.copyTo(target) } }
         val ready = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
         resolver.update(row, ready, null, null)
@@ -63,7 +64,7 @@ internal suspend fun saveToGallery(
 /** Before Android 10 the gallery needs a storage permission, so the player picks the place in the system dialog. */
 internal suspend fun copyToDocument(context: Context, source: File, target: Uri) = withContext(Dispatchers.IO) {
     val output = context.contentResolver.openOutputStream(target)
-        ?: throw GalleryError("Файл не открылся на запись — выбери другую папку")
+        ?: throw GalleryError(tr("Файл не открылся на запись — выбери другую папку"))
     output.use { stream -> source.inputStream().use { it.copyTo(stream) } }
 }
 
@@ -75,7 +76,7 @@ internal suspend fun failureOf(block: suspend () -> Unit): String? = try {
 } catch (error: GalleryError) {
     error.message
 } catch (error: Throwable) {
-    "Снимок не сохранился — проверь свободное место и повтори"
+    tr("Снимок не сохранился — проверь свободное место и повтори")
 }
 
 internal fun startOfDay(millis: Long): Long {
@@ -89,24 +90,14 @@ internal fun startOfDay(millis: Long): Long {
 }
 
 internal fun dayLabel(day: Long, now: Long = System.currentTimeMillis()): String {
-    if (day <= 0L) return "Без даты"
+    if (day <= 0L) return tr("Без даты")
     val days = Math.round((startOfDay(now) - day).toDouble() / DAY_MS)
-    if (days == 0L) return "Сегодня"
-    if (days == 1L) return "Вчера"
+    if (days == 0L) return tr("Сегодня")
+    if (days == 1L) return tr("Вчера")
     val sameYear = Calendar.getInstance().apply { timeInMillis = now }.get(Calendar.YEAR) ==
         Calendar.getInstance().apply { timeInMillis = day }.get(Calendar.YEAR)
     val pattern = if (sameYear) "d MMMM" else "d MMMM yyyy"
-    return SimpleDateFormat(pattern, RUSSIAN).format(Date(day))
+    return SimpleDateFormat(pattern, I18n.javaLocale).format(Date(day))
 }
 
-internal fun shotsCount(count: Int): String {
-    val tens = count % 100
-    val ones = count % 10
-    val word = when {
-        tens in 11..14 -> "снимков"
-        ones == 1 -> "снимок"
-        ones in 2..4 -> "снимка"
-        else -> "снимков"
-    }
-    return "$count $word"
-}
+internal fun shotsCount(count: Int): String = "$count " + trPlural(count, tr("снимок"), tr("снимка"), tr("снимков"))

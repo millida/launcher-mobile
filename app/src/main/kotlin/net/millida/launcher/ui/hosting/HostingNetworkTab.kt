@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import net.millida.launcher.HostingToolsModel
 import net.millida.launcher.core.hosting.HostingPort
 import net.millida.launcher.core.hosting.HostingToolAccess
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.forServer
 import net.millida.launcher.ui.MBottomSheet
 import net.millida.launcher.ui.MButtonRow
@@ -70,7 +71,7 @@ fun HostingNetworkTab(serverId: String, tools: HostingToolsModel) {
             if (access == null) {
                 items(3, key = { "skeleton-$it" }) { MSkeleton(height = 120.dp) }
             } else {
-                item(key = "address") { AddressCard(access.address, onCopy = { copy("Адрес", access.address) }) }
+                item(key = "address") { AddressCard(access.address, onCopy = { copy(tr("Адрес"), access.address) }) }
                 item(key = "slug") {
                     SlugCard(
                         access = access,
@@ -90,19 +91,19 @@ fun HostingNetworkTab(serverId: String, tools: HostingToolsModel) {
             }
             item(key = "ports-head") {
                 ToolsHead(
-                    title = "Дополнительные порты",
-                    subtitle = network?.let { "Занято ${it.ports.size} из ${it.limit}" },
+                    title = tr("Дополнительные порты"),
+                    subtitle = network?.let { tr("Занято {size} из {limit}", it.ports.size, it.limit) },
                     action = {
                         if (portsOpen) {
                             MSecondaryButton(
-                                "Выдать",
+                                tr("Выдать"),
                                 onClick = { portSheet = true },
                                 enabled = network != null && network.ports.size < limit,
                                 icon = MIcons.plus,
                                 size = MButtonSize.Small,
                             )
                         } else if (network != null || state?.error != null) {
-                            ToolsLockButton("Выдать") { locked = "Дополнительные порты" }
+                            ToolsLockButton(tr("Выдать")) { locked = tr("Дополнительные порты") }
                         }
                     },
                 )
@@ -115,8 +116,8 @@ fun HostingNetworkTab(serverId: String, tools: HostingToolsModel) {
                 network == null -> items(2, key = { "ports-skeleton-$it" }) { MSkeletonRow() }
                 network.ports.isEmpty() -> item(key = "ports-empty") {
                     MListRow(
-                        title = "Портов нет",
-                        subtitle = if (portsOpen) "Нужны голосовому чату, карте и ботам" else "На этом тарифе портов нет",
+                        title = tr("Портов нет"),
+                        subtitle = if (portsOpen) tr("Нужны голосовому чату, карте и ботам") else tr("На этом тарифе портов нет"),
                         icon = MIcons.link,
                     )
                 }
@@ -132,12 +133,12 @@ fun HostingNetworkTab(serverId: String, tools: HostingToolsModel) {
                             subtitle = port.note.ifBlank { null },
                             icon = MIcons.link,
                             trailing = {
-                                MIconButton(MIcons.copy, onClick = { copy("Адрес", line) }, label = "Скопировать $line")
+                                MIconButton(MIcons.copy, onClick = { copy(tr("Адрес"), line) }, label = tr("Скопировать {line}", line))
                                 MIconButton(
                                     MIcons.trash,
                                     onClick = { freeing = port },
                                     enabled = tools.key(serverId, "network:port:${port.port}") !in busy,
-                                    label = "Освободить порт ${port.port}",
+                                    label = tr("Освободить порт {port}", port.port),
                                 )
                             },
                         )
@@ -149,9 +150,9 @@ fun HostingNetworkTab(serverId: String, tools: HostingToolsModel) {
 
     slugAsk?.let { slug ->
         MConfirmDialog(
-            title = "Сменить адрес?",
-            text = "Старый адрес перестанет работать у всех, кто его сохранил",
-            confirm = "Сменить",
+            title = tr("Сменить адрес?"),
+            text = tr("Старый адрес перестанет работать у всех, кто его сохранил"),
+            confirm = tr("Сменить"),
             onConfirm = {
                 slugAsk = null
                 tools.changeAddress(serverId, slug)
@@ -162,9 +163,9 @@ fun HostingNetworkTab(serverId: String, tools: HostingToolsModel) {
 
     if (unbind) {
         MConfirmDialog(
-            title = "Отвязать домен?",
-            text = "Игроки больше не зайдут по ${access?.customDomain.orEmpty()}",
-            confirm = "Отвязать",
+            title = tr("Отвязать домен?"),
+            text = tr("Игроки больше не зайдут по {0}", access?.customDomain.orEmpty()),
+            confirm = tr("Отвязать"),
             onConfirm = {
                 unbind = false
                 tools.setDomain(serverId, "")
@@ -175,9 +176,9 @@ fun HostingNetworkTab(serverId: String, tools: HostingToolsModel) {
 
     freeing?.let { port ->
         MConfirmDialog(
-            title = "Освободить порт ${port.port}?",
-            text = "Плагин или мод на этом порту перестанет быть доступен",
-            confirm = "Освободить",
+            title = tr("Освободить порт {port}?", port.port),
+            text = tr("Плагин или мод на этом порту перестанет быть доступен"),
+            confirm = tr("Освободить"),
             onConfirm = {
                 freeing = null
                 tools.removePort(serverId, port.port)
@@ -189,16 +190,16 @@ fun HostingNetworkTab(serverId: String, tools: HostingToolsModel) {
     if (portSheet) {
         var note by remember { mutableStateOf("") }
         val working = tools.key(serverId, "network:port") in busy
-        MBottomSheet(onDismiss = { portSheet = false }, title = "Выдать порт") {
+        MBottomSheet(onDismiss = { portSheet = false }, title = tr("Выдать порт")) {
             MField(
                 value = note,
                 onValueChange = { note = it.take(PORT_NOTE_MAX) },
-                placeholder = "Подпись, например «голосовой чат»",
+                placeholder = tr("Подпись, например «голосовой чат»"),
                 imeAction = ImeAction.Done,
             )
             Spacer(Modifier.height(14.dp))
             MPrimaryButton(
-                "Выдать порт",
+                tr("Выдать порт"),
                 onClick = { tools.addPort(serverId, note) { portSheet = false } },
                 modifier = Modifier.fillMaxWidth(),
                 icon = MIcons.plus,
@@ -218,11 +219,11 @@ private const val PORT_NOTE_MAX = 60
 private fun AddressCard(address: String, onCopy: () -> Unit) {
     val colors = millida
     MCard {
-        MSectionTitle("КАК ЗАХОДЯТ ИГРОКИ")
+        MSectionTitle(tr("КАК ЗАХОДЯТ ИГРОКИ"))
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                address.ifBlank { "Адрес появится после запуска" },
+                address.ifBlank { tr("Адрес появится после запуска") },
                 modifier = Modifier.weight(1f),
                 style = if (address.isBlank()) MillidaType.body else MillidaType.pixel,
                 color = if (address.isBlank()) colors.fgSubtle else colors.accentText,
@@ -231,7 +232,7 @@ private fun AddressCard(address: String, onCopy: () -> Unit) {
             )
             if (address.isNotBlank()) {
                 Spacer(Modifier.width(10.dp))
-                MIconButton(MIcons.copy, onClick = onCopy, label = "Скопировать адрес")
+                MIconButton(MIcons.copy, onClick = onCopy, label = tr("Скопировать адрес"))
             }
         }
     }
@@ -245,7 +246,7 @@ private fun SlugCard(access: HostingToolAccess, working: Boolean, onApply: (Stri
     val clean = draft.trim()
     val ready = clean.length >= SLUG_MIN && !clean.startsWith("-") && !clean.endsWith("-") && clean != access.slug && !working
     MCard {
-        MSectionTitle("КОРОТКИЙ АДРЕС")
+        MSectionTitle(tr("КОРОТКИЙ АДРЕС"))
         Spacer(Modifier.height(8.dp))
         MField(
             value = draft,
@@ -260,7 +261,7 @@ private fun SlugCard(access: HostingToolAccess, working: Boolean, onApply: (Stri
         }
         Spacer(Modifier.height(10.dp))
         MSecondaryButton(
-            "Сменить",
+            tr("Сменить"),
             onClick = { onApply(clean) },
             enabled = ready,
             size = MButtonSize.Small,
@@ -282,7 +283,7 @@ private fun DomainCard(
     val clean = draft.trim().lowercase()
     val ready = clean.contains('.') && clean != current && !working
     MCard {
-        MSectionTitle("СВОЙ ДОМЕН")
+        MSectionTitle(tr("СВОЙ ДОМЕН"))
         Spacer(Modifier.height(8.dp))
         MField(
             value = draft,
@@ -298,14 +299,14 @@ private fun DomainCard(
         Spacer(Modifier.height(10.dp))
         MButtonRow {
             MSecondaryButton(
-                "Привязать",
+                tr("Привязать"),
                 onClick = { onBind(clean) },
                 enabled = ready,
                 size = MButtonSize.Small,
                 loading = working,
             )
             if (current.isNotBlank()) {
-                MTextButton("Отвязать", onClick = onUnbind, enabled = !working, color = colors.danger)
+                MTextButton(tr("Отвязать"), onClick = onUnbind, enabled = !working, color = colors.danger)
             }
         }
     }

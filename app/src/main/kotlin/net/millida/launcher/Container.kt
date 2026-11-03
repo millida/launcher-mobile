@@ -24,6 +24,7 @@ import net.millida.launcher.core.content.LocalContentImport
 import net.millida.launcher.core.cosmetics.MillidaMod
 import net.millida.launcher.core.friends.FriendsClient
 import net.millida.launcher.core.hosting.HostingClient
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.maintenance.Dedupe
 import net.millida.launcher.core.media.Screenshots
 import net.millida.launcher.core.media.UiSounds
@@ -31,6 +32,7 @@ import net.millida.launcher.core.packs.MillidaPacks
 import net.millida.launcher.core.packs.PackInstaller
 import net.millida.launcher.core.packs.Packs
 import net.millida.launcher.core.packs.PhoneFit
+import net.millida.launcher.core.profile.BuildFiles
 import net.millida.launcher.core.profile.BuildMetaStore
 import net.millida.launcher.core.profile.BuildOps
 import net.millida.launcher.core.profile.PlaytimeStore
@@ -69,6 +71,7 @@ import net.millida.launcher.core.rating.RatingClient
 import net.millida.launcher.core.runtime.HostAbi
 import net.millida.launcher.core.runtime.RuntimeImport
 import net.millida.launcher.core.runtime.RuntimeInstaller
+import net.millida.launcher.core.runtime.runtimeManifestUrl
 import net.millida.launcher.runtime.GameRunner
 import net.millida.launcher.ui.UiSoundPlayer
 import java.io.File
@@ -100,8 +103,10 @@ const val RUNTIME_ASSET = "millida-runtime.zip"
 /** The install steps of every Forge since 1.13 run on Java 17 and newer. */
 private const val PROCESSOR_JAVA = 17
 
+fun gameLayout(context: Context): GameLayout = GameLayout(File(context.filesDir, "game"))
+
 class Container(private val context: Context) {
-    val layout: GameLayout = GameLayout(File(context.filesDir, "game"))
+    val layout: GameLayout = gameLayout(context)
     val downloader = Downloader()
     val resolver = VersionResolver(layout, downloader)
     val installer = GameInstaller(layout, downloader, resolver)
@@ -110,6 +115,7 @@ class Container(private val context: Context) {
     }
     val accounts = AccountStore(layout)
     val content = ProfileContent(layout)
+    val buildFiles = BuildFiles(layout)
     val worlds = Worlds(layout)
     val gameLogs = GameLogs(layout)
     val catalog = Catalog(downloader)
@@ -134,8 +140,10 @@ class Container(private val context: Context) {
      * file to hand a player instead of two, and the first launch unpacks it
      * itself.
      */
+    // The pack inside the application is built for 64-bit ARM; a 32-bit phone takes its runtime from the manifest.
     val bundledRuntime: Boolean by lazy {
-        runCatching { context.assets.list("")?.contains(RUNTIME_ASSET) == true }.getOrDefault(false)
+        HostAbi.game(Build.SUPPORTED_ABIS.toList()) != HostAbi.ARM32 &&
+            runCatching { context.assets.list("")?.contains(RUNTIME_ASSET) == true }.getOrDefault(false)
     }
 
     fun openBundledRuntime(): java.io.InputStream? =
@@ -161,13 +169,16 @@ class Container(private val context: Context) {
     val localContent = LocalContentImport(layout, catalogLookup)
     val dedupe = Dedupe(listOf(layout.profiles))
     val packApi = MillidaPacks(downloader, millidaAuth)
+    val cellularGate = CellularGate(context)
     val packs = Packs(
         layout,
         profiles,
         downloader,
         packApi,
-        PackInstaller(layout, profiles, downloader, ModpackLoader { kind -> loaderInstaller(kind) }),
+        PackInstaller(layout, profiles, downloader, ModpackLoader { kind -> loaderInstaller(kind) }, gate = cellularGate),
+        gate = cellularGate,
     )
+
     val hosting = HostingClient(millidaAuth, vault)
     val friends = FriendsClient(millidaAuth)
     val wallet = CabinetWalletClient(millidaAuth)
@@ -181,7 +192,7 @@ class Container(private val context: Context) {
      * The cloud keeps the shape of a build, not its files: the phone and the
      * computer both rebuild the content from the catalogue.
      */
-    val cloud = CloudSync(millidaAuth, ProfileBuilds(profiles, buildMeta), NoPrefs, deviceName = Build.MODEL ?: "Телефон")
+    val cloud = CloudSync(millidaAuth, ProfileBuilds(profiles, buildMeta), NoPrefs, deviceName = Build.MODEL ?: tr("Телефон"))
 
     val fabric = MetaLoaderInstaller.fabric(layout, downloader)
     val quilt = MetaLoaderInstaller.quilt(layout, downloader)
@@ -226,7 +237,7 @@ class Container(private val context: Context) {
     }
 
     fun runtimeInstaller(): RuntimeInstaller = runtime ?: synchronized(this) {
-        runtime ?: RuntimeInstaller(layout, downloader).also { runtime = it }
+        runtime ?: RuntimeInstaller(layout, downloader, runtimeManifestUrl(runner.abi)).also { runtime = it }
     }
 
     fun deviceMemory(): DeviceMemory {
@@ -243,7 +254,7 @@ class Container(private val context: Context) {
         append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
         append(" · Android ").append(Build.VERSION.RELEASE)
         append(" · ").append(HostAbi.describe(Build.SUPPORTED_ABIS.toList()))
-        append(" · ").append(deviceMemory().totalMb).append(" МБ")
+        append(" · ").append(tr("{0} МБ", deviceMemory().totalMb))
     }
 
     companion object {

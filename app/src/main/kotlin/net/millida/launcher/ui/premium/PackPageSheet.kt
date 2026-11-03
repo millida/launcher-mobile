@@ -32,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.core.hub.HealthLine
 import net.millida.launcher.core.hub.HealthTone
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.premium.PackSource
 import net.millida.launcher.core.premium.Premium
 import net.millida.launcher.core.premium.PremiumAction
@@ -79,7 +80,7 @@ internal fun PackPageSheet(model: LauncherViewModel) {
     val sub = model.premium.subscriptionOf(page)
     val detail = page.detail
     val plans = detail?.let { Premium.plans(it, premium.plan) }.orEmpty()
-    val includes = detail?.let { Premium.includes(it) } ?: if (pack.hasServer) listOf("Сервер сборки") else emptyList()
+    val includes = detail?.let { Premium.includes(it) } ?: if (pack.hasServer) listOf(tr("Сервер сборки")) else emptyList()
     val tiles = Premium.tiles(pack, detail?.updatedAt)
     val shots = page.shots
     val patches = detail?.patches.orEmpty()
@@ -106,8 +107,8 @@ internal fun PackPageSheet(model: LauncherViewModel) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             when {
-                pack.inSubscription -> MBadge("По подписке", colors.warning, colors.warningSoft, icon = MIcons.crown)
-                pack.source == PackSource.CATALOG && pack.accessRequired -> MBadge("Платная", colors.warning, colors.warningSoft, icon = MIcons.crown)
+                pack.inSubscription -> MBadge(tr("По подписке"), colors.warning, colors.warningSoft, icon = MIcons.crown)
+                pack.source == PackSource.CATALOG && pack.accessRequired -> MBadge(tr("Платная"), colors.warning, colors.warningSoft, icon = MIcons.crown)
             }
             pack.ageRating?.let { MBadge(it, colors.fgMuted, colors.surface2) }
         }
@@ -137,10 +138,10 @@ internal fun PackPageSheet(model: LauncherViewModel) {
             }
         }
         if (includes.isNotEmpty()) {
-            Block("ЧТО ВХОДИТ") { Checks(includes) }
+            Block(tr("ЧТО ВХОДИТ")) { Checks(includes) }
         }
         if (plans.isNotEmpty()) {
-            Block("ПОДПИСКА") {
+            Block(tr("ПОДПИСКА")) {
                 plans.forEach { tier ->
                     MCard(background = colors.surface2, contentPadding = 12.dp) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -157,7 +158,7 @@ internal fun PackPageSheet(model: LauncherViewModel) {
             }
         }
         if (patches.isNotEmpty()) {
-            Block("ОБНОВЛЕНИЯ") {
+            Block(tr("ОБНОВЛЕНИЯ")) {
                 patches.forEach { patch ->
                     val day = Premium.untilText(patch.date)
                     Row(Modifier.padding(vertical = 4.dp)) {
@@ -188,14 +189,24 @@ internal fun PackPageSheet(model: LauncherViewModel) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MIcon(MIcons.alert, size = 18.dp, color = colors.warning)
                     Spacer(Modifier.width(8.dp))
-                    Text("Страница не догрузилась", modifier = Modifier.weight(1f), style = MillidaType.small, color = colors.fgMuted)
-                    MTextButton("Повторить", onClick = { model.premium.retryPage() }, icon = MIcons.refresh)
+                    Text(tr("Страница не догрузилась"), modifier = Modifier.weight(1f), style = MillidaType.small, color = colors.fgMuted)
+                    MTextButton(tr("Повторить"), onClick = { model.premium.retryPage() }, icon = MIcons.refresh)
                 }
             }
         }
+        premium.showcase?.let { showcase ->
+            Spacer(Modifier.height(16.dp))
+            PremiumMoreRow(
+                packs = listOfNotNull(showcase.featured) + showcase.rest,
+                current = pack.slug,
+                plan = premium.plan,
+                onOpen = model.premium::open,
+                fill = false,
+            )
+        }
         Spacer(Modifier.height(14.dp))
         Text(
-            "Доступ к сборке: моды скачиваются при установке. Не продукт Mojang." + (pack.ageRating?.let { " $it" } ?: ""),
+            tr("Доступ к сборке: моды скачиваются при установке. Не продукт Mojang.") + (pack.ageRating?.let { " $it" } ?: ""),
             style = MillidaType.small,
             color = colors.fgFaint,
         )
@@ -205,7 +216,7 @@ internal fun PackPageSheet(model: LauncherViewModel) {
         BugSheet(
             sending = support.sendingBug,
             onSend = { kind, text, attach, _ ->
-                model.support.sendBug(kind, "Сборка «${pack.title}» (${pack.slug ?: pack.id}): $text", attach) { reporting = false }
+                model.support.sendBug(kind, tr("Сборка «{title}» ({0}): {text}", pack.title, pack.slug ?: pack.id, text), attach) { reporting = false }
             },
             onDismiss = { reporting = false },
         )
@@ -266,16 +277,16 @@ internal fun BuyLine(
 internal fun BuyButton(action: PremiumAction, waiting: Boolean, asking: Boolean, onPrimary: () -> Unit) {
     when {
         waiting && (action is PremiumAction.Subscribe || action is PremiumAction.Buy) -> MButton(
-            text = "Ждём оплату",
+            text = tr("Ждём оплату"),
             onClick = {},
             variant = MButtonVariant.Running,
             icon = MIcons.clock,
             enabled = false,
         )
-        action is PremiumAction.Install -> MPrimaryButton("Установить", onClick = onPrimary, icon = MIcons.download)
-        action is PremiumAction.Soon -> MPrimaryButton("Скоро", onClick = {}, icon = MIcons.download, enabled = false)
-        action is PremiumAction.Subscribe -> MPrimaryButton("Оформить", onClick = onPrimary, icon = MIcons.crown, loading = asking)
-        action is PremiumAction.Buy -> MPrimaryButton("Купить", onClick = onPrimary, icon = MIcons.gem, loading = asking)
+        action is PremiumAction.Install -> MPrimaryButton(tr("Установить"), onClick = onPrimary, icon = MIcons.download)
+        action is PremiumAction.Soon -> MPrimaryButton(tr("Скоро"), onClick = {}, icon = MIcons.download, enabled = false)
+        action is PremiumAction.Subscribe -> MPrimaryButton(tr("Оформить"), onClick = onPrimary, icon = MIcons.crown, loading = asking)
+        action is PremiumAction.Buy -> MPrimaryButton(tr("Купить"), onClick = onPrimary, icon = MIcons.gem, loading = asking)
         else -> Unit
     }
 }
@@ -302,7 +313,7 @@ internal fun CancelRow(sub: PremiumSubscription?, onManage: (PremiumSubscription
         Spacer(Modifier.width(8.dp))
         Text(note, modifier = Modifier.weight(1f), style = MillidaType.small, color = colors.fgSubtle)
         if (sub != null && sub.manageUrl != null) {
-            MTextButton(if (sub.active) "Отменить" else "Подписка", onClick = { onManage(sub) })
+            MTextButton(if (sub.active) tr("Отменить") else tr("Подписка"), onClick = { onManage(sub) })
         }
     }
 }
@@ -326,9 +337,9 @@ internal fun HealthRow(health: HealthLine, onReport: () -> Unit) {
             }
         }
         health.pct?.let { pct ->
-            Text("$pct% запусков без ошибок", style = MillidaType.small, color = colors.fgSubtle, maxLines = 1)
+            Text(tr("{pct}% запусков без ошибок", pct), style = MillidaType.small, color = colors.fgSubtle, maxLines = 1)
         }
-        if (health.report) MTextButton("Сообщить о проблеме", onClick = onReport, icon = MIcons.alert)
+        if (health.report) MTextButton(tr("Сообщить о проблеме"), onClick = onReport, icon = MIcons.alert)
     }
 }
 
@@ -338,7 +349,7 @@ private fun Frames(shots: List<String>, video: String?, onVideo: (String) -> Uni
     val colors = millida
     if (video != null) {
         MButton(
-            text = "Видео",
+            text = tr("Видео"),
             onClick = { onVideo(video) },
             modifier = Modifier.fillMaxWidth(),
             variant = MButtonVariant.Secondary,

@@ -84,6 +84,21 @@ class TelemetryKindTest {
         }
     }
 
+    @Test
+    fun `конфликт модов и проверка Pojav не попадают в auth`() {
+        val cases = listOf(
+            "net.fabricmc.loader.impl.discovery.ModResolutionException: Mod resolution failed\n\tat com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService" to "mod_conflict",
+            "net.fabricmc.loader.impl.FormattedException: java.lang.RuntimeException: Duplicate mod: minecraft" to "mod_conflict",
+            "Incompatible mods found! Unauthorized access ignored" to "mod_conflict",
+            "java.lang.RuntimeException: It appears that you are using PojavLauncher. This is not supported." to "pojav_check",
+            "401 Unauthorized: Invalid session" to "auth",
+            "Вход Millida истёк" to "auth",
+            "com.mojang.authlib.exceptions.InvalidCredentialsException: Invalid credentials" to "auth",
+            "Loading com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService ok" to "other",
+        )
+        for ((text, kind) in cases) assertEquals(text, kind, FailureKind.of(text))
+    }
+
     private fun core(store: TelemetryStore, clock: () -> Long) = TelemetryCore(
         store = store,
         client = TelemetryClient(MillidaAuth(OkHttpClient(), MemoryVault(), server.url("/").toString().trimEnd('/'))),
@@ -202,6 +217,44 @@ class TelemetryKindTest {
                 listOf("[Krypton] glGetError() always return GL_NOERROR", "[millida] java.lang.Exception: наше"),
                 null,
                 "в логе только шум — причины нет",
+            ),
+            Case(
+                listOf(
+                    "[19:42:45] [main/ERROR]: Incompatible mods found!",
+                    "net.fabricmc.loader.impl.FormattedException: Some of your mods are incompatible with the game or each other!",
+                    "A potential solution has been determined, this may resolve your problem:",
+                    "\t - Install fabric-api, version 0.145.1 or later.",
+                    "More details:",
+                    "\t - Mod 'Better Advancements' (betteradvancements) 0.6.0.78 requires any version of fabric-api, which is missing!",
+                    "\t - Mod 'EntityCulling' (entityculling) 1.11.3 requires any version of fabric-api, which is missing!",
+                    "\tat net.fabricmc.loader.impl.FormattedException.ofLocalized(FormattedException.java:51)",
+                    "\tat net.fabricmc.loader.impl.FabricLoaderImpl.setup(FabricLoaderImpl.java:211)",
+                ),
+                "Incompatible mods — Mod 'Better Advancements' (betteradvancements) 0.6.0.78 requires any version of fabric-api, which is missing!",
+                "самый частый сбой запуска: причиной была строка стека ofLocalized, а не мод, которому не хватает зависимости",
+            ),
+            Case(
+                listOf(
+                    "net.fabricmc.loader.impl.FormattedException: Mod discovery failed!",
+                    "\tat net.fabricmc.loader.impl.FormattedException.ofLocalized(FormattedException.java:51)",
+                ),
+                "net.fabricmc.loader.impl.FormattedException: Mod discovery failed!",
+                "без списка модов остаётся само сообщение загрузчика",
+            ),
+            Case(
+                listOf(
+                    "[15:03:30] [Render thread/INFO]: SDL [SYSTEM]: App version: 26.3",
+                    "FATAL ERROR in native method: [LWJGL] Thread[#3,Render thread,5,main]: No context is current or a function " +
+                        "that is not available in the current context was called. The JVM will abort execution.",
+                    "\tat org.lwjgl.opengl.GL33C.glVertexAttribDivisor(Native Method)",
+                    "\tat com.mojang.renderpearl.backend.opengl.VertexArray\$Emulated.bind(VertexArray.java:99)",
+                    "#",
+                    "# A fatal error has been detected by the Java Runtime Environment:",
+                ),
+                "FATAL ERROR in native method: [LWJGL] Thread[#3,Render thread,5,main]: No context is current or a function " +
+                    "that is not available in the current context was called. The JVM will abort execution. " +
+                    "— at org.lwjgl.opengl.GL33C.glVertexAttribDivisor(Native Method)",
+                "обрыв LWJGL сам не называет функцию GL: без неё нельзя понять, чего не хватило рендереру",
             ),
         )
         for (case in cases) {

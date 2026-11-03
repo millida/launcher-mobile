@@ -54,6 +54,7 @@ import net.millida.launcher.core.friends.OverlayLine
 import net.millida.launcher.core.friends.OverlaySnapshot
 import net.millida.launcher.core.friends.OverlayThread
 import net.millida.launcher.core.friends.OverlayWire
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.social.EltText
 
 /** The setting, with the desktop's name for it. */
@@ -63,8 +64,8 @@ internal fun FriendsOverlaySwitch() {
     val prefs = remember { Prefs(context) }
     var on by remember { mutableStateOf(prefs.friendsOverlay) }
     MSwitchRow(
-        "Чат друзей поверх игры",
-        "Сообщения и звонки — не выходя из игры",
+        tr("Чат друзей поверх игры"),
+        tr("Сообщения и звонки — не выходя из игры"),
         on,
     ) { next ->
         prefs.friendsOverlay = next
@@ -107,7 +108,7 @@ internal fun GameFriendsLayer(
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val next = pendingMic
         pendingMic = null
-        if (granted) next?.invoke() else notice = "Без микрофона разговор не начать — разреши его в настройках телефона"
+        if (granted) next?.invoke() else notice = tr("Без микрофона разговор не начать — разреши его в настройках телефона")
     }
     fun withMic(action: () -> Unit) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
@@ -160,11 +161,11 @@ internal fun GameFriendsLayer(
             invite?.takeIf { call == null }?.let { room ->
                 FloatingCard(
                     title = room.title,
-                    text = "${room.text} зовёт в разговор",
+                    text = tr("{text} зовёт в разговор", room.text),
                     onTap = null,
                     trailing = {
-                        MTextButton("Зайти", onClick = { withMic { client.joinRoom(room.id, room.title) } }, icon = MIcons.headset)
-                        MIconButton(MIcons.close, onClick = client::dismissRoomInvite, label = "Скрыть")
+                        MTextButton(tr("Зайти"), onClick = { withMic { client.joinRoom(room.id, room.title) } }, icon = MIcons.headset)
+                        MIconButton(MIcons.close, onClick = client::dismissRoomInvite, label = tr("Скрыть"))
                     },
                 )
             }
@@ -177,7 +178,7 @@ internal fun GameFriendsLayer(
                         client.open(arrived.kind, arrived.id, arrived.title)
                         onOpen()
                     },
-                    trailing = { MIconButton(MIcons.close, onClick = { card = null }, label = "Скрыть") },
+                    trailing = { MIconButton(MIcons.close, onClick = { card = null }, label = tr("Скрыть")) },
                 )
             }
             notice?.let { text ->
@@ -244,10 +245,10 @@ private fun GameCallCard(
     val colors = millida
     val incoming = call.status == "incoming"
     val line = when (call.status) {
-        "incoming" -> "Входящий звонок"
-        "outgoing" -> "Звоним…"
-        "connecting" -> "Соединяем…"
-        else -> call.quality.ifEmpty { "Разговор" }
+        "incoming" -> tr("Входящий звонок")
+        "outgoing" -> tr("Звоним…")
+        "connecting" -> tr("Соединяем…")
+        else -> call.quality.ifEmpty { tr("Разговор") }
     }
     Row(
         Modifier
@@ -263,22 +264,22 @@ private fun GameCallCard(
             Text(line, style = MillidaType.small, color = colors.fgSubtle, maxLines = 1)
         }
         if (incoming) {
-            MIconButton(MIcons.phone, onClick = onAccept, tint = colors.onAccent, background = colors.accent, label = "Ответить")
-            MIconButton(MIcons.phoneHang, onClick = onDecline, tint = colors.danger, label = "Отклонить")
+            MIconButton(MIcons.phone, onClick = onAccept, tint = colors.onAccent, background = colors.accent, label = tr("Ответить"))
+            MIconButton(MIcons.phoneHang, onClick = onDecline, tint = colors.danger, label = tr("Отклонить"))
         } else {
             MIconButton(
                 if (call.muted) MIcons.micOff else MIcons.mic,
                 onClick = onMute,
                 tint = if (call.muted) colors.danger else colors.fgSubtle,
-                label = if (call.muted) "Включить микрофон" else "Выключить микрофон",
+                label = if (call.muted) tr("Включить микрофон") else tr("Выключить микрофон"),
             )
             MIconButton(
                 if (call.speaker) MIcons.volume else MIcons.mute,
                 onClick = onSpeaker,
                 tint = if (call.speaker) colors.accentText else colors.fgSubtle,
-                label = "Громкая связь",
+                label = tr("Громкая связь"),
             )
-            MIconButton(MIcons.phoneHang, onClick = onHangUp, tint = colors.danger, label = "Завершить")
+            MIconButton(MIcons.phoneHang, onClick = onHangUp, tint = colors.danger, label = tr("Завершить"))
         }
     }
 }
@@ -307,14 +308,14 @@ private fun FriendsPanel(
                 Spacer(Modifier.width(8.dp))
             }
             Text(
-                thread?.title?.ifEmpty { "Переписка" } ?: "Друзья",
+                thread?.title?.ifEmpty { tr("Переписка") } ?: tr("Друзья"),
                 modifier = Modifier.weight(1f),
                 style = MillidaType.barTitle,
                 color = colors.fg,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            MIconButton(MIcons.close, onClick = onClose, label = "Закрыть")
+            MIconButton(MIcons.close, onClick = onClose, label = tr("Закрыть"))
         }
         Box(
             Modifier
@@ -324,11 +325,11 @@ private fun FriendsPanel(
         ) {
             when {
                 snapshot == null || (!connected && snapshot.dialogs.isEmpty()) -> PanelSkeleton()
-                !snapshot.signedIn -> PanelText("Войди в Millida в лаунчере — и переписка появится здесь")
+                !snapshot.signedIn -> PanelText(tr("Войди в Millida в лаунчере — и переписка появится здесь"))
                 thread != null -> ThreadView(thread, onSend)
                 snapshot.loading && snapshot.dialogs.isEmpty() -> PanelSkeleton()
                 snapshot.error != null && snapshot.dialogs.isEmpty() -> PanelText(snapshot.error.orEmpty())
-                snapshot.dialogs.isEmpty() -> PanelText("Пока не с кем переписываться — добавь друзей в лаунчере")
+                snapshot.dialogs.isEmpty() -> PanelText(tr("Пока не с кем переписываться — добавь друзей в лаунчере"))
                 else -> DialogList(snapshot.dialogs, onOpenThread)
             }
         }
@@ -355,7 +356,7 @@ private fun DialogList(dialogs: List<OverlayDialog>, onOpen: (OverlayDialog) -> 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         items(sorted, key = { it.key }) { dialog ->
             MListRow(
-                title = dialog.title.ifEmpty { "Переписка" },
+                title = dialog.title.ifEmpty { tr("Переписка") },
                 subtitle = dialog.subtitle.ifEmpty { null },
                 onClick = { onOpen(dialog) },
                 plate = false,
@@ -382,7 +383,7 @@ private fun ThreadView(thread: OverlayThread, onSend: (String) -> Unit) {
             when {
                 thread.lines.isEmpty() && thread.loading -> PanelSkeleton()
                 thread.lines.isEmpty() && thread.error != null -> PanelText(thread.error.orEmpty())
-                thread.lines.isEmpty() -> PanelText("Напиши первым")
+                thread.lines.isEmpty() -> PanelText(tr("Напиши первым"))
                 else -> LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     items(thread.lines, key = { it.id.ifEmpty { "t" + it.ts } }) { line ->
                         OverlayBubble(line, room = thread.kind == OverlayWire.KIND_ROOM)
@@ -402,7 +403,7 @@ private fun ThreadView(thread: OverlayThread, onSend: (String) -> Unit) {
                 MField(
                     value = draft,
                     onValueChange = { draft = it },
-                    placeholder = "Сообщение",
+                    placeholder = tr("Сообщение"),
                     imeAction = ImeAction.Send,
                     onImeAction = {
                         if (draft.isNotBlank() && !thread.sending) {
@@ -422,7 +423,7 @@ private fun ThreadView(thread: OverlayThread, onSend: (String) -> Unit) {
                 tint = colors.onAccent,
                 background = colors.accent,
                 enabled = draft.isNotBlank() && !thread.sending,
-                label = "Отправить",
+                label = tr("Отправить"),
             )
         }
     }
@@ -433,10 +434,10 @@ private fun OverlayBubble(line: OverlayLine, room: Boolean) {
     val colors = millida
     val callLog = CallLogs.parse(line.text)
     val body = when {
-        line.deleted -> "Сообщение удалено"
+        line.deleted -> tr("Сообщение удалено")
         callLog != null -> CallLogs.title(callLog, line.me)
-        line.attachment == "voice" -> "Голосовое сообщение"
-        line.attachment != null && line.text.isEmpty() -> "Картинка"
+        line.attachment == "voice" -> tr("Голосовое сообщение")
+        line.attachment != null && line.text.isEmpty() -> tr("Картинка")
         else -> line.text
     }
     Column(

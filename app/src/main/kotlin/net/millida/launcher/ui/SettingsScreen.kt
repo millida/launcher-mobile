@@ -44,33 +44,40 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import net.millida.launcher.BuildConfig
 import net.millida.launcher.Prefs
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.SupportState
 import net.millida.launcher.UiState
 import net.millida.launcher.core.MemoryTuning
+import net.millida.launcher.core.game.GameResolution
 import net.millida.launcher.core.SettingsSearch
-import net.millida.launcher.core.media.LiveWallpaper
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.core.update.UpdateVerdict
+import net.millida.launcher.core.hud.ControlScheme
+import net.millida.launcher.core.hud.HudLayout
 import net.millida.launcher.ui.settings.AccentPicker
+import net.millida.launcher.ui.settings.AccountSettingsSection
 import net.millida.launcher.ui.settings.BugSheet
 import net.millida.launcher.ui.settings.CrashCard
-import net.millida.launcher.ui.settings.FoldHeader
+import net.millida.launcher.ui.settings.LanguagePicker
 import net.millida.launcher.ui.settings.ReviewSheet
 import net.millida.launcher.ui.settings.SettingHead
 import net.millida.launcher.ui.settings.SettingHint
 import net.millida.launcher.ui.settings.SettingsSection
+import net.millida.launcher.ui.settings.AnimationSettings
+import net.millida.launcher.ui.settings.AppIconPicker
+import net.millida.launcher.ui.settings.BackdropSettings
+import net.millida.launcher.ui.settings.ThemeRow
+import net.millida.launcher.ui.settings.rememberLookModel
 import net.millida.launcher.ui.social.FriendNotifySection
-import net.millida.launcher.ui.settings.discardWallpaper
-import net.millida.launcher.ui.settings.importWallpaper
 import net.millida.launcher.ui.settings.rememberTrackedAction
 import net.millida.launcher.ui.settings.stepIn
 import java.util.Locale
 import kotlin.math.roundToInt
-import net.millida.launcher.ui.home.LiveWallpaperSheet
 import net.millida.launcher.ui.home.LobbySettingsSection
 
 private enum class SettingsSheet { None, Renderer, Review, Bug }
@@ -78,31 +85,46 @@ private enum class SettingsSheet { None, Renderer, Review, Bug }
 private const val UPDATABLE_PREVIEW = 3
 
 /** Words each section is found by, the desktop's row titles and `keys` (Settings.tsx). */
-private val SEARCH_WORDS = mapOf(
-    "look" to "Внешний вид Тема Тёмная Светлая Авто Цвет кнопок акцент Фон главной обои картинка Живые обои Анимация",
-    "sound" to "Звук и вибрация Звуки Minecraft интерфейса клики тишина уведомления Громкость Вибрация",
-    "lobby" to "Лобби Музыка сейчас радио включить выключить Включать при запуске мелодия фоновая " +
-        "Громкость радио Гайд по лаунчеру обучение тур подсказки помощь",
-    "notify" to "Уведомления друзья сообщения звонки",
-    "game" to "Игра Рендерер графика Чувствительность обзора Память игре оперативная",
-    "cloud" to "Облако сборок синхронизация ПК телефон",
-    "update" to "Обновления Millida Mobile версия",
-    "storage" to "Хранилище Кэш Копии модов очистить место",
-    "advanced-layer" to "Дополнительно Оконный слой",
-    "advanced-runtime" to "Дополнительно Рантайм Java",
-    "device" to "Об устройстве Телефон Android Процессор Память Лаунчер",
-    "feedback" to "Обратная связь Написать отзыв Сообщить об ошибке поддержка диагностика " +
-        "Анонимная статистика телеметрия данные приватность",
+private val SEARCH_WORDS get() = mapOf(
+    "look" to tr("Язык интерфейса") + " language " + tr("Внешний вид Тема Тёмная Светлая Авто Цвет кнопок акцент Тема лаунчера PLUS Diamond премиум золото алмаз") + " " +
+        tr("Фон главной обои картинка свой фон галерея Живые обои Случайный фон Иконка приложения значок ярлык") + " " +
+        tr("Искра Пламя Аметист Легенда Золото Алмаз Анимация Персонаж танцует Живой фон"),
+    "sound" to tr("Звук и вибрация Звуки Minecraft интерфейса клики тишина уведомления Громкость Вибрация"),
+    "lobby" to tr("Лобби Музыка сейчас радио включить выключить Включать при запуске мелодия фоновая") + " " +
+        tr("Громкость радио Гайд по лаунчеру обучение тур подсказки помощь"),
+    "notify" to tr("Уведомления друзья сообщения звонки"),
+    "game" to tr("Игра Рендерер графика Чувствительность обзора Память игре оперативная"),
+    "controls" to tr("Управление Касание Прицел Кнопки Размер кнопок Прозрачность Инверсия автопрыжок вибрация удар Bedrock"),
+    "cloud" to tr("Облако сборок синхронизация ПК телефон"),
+    "account" to tr("Аккаунт Баланс кошелёк деньги пополнить рубли Видно в профиле приватность Игровая активность") + " " +
+        tr("Серверы Часы в игре Список друзей Достижения Маркет Эмоции вдвоём Кто может звать") + " " +
+        tr("Статистика использования телеметрия данные"),
+    "update" to tr("Обновления Millida Mobile версия"),
+    "storage" to tr("Хранилище Кэш Копии модов очистить место"),
+    "advanced-layer" to tr("Дополнительно Оконный слой"),
+    "advanced-runtime" to tr("Дополнительно Рантайм Java"),
+    "device" to tr("Об устройстве Телефон Android Процессор Память Лаунчер"),
+    "feedback" to tr("Обратная связь Написать отзыв Сообщить об ошибке поддержка диагностика Отчёты о вылетах"),
+    "more" to tr("Ещё Аккаунт Кабинет Награды новости Коды сборок Скриншоты Bedrock Премиум Платные сборки"),
 )
+
+/** The launcher's own window layer is a development tool: see Prefs.windowLayer. */
+private const val LAYER_SECTION = "advanced-layer"
+
+/** The portrait «Ещё» root tab already holds these entries; only landscape needs them here. */
+private const val MORE_SECTION = "more"
 
 @Composable
 fun SettingsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Modifier) {
     val support by model.support.state.collectAsStateWithLifecycle()
     var sheet by rememberSaveable { mutableStateOf(SettingsSheet.None) }
-    var advanced by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
-    val searching = query.isNotBlank()
-    val shown: (String) -> Boolean = { key -> SettingsSearch.matches(query, SEARCH_WORDS[key].orEmpty()) }
+    val wide = LocalWideLayout.current
+    val shown: (String) -> Boolean = { key ->
+        (key != LAYER_SECTION || BuildConfig.TEST_HOOKS) &&
+            (key != MORE_SECTION || wide) &&
+            SettingsSearch.matches(query, SEARCH_WORDS[key].orEmpty())
+    }
     val found = SEARCH_WORDS.keys.any { key -> shown(key) && (key != "notify" || state.millidaSignedIn) }
 
     LaunchedEffect(Unit) { model.measureCache() }
@@ -111,47 +133,16 @@ fun SettingsScreen(state: UiState, model: LauncherViewModel, modifier: Modifier 
         SettingsPart(key, state, model, support) { next -> sheet = next }
     }
 
-    if (LocalWideLayout.current) {
-        WideSettingsPage(
-            query = query,
-            onQuery = { query = it },
-            visible = { key -> shown(key) && (key != "notify" || state.millidaSignedIn) },
-            found = found,
-            crash = support.crash != null,
-            onBack = { model.back() },
-            part = part,
-            modifier = modifier,
-        )
-    } else {
-        MScreen(modifier = modifier, title = "Настройки", onBack = { model.back() }) {
-            item(key = "search") {
-                MField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = "Найти настройку",
-                    leadingIcon = MIcons.search,
-                    clearable = true,
-                )
-            }
-            if (support.crash != null) item(key = "crash") { part("crash") }
-            if (shown("look")) item(key = "look") { part("look") }
-            if (shown("sound")) item(key = "sound") { part("sound") }
-            if (shown("lobby")) item(key = "lobby") { part("lobby") }
-            if (state.millidaSignedIn && shown("notify")) item(key = "notify") { part("notify") }
-            if (shown("game")) item(key = "game") { part("game") }
-            if (shown("cloud")) item(key = "cloud") { part("cloud") }
-            if (shown("update")) item(key = "update") { part("update") }
-            if (shown("storage")) item(key = "storage") { part("storage") }
-            if (!searching) item(key = "advanced") { FoldHeader("Дополнительно", advanced, { advanced = !advanced }, stepIn()) }
-            if (advanced || searching) {
-                if (shown("advanced-layer")) item(key = "advanced-layer") { part("advanced-layer") }
-                if (shown("advanced-runtime")) item(key = "advanced-runtime") { part("advanced-runtime") }
-            }
-            if (shown("device")) item(key = "device") { part("device") }
-            if (!found) item(key = "nothing") { MEmptyState(MIcons.search, "Ничего не нашлось") }
-            if (shown("feedback")) item(key = "feedback") { part("feedback") }
-        }
-    }
+    SettingsPage(
+        query = query,
+        onQuery = { query = it },
+        visible = { key -> shown(key) && (key != "notify" || state.millidaSignedIn) },
+        found = found,
+        crash = support.crash != null,
+        onBack = { model.back() },
+        part = part,
+        modifier = modifier,
+    )
 
     val close = { sheet = SettingsSheet.None }
     when (sheet) {
@@ -190,7 +181,7 @@ private fun LazyItemScope.SettingsPart(
                 note = note,
                 onCopy = {
                     clipboard.setText(AnnotatedString(note.text))
-                    model.notice("Отчёт скопирован — вставь его в чат поддержки")
+                    model.notice(tr("Отчёт скопирован — вставь его в чат поддержки"))
                 },
                 onSend = model.support::sendCrash,
                 onDismiss = model.support::dismissCrash,
@@ -201,13 +192,16 @@ private fun LazyItemScope.SettingsPart(
         "sound" -> SoundSection(state, model, stepIn())
         "lobby" -> LobbySettingsSection(model, stepIn())
         "notify" -> FriendNotifySection(model, stepIn())
+        "account" -> AccountSettingsSection(state, model, stepIn())
         "game" -> GameSection(state, model, { onSheet(SettingsSheet.Renderer) }, stepIn())
+        "controls" -> ControlsSection(state, model, stepIn())
         "cloud" -> CloudSection(state, model, stepIn())
         "update" -> UpdateSection(state, model, stepIn())
         "storage" -> StorageSection(state, model, stepIn())
         "advanced-layer" -> WindowLayerSection(state, model, stepIn())
         "advanced-runtime" -> RuntimeSection(state, model, stepIn())
         "device" -> DeviceSection(state, model, stepIn())
+        MORE_SECTION -> MoreSectionsSettings(state, model, stepIn())
         "feedback" -> FeedbackSection(
             support = support,
             model = model,
@@ -219,18 +213,22 @@ private fun LazyItemScope.SettingsPart(
 }
 
 /**
- * The desktop's settings tabs (Settings.tsx `SECTIONS`) with the blocks this
- * launcher has. The desktop's «Аккаунт» holds nothing the phone keeps, so it
- * has no tab here; the phone's «Дополнительно» blocks sit where the desktop
- * keeps the same things: the window layer and old versions in «Игра», the
- * runtime next to Java in «Файлы».
+ * The desktop's settings tabs (Settings.tsx `sections`) in its order, on the
+ * phone as on a tablet. The desktop's «Клипы» record the game's last minutes,
+ * which the phone does not do, so that tab is left out. The window layer sits
+ * in «Игра» and the runtime next to Java in «Файлы», where the desktop keeps
+ * the same things; «Ещё» holds the entries the lobby menu used to have.
  */
-private enum class SettingsGroup(val label: String, val keys: List<String>) {
-    Look("Вид", listOf("look")),
-    Sound("Звук", listOf("sound", "lobby", "notify")),
-    Game("Игра", listOf("game", "advanced-layer")),
-    Files("Файлы", listOf("storage", "advanced-runtime", "cloud")),
-    About("Лаунчер", listOf("update", "device", "feedback")),
+private enum class SettingsGroup(private val labelKey: String, val keys: List<String>) {
+    Look(trKey("Вид"), listOf("look")),
+    Sound(trKey("Звук"), listOf("sound", "lobby", "notify")),
+    Game(trKey("Игра"), listOf("game", "controls", "advanced-layer")),
+    Files(trKey("Файлы"), listOf("storage", "advanced-runtime", "cloud")),
+    Account(trKey("Аккаунт"), listOf("account")),
+    About(trKey("Лаунчер"), listOf("update", "device", "feedback")),
+    More(trKey("Ещё"), listOf(MORE_SECTION)),;
+
+    val label: String get() = tr(labelKey)
 }
 
 /** `.s2 { max-width: 860px }`, and below an 860px window the desktop narrows its search to 160px. */
@@ -241,11 +239,12 @@ private val WIDE_SEARCH_NARROW_WIDTH = 160.dp
 
 /**
  * The desktop settings page (`#s-settings .s2`): the head with the search
- * scrolls away while the tabs stick to the top, as `.s2-tabs` does.
+ * scrolls away while the tabs stick to the top, as `.s2-tabs` does. A phone
+ * held upright gets the same tabs under its own top bar.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun WideSettingsPage(
+private fun SettingsPage(
     query: String,
     onQuery: (String) -> Unit,
     visible: (String) -> Boolean,
@@ -256,18 +255,20 @@ private fun WideSettingsPage(
     modifier: Modifier,
 ) {
     val colors = millida
+    val wide = LocalWideLayout.current
     val searching = query.isNotBlank()
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val lifted by remember(listState) { derivedStateOf { listState.canScrollBackward } }
-    var group by rememberSaveable { mutableStateOf(SettingsGroup.Look) }
+    var picked by rememberSaveable { mutableStateOf(SettingsGroup.Look) }
+    val group = if (picked == SettingsGroup.More && !wide) SettingsGroup.Look else picked
     val searchWidth = if (LocalConfiguration.current.screenWidthDp < WIDE_NARROW_WINDOW_DP) {
         WIDE_SEARCH_NARROW_WIDTH
     } else {
         WIDE_SEARCH_WIDTH
     }
     val pick = { next: SettingsGroup ->
-        group = next
+        picked = next
         onQuery("")
         scope.launch { listState.scrollToItem(0) }
         Unit
@@ -278,23 +279,35 @@ private fun WideSettingsPage(
             .fillMaxSize()
             .background(colors.bg),
     ) {
-        WideTopBar(title = null, onBack = onBack, divider = lifted)
+        if (wide) {
+            WideTopBar(title = null, onBack = onBack, divider = lifted)
+        } else {
+            MTopBar(title = tr("Настройки"), onBack = onBack, divider = lifted)
+        }
         BoxWithConstraints(
             Modifier
                 .weight(1f)
                 .fillMaxWidth(),
         ) {
-            val side = max(screenPadding, (maxWidth - WIDE_PAGE_MAX_WIDTH) / 2)
+            val side = if (wide) max(screenPadding, (maxWidth - WIDE_PAGE_MAX_WIDTH) / 2) else screenPadding
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 state = listState,
-                contentPadding = PaddingValues(start = side, end = side, top = 14.dp, bottom = 28.dp),
+                contentPadding = PaddingValues(start = side, end = side, top = if (wide) 14.dp else 6.dp, bottom = 28.dp + wideBottomInset()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item(key = "head") {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!wide) {
+                        MField(
+                            value = query,
+                            onValueChange = onQuery,
+                            placeholder = tr("Найти настройку"),
+                            leadingIcon = MIcons.search,
+                            clearable = true,
+                        )
+                    } else Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "Настройки",
+                            tr("Настройки"),
                             modifier = Modifier.weight(1f),
                             style = MillidaType.screenTitle,
                             color = colors.fg,
@@ -304,7 +317,7 @@ private fun WideSettingsPage(
                         MField(
                             value = query,
                             onValueChange = onQuery,
-                            placeholder = "Найти настройку",
+                            placeholder = tr("Найти настройку"),
                             modifier = Modifier.width(searchWidth),
                             leadingIcon = MIcons.search,
                             clearable = true,
@@ -320,7 +333,7 @@ private fun WideSettingsPage(
                             .padding(vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        SettingsGroup.entries.forEach { tab ->
+                        SettingsGroup.entries.filter { it != SettingsGroup.More || wide }.forEach { tab ->
                             MChip(
                                 text = tab.label,
                                 selected = !searching && tab == group,
@@ -340,7 +353,7 @@ private fun WideSettingsPage(
                             keys.forEach { key -> item(key = key) { part(key) } }
                         }
                     }
-                    if (!found) item(key = "nothing") { MEmptyState(MIcons.search, "Ничего не нашлось") }
+                    if (!found) item(key = "nothing") { MEmptyState(MIcons.search, tr("Ничего не нашлось")) }
                 } else {
                     group.keys.filter(visible).forEach { key -> item(key = key) { part(key) } }
                 }
@@ -351,30 +364,15 @@ private fun WideSettingsPage(
 
 @Composable
 private fun LookSection(state: UiState, model: LauncherViewModel, modifier: Modifier) {
-    val colors = millida
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val pickWallpaper = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        scope.launch {
-            try {
-                val file = importWallpaper(context, uri)
-                val previous = model.ui.value.wallpaperPath
-                model.setWallpaper(file.absolutePath)
-                if (previous != file.absolutePath) discardWallpaper(context, previous)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                model.notice(error.message ?: "Картинка не сохранилась — выбери другую", isError = true)
-            }
-        }
-    }
-    val hasWallpaper = state.wallpaperPath.isNotEmpty()
-    val live = LiveWallpaper.of(state.liveWallpaper)
-    var pickingLive by rememberSaveable { mutableStateOf(false) }
+    val look = rememberLookModel()
+    val lookState by look.state.collectAsStateWithLifecycle()
 
-    SettingsSection("ВНЕШНИЙ ВИД", modifier) {
-        SettingHead("Тема")
+    SettingsSection(tr("ВНЕШНИЙ ВИД"), modifier) {
+        SettingHead(tr("Язык интерфейса"))
+        Spacer(Modifier.height(8.dp))
+        LanguagePicker()
+        Spacer(Modifier.height(16.dp))
+        SettingHead(tr("Тема"))
         Spacer(Modifier.height(8.dp))
         MSegmented(
             options = listOf(Prefs.THEME_SYSTEM, Prefs.THEME_DARK, Prefs.THEME_LIGHT),
@@ -382,91 +380,35 @@ private fun LookSection(state: UiState, model: LauncherViewModel, modifier: Modi
             onSelect = model::setThemeMode,
             label = { mode ->
                 when (mode) {
-                    Prefs.THEME_DARK -> "Тёмная"
-                    Prefs.THEME_LIGHT -> "Светлая"
-                    else -> "Авто"
+                    Prefs.THEME_DARK -> tr("Тёмная")
+                    Prefs.THEME_LIGHT -> tr("Светлая")
+                    else -> tr("Авто")
                 }
             },
         )
         Spacer(Modifier.height(16.dp))
-        SettingHead("Цвет кнопок")
+        SettingHead(tr("Цвет кнопок"))
         Spacer(Modifier.height(8.dp))
-        AccentPicker(state.accentId, state.accentCustom, model::setAccentId, model::setCustomAccent)
+        AccentPicker(
+            selectedId = state.accentId,
+            customHex = state.accentCustom,
+            onPick = { id -> look.pickAccent(id, model) },
+            onCustom = { hex -> look.pickAccent(hex, model) },
+            tier = lookState.access.tier,
+            onPremium = { id -> look.pickPremiumAccent(id, model) },
+        )
         Spacer(Modifier.height(16.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(width = 64.dp, height = 44.dp)
-                    .pixelSurface(colors.inset, MillidaCut.control, colors.wellFrame()),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (hasWallpaper) {
-                    MLocalImage(state.wallpaperPath, Modifier.fillMaxSize().clip(MillidaShape.control))
-                } else {
-                    MIcon(MIcons.image, size = 22.dp)
-                }
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Фон главной", style = MillidaType.rowTitle, color = colors.fg, maxLines = 1)
-                Text(
-                    when {
-                        live != null -> live.name
-                        hasWallpaper -> "Своя картинка"
-                        else -> "Стандартный"
-                    },
-                    style = MillidaType.small,
-                    color = colors.fgSubtle,
-                    maxLines = 1,
-                )
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        MButtonRow {
-            MSecondaryButton(
-                "Выбрать",
-                onClick = { pickWallpaper.launch("image/*") },
-                icon = MIcons.image,
-                size = MButtonSize.Small,
-            )
-            if (hasWallpaper) {
-                MTextButton(
-                    "Убрать",
-                    onClick = {
-                        val previous = state.wallpaperPath
-                        model.setWallpaper("")
-                        scope.launch { discardWallpaper(context, previous) }
-                    },
-                )
-            }
-        }
+        SettingHead(tr("Тема лаунчера"))
         Spacer(Modifier.height(8.dp))
-        MListRow(
-            title = "Живые обои",
-            subtitle = live?.name ?: "Выкл",
-            icon = MIcons.play,
-            plate = false,
-            onClick = { pickingLive = true },
-        )
-        if (live != null) {
-            MSwitchRow(
-                "Анимация",
-                if (LocalReducedMotion.current) "Выключена в настройках телефона" else null,
-                state.wallpaperMotion,
-                model::setWallpaperMotion,
-            )
-        }
-    }
-
-    if (pickingLive) {
-        LiveWallpaperSheet(
-            selected = state.liveWallpaper,
-            onPick = { id ->
-                model.setLiveWallpaper(id)
-                pickingLive = false
-            },
-            onDismiss = { pickingLive = false },
-        )
+        ThemeRow(lookState.theme, lookState.access.tier, onPick = { theme -> look.chooseTheme(theme, model) })
+        Spacer(Modifier.height(16.dp))
+        BackdropSettings(state, model)
+        Spacer(Modifier.height(16.dp))
+        SettingHead(tr("Иконка приложения"))
+        Spacer(Modifier.height(8.dp))
+        AppIconPicker(lookState.icon, lookState.access, onPick = { icon -> look.pickIcon(icon, model) })
+        Spacer(Modifier.height(16.dp))
+        AnimationSettings(state, model)
     }
 }
 
@@ -475,8 +417,8 @@ private fun SoundSection(state: UiState, model: LauncherViewModel, modifier: Mod
     val feedback = LocalUiFeedback.current
     val preview = if (state.soundMode == Prefs.SOUND_ALL) UiSoundEvent.Click else UiSoundEvent.Notify
 
-    SettingsSection("ЗВУК И ВИБРАЦИЯ", modifier) {
-        SettingHead("Звуки Minecraft")
+    SettingsSection(tr("ЗВУК И ВИБРАЦИЯ"), modifier) {
+        SettingHead(tr("Звуки Minecraft"))
         Spacer(Modifier.height(8.dp))
         MSegmented(
             options = listOf(Prefs.SOUND_OFF, Prefs.SOUND_NOTIFY, Prefs.SOUND_ALL),
@@ -488,23 +430,23 @@ private fun SoundSection(state: UiState, model: LauncherViewModel, modifier: Mod
             },
             label = { mode ->
                 when (mode) {
-                    Prefs.SOUND_OFF -> "Выкл"
-                    Prefs.SOUND_ALL -> "Все"
-                    else -> "Важные"
+                    Prefs.SOUND_OFF -> tr("Выкл")
+                    Prefs.SOUND_ALL -> tr("Все")
+                    else -> tr("Важные")
                 }
             },
         )
         Spacer(Modifier.height(6.dp))
         SettingHint(
             when (state.soundMode) {
-                Prefs.SOUND_OFF -> "Лаунчер молчит"
-                Prefs.SOUND_ALL -> "Сообщения, награды и нажатия"
-                else -> "Сообщения, награды, запуск игры"
+                Prefs.SOUND_OFF -> tr("Лаунчер молчит")
+                Prefs.SOUND_ALL -> tr("Сообщения, награды и нажатия")
+                else -> tr("Сообщения, награды, запуск игры")
             },
         )
         if (state.soundMode != Prefs.SOUND_OFF) {
             Spacer(Modifier.height(14.dp))
-            SettingHead("Громкость", "${state.soundVolume}%")
+            SettingHead(tr("Громкость"), "${state.soundVolume}%")
             Row(verticalAlignment = Alignment.CenterVertically) {
                 MSlider(
                     value = state.soundVolume / 100f,
@@ -520,13 +462,63 @@ private fun SoundSection(state: UiState, model: LauncherViewModel, modifier: Mod
                     MIcons.play,
                     onClick = { feedback.play(UiSoundEvent.Achievement) },
                     tint = millida.fg,
-                    label = "Проверить звук",
+                    label = tr("Проверить звук"),
                 )
             }
         }
         Spacer(Modifier.height(8.dp))
         MDivider()
-        MSwitchRow("Вибрация", null, state.haptics, model::setHaptics)
+        MSwitchRow(tr("Вибрация"), null, state.haptics, model::setHaptics)
+    }
+}
+
+@Composable
+private fun ControlsSection(state: UiState, model: LauncherViewModel, modifier: Modifier) {
+    LaunchedEffect(Unit) { model.loadControls() }
+    var look by remember(state.lookSensitivity) { mutableFloatStateOf(state.lookSensitivity) }
+    val layout = state.controls
+    SettingsSection(tr("УПРАВЛЕНИЕ"), modifier) {
+        if (layout == null) {
+            MSkeleton(96.dp)
+            return@SettingsSection
+        }
+        var size by remember(layout.shownSizeScale) { mutableFloatStateOf(layout.shownSizeScale) }
+        var opacity by remember(layout.shownOpacity) { mutableFloatStateOf(layout.shownOpacity) }
+        MSegmented(
+            options = ControlScheme.entries.toList(),
+            selected = layout.shownScheme,
+            onSelect = { scheme -> model.editControls { it.withScheme(scheme) } },
+            label = { schemeLabel(it) },
+        )
+        Spacer(Modifier.height(10.dp))
+        SettingHead(tr("Размер"), String.format(Locale.ROOT, "%.1f×", size))
+        MSlider(
+            value = size,
+            onValueChange = { size = it },
+            valueRange = HudLayout.MIN_SIZE..HudLayout.MAX_SIZE,
+            onValueChangeFinished = { model.editControls { it.withSizeScale(size) } },
+        )
+        SettingHead(tr("Прозрачность"), "${(opacity * 100).roundToInt()}%")
+        MSlider(
+            value = opacity,
+            onValueChange = { opacity = it },
+            valueRange = HudLayout.MIN_OPACITY..1f,
+            onValueChangeFinished = { model.editControls { it.withOpacity(opacity) } },
+        )
+        SettingHead(tr("Чувствительность обзора"), String.format(Locale.ROOT, "%.1f×", look))
+        MSlider(
+            value = look,
+            onValueChange = { look = it },
+            valueRange = 0.3f..3f,
+            steps = 26,
+            onValueChangeFinished = { model.setSensitivity(look) },
+        )
+        MDivider()
+        MSwitchRow(tr("Инверсия Y"), null, layout.invertY) { on -> model.editControls { it.withInvertY(on) } }
+        MDivider()
+        MSwitchRow(tr("Вибрация"), null, state.haptics, model::setHaptics)
+        MDivider()
+        MSwitchRow(tr("Автопрыжок"), null, state.autoJump, model::setAutoJump)
     }
 }
 
@@ -534,15 +526,19 @@ private fun SoundSection(state: UiState, model: LauncherViewModel, modifier: Mod
 private fun GameSection(state: UiState, model: LauncherViewModel, onPickRenderer: () -> Unit, modifier: Modifier) {
     var look by remember(state.lookSensitivity) { mutableFloatStateOf(state.lookSensitivity) }
     var memory by remember(state.memoryOverrideMb) { mutableIntStateOf(state.memoryOverrideMb) }
+    var resolution by remember(state.resolutionPercent) { mutableIntStateOf(state.resolutionPercent) }
+    var gamepadOpen by remember { mutableStateOf(false) }
     val renderer = state.renderers.firstOrNull { it.id == state.rendererId }
+    if (gamepadOpen) GamepadSheet(model, onDismiss = { gamepadOpen = false })
 
-    SettingsSection("ИГРА", modifier) {
+    SettingsSection(tr("ИГРА"), modifier) {
         MListRow(
-            title = "Рендерер",
+            title = tr("Рендерер"),
             subtitle = when {
-                state.renderers.isEmpty() -> "Появится после установки рантайма"
+                state.renderers.isEmpty() -> tr("Появится после установки рантайма")
+                state.rendererAuto -> tr("Авто — под телефон и версию игры")
                 renderer != null -> renderer.label.ifEmpty { renderer.id }
-                else -> "Выбери"
+                else -> tr("Выбери")
             },
             icon = MIcons.monitor,
             plate = false,
@@ -550,8 +546,8 @@ private fun GameSection(state: UiState, model: LauncherViewModel, onPickRenderer
         )
         MDivider()
         MSwitchRow(
-            "Безопасная графика",
-            "Лёгкие настройки — меньше артефактов",
+            tr("Безопасная графика"),
+            tr("Лёгкие настройки — меньше артефактов"),
             state.safeGraphics,
             model::setSafeGraphics,
         )
@@ -560,8 +556,19 @@ private fun GameSection(state: UiState, model: LauncherViewModel, onPickRenderer
         MDivider()
         TouchControlsSwitch()
         MDivider()
+        DirectKeyboardSwitch()
+        MDivider()
+        MListRow(
+            title = tr("Геймпад"),
+            subtitle = tr("Что делает каждая кнопка"),
+            icon = MIcons.menuKey,
+            plate = false,
+            onClick = { gamepadOpen = true },
+        )
+        MDivider()
         Spacer(Modifier.height(10.dp))
-        SettingHead("Чувствительность обзора", String.format(Locale.ROOT, "%.1f×", look))
+        SettingHead(tr("Чувствительность обзора"), String.format(Locale.ROOT, "%.1f×", look))
+
         MSlider(
             value = look,
             onValueChange = { look = it },
@@ -570,7 +577,7 @@ private fun GameSection(state: UiState, model: LauncherViewModel, onPickRenderer
             onValueChangeFinished = { model.setSensitivity(look) },
         )
         Spacer(Modifier.height(8.dp))
-        SettingHead("Память игре", if (memory > 0) "$memory МБ" else "Авто")
+        SettingHead(tr("Память игре"), if (memory > 0) tr("{memory} МБ", memory) else tr("Авто"))
         MSlider(
             value = memory.toFloat(),
             onValueChange = { memory = (it / MemoryTuning.SETTING_STEP_MB).roundToInt() * MemoryTuning.SETTING_STEP_MB },
@@ -578,18 +585,47 @@ private fun GameSection(state: UiState, model: LauncherViewModel, onPickRenderer
             steps = state.memoryCeilingMb / MemoryTuning.SETTING_STEP_MB - 1,
             onValueChangeFinished = { model.setMemoryOverride(memory) },
         )
-        SettingHint("Авто — лаунчер решит сам по свободной памяти")
+        SettingHint(tr("Авто — лаунчер решит сам по свободной памяти"))
+        Spacer(Modifier.height(8.dp))
+        SettingHead(tr("Разрешение игры"), "$resolution%")
+        MSlider(
+            value = resolution.toFloat(),
+            onValueChange = { resolution = GameResolution.clamp(it.roundToInt()) },
+            valueRange = GameResolution.MIN.toFloat()..GameResolution.FULL.toFloat(),
+            steps = (GameResolution.FULL - GameResolution.MIN) / GameResolution.STEP - 1,
+            onValueChangeFinished = { model.setResolutionPercent(resolution) },
+        )
+        SettingHint(tr("Меньше — больше кадров, картинка мягче. Действует со следующего запуска"))
+        MDivider()
+        MSwitchRow(
+            tr("Максимальная частота экрана"),
+            tr("Снимает предел 60 кадров на экранах 90–144 Гц; телефон греется сильнее"),
+            state.highRefresh,
+            model::setHighRefresh,
+        )
     }
 }
 
 @Composable
 private fun RendererSheet(state: UiState, model: LauncherViewModel, onDismiss: () -> Unit) {
     val colors = millida
-    MBottomSheet(onDismiss = onDismiss, title = "Рендерер") {
-        SettingHint("Чёрный экран или артефакты — выбери другой и запусти снова")
+    MBottomSheet(onDismiss = onDismiss, title = tr("Рендерер")) {
+        SettingHint(tr("Чёрный экран или артефакты — выбери другой и запусти снова"))
         Spacer(Modifier.height(8.dp))
+        MListRow(
+            title = tr("Авто"),
+            subtitle = tr("Подберём под видеочип и версию игры, после сбоя возьмём другой"),
+            plate = false,
+            onClick = {
+                model.setRenderer("")
+                onDismiss()
+            },
+            trailing = {
+                if (state.rendererAuto) MIcon(MIcons.check, size = 18.dp, color = colors.accentText)
+            },
+        )
         state.renderers.forEach { option ->
-            val on = option.id == state.rendererId
+            val on = !state.rendererAuto && option.id == state.rendererId
             MListRow(
                 title = option.label.ifEmpty { option.id },
                 plate = false,
@@ -607,16 +643,16 @@ private fun RendererSheet(state: UiState, model: LauncherViewModel, onDismiss: (
 
 @Composable
 private fun CloudSection(state: UiState, model: LauncherViewModel, modifier: Modifier) {
-    SettingsSection("ОБЛАКО СБОРОК", modifier) {
+    SettingsSection(tr("ОБЛАКО СБОРОК"), modifier) {
         if (!state.millidaSignedIn) {
             MListRow(
-                title = "Нужен вход Millida",
-                subtitle = "Сборки ездят между телефоном и ПК",
+                title = tr("Нужен вход Millida"),
+                subtitle = tr("Сборки ездят между телефоном и ПК"),
                 icon = MIcons.lock,
                 plate = false,
             )
             Spacer(Modifier.height(8.dp))
-            MPrimaryButton("Войти", onClick = model::loginMillida, icon = MIcons.login, size = MButtonSize.Small)
+            MPrimaryButton(tr("Войти"), onClick = model::loginMillida, icon = MIcons.login, size = MButtonSize.Small)
         } else {
             CloudControls(state, model)
         }
@@ -632,39 +668,39 @@ private fun CloudControls(state: UiState, model: LauncherViewModel) {
     var confirmUpdate by rememberSaveable { mutableStateOf<String?>(null) }
     var allUpdatable by rememberSaveable { mutableStateOf(false) }
     Column {
-        SettingHint("Уезжает состав сборок, а не файлы модов")
+        SettingHint(tr("Уезжает состав сборок, а не файлы модов"))
         state.cloudStatus?.let { cloud ->
             Spacer(Modifier.height(8.dp))
-            MInfoRow("На телефоне", cloud.localProfiles.toString(), mono = true)
-            MInfoRow("В облаке", cloud.remoteProfiles.toString(), mono = true)
+            MInfoRow(tr("На телефоне"), cloud.localProfiles.toString(), mono = true)
+            MInfoRow(tr("В облаке"), cloud.remoteProfiles.toString(), mono = true)
             if (cloud.missingHere.isNotEmpty()) {
-                MInfoRow("Нет на телефоне", cloud.missingHere.take(3).joinToString(", "))
+                MInfoRow(tr("Нет на телефоне"), cloud.missingHere.take(3).joinToString(", "))
             }
         }
         state.cloudReport?.let { report ->
-            MInfoRow("Забрано", "новых ${report.installed.size}, обновлено ${report.updated.size}")
-            if (report.skipped.isNotEmpty()) MInfoRow("Пропущено", report.skipped.size.toString(), mono = true)
+            MInfoRow(tr("Забрано"), tr("новых {size}, обновлено {size2}", report.installed.size, report.updated.size))
+            if (report.skipped.isNotEmpty()) MInfoRow(tr("Пропущено"), report.skipped.size.toString(), mono = true)
             if (report.failed.isNotEmpty()) {
-                MInfoRow("Ошибки", report.failed.size.toString(), valueColor = millida.danger, mono = true)
+                MInfoRow(tr("Ошибки"), report.failed.size.toString(), valueColor = millida.danger, mono = true)
             }
             val local = state.profiles.map { it.name }.toSet()
             val updatable = report.skipped.map { it.name }.distinct().filter { it in local }
             if (updatable.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                SettingHint("Уже есть на телефоне — обнови нужную")
+                SettingHint(tr("Уже есть на телефоне — обнови нужную"))
                 val shown = if (allUpdatable) updatable else updatable.take(UPDATABLE_PREVIEW)
                 shown.forEach { name ->
                     MListRow(
                         title = name,
                         plate = false,
                         trailing = {
-                            MTextButton("Обновить", onClick = { confirmUpdate = name }, enabled = idle && !pull.running)
+                            MTextButton(tr("Обновить"), onClick = { confirmUpdate = name }, enabled = idle && !pull.running)
                         },
                     )
                 }
                 if (updatable.size > UPDATABLE_PREVIEW) {
                     MTextButton(
-                        if (allUpdatable) "Свернуть" else "Все: ${updatable.size}",
+                        if (allUpdatable) tr("Свернуть") else tr("Все: {size}", updatable.size),
                         onClick = { allUpdatable = !allUpdatable },
                         icon = if (allUpdatable) MIcons.chevronUp else MIcons.chevronDown,
                     )
@@ -674,14 +710,14 @@ private fun CloudControls(state: UiState, model: LauncherViewModel) {
         Spacer(Modifier.height(10.dp))
         MButtonRow {
             MSecondaryButton(
-                "Проверить",
+                tr("Проверить"),
                 onClick = { check.start { model.cloudStatus() } },
                 icon = MIcons.refresh,
                 size = MButtonSize.Small,
                 loading = check.running,
             )
             MSecondaryButton(
-                "Выгрузить",
+                tr("Выгрузить"),
                 onClick = { push.start { model.cloudPush() } },
                 icon = MIcons.upload,
                 size = MButtonSize.Small,
@@ -689,7 +725,7 @@ private fun CloudControls(state: UiState, model: LauncherViewModel) {
                 loading = push.running,
             )
             MPrimaryButton(
-                "Забрать",
+                tr("Забрать"),
                 onClick = { pull.start { model.cloudPull() } },
                 icon = MIcons.download,
                 size = MButtonSize.Small,
@@ -701,9 +737,9 @@ private fun CloudControls(state: UiState, model: LauncherViewModel) {
 
     confirmUpdate?.let { name ->
         MConfirmDialog(
-            title = "Обновить «$name»?",
-            text = "Сборка на телефоне заменится версией из облака",
-            confirm = "Обновить",
+            title = tr("Обновить «{name}»?", name),
+            text = tr("Сборка на телефоне заменится версией из облака"),
+            confirm = tr("Обновить"),
             onConfirm = {
                 confirmUpdate = null
                 pull.start { model.cloudPull(listOf(name)) }
@@ -720,7 +756,7 @@ private fun UpdateSection(state: UiState, model: LauncherViewModel, modifier: Mo
     val download = rememberTrackedAction()
     val checkButton: @Composable () -> Unit = {
         MSecondaryButton(
-            "Проверить",
+            tr("Проверить"),
             onClick = {
                 check.start { model.checkUpdate(manual = true) }
             },
@@ -730,23 +766,39 @@ private fun UpdateSection(state: UiState, model: LauncherViewModel, modifier: Mo
         )
     }
 
-    SettingsSection("ОБНОВЛЕНИЯ", modifier) {
+    SettingsSection(tr("ОБНОВЛЕНИЯ"), modifier) {
         SettingHead("Millida Mobile", state.appVersion)
         Spacer(Modifier.height(6.dp))
+        if (!BuildConfig.SELF_UPDATE) {
+            SettingHint(tr("Обновления приходят через RuStore"))
+            Spacer(Modifier.height(10.dp))
+            MSecondaryButton(
+                tr("Открыть в RuStore"),
+                onClick = { model.checkUpdate(manual = true) },
+                icon = MIcons.externalLink,
+                size = MButtonSize.Small,
+            )
+            if (BuildConfig.PD_CONSENT) {
+                val context = LocalContext.current
+                Spacer(Modifier.height(10.dp))
+                MTextLink(tr("Политика конфиденциальности"), onClick = { model.openLinkOrNotice(context, PRIVACY_URL) })
+            }
+            return@SettingsSection
+        }
         when (val verdict = state.updateVerdict) {
             is UpdateVerdict.Available -> {
                 SettingHint(
-                    "Вышла ${verdict.release.version} · ${humanSize(verdict.release.size)}",
+                    tr("Вышла {version} · {0}", verdict.release.version, humanSize(verdict.release.size)),
                     color = colors.accentText,
                 )
                 Spacer(Modifier.height(10.dp))
                 if (state.updateProgress > 0f) {
                     MProgressBar(state.updateProgress)
                     Spacer(Modifier.height(6.dp))
-                    SettingHint("Качаем: ${(state.updateProgress * 100).roundToInt()}%")
+                    SettingHint(tr("Качаем: {0}%", (state.updateProgress * 100).roundToInt()))
                 } else {
                     MPrimaryButton(
-                        "Обновить",
+                        tr("Обновить"),
                         onClick = { download.start { model.downloadUpdate() } },
                         icon = MIcons.download,
                         loading = download.running,
@@ -757,7 +809,7 @@ private fun UpdateSection(state: UiState, model: LauncherViewModel, modifier: Mo
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MIcon(MIcons.check, size = 16.dp, color = colors.accentText)
                     Spacer(Modifier.width(8.dp))
-                    SettingHint("Стоит последняя версия")
+                    SettingHint(tr("Стоит последняя версия"))
                 }
                 Spacer(Modifier.height(10.dp))
                 checkButton()
@@ -784,15 +836,15 @@ private fun StorageSection(state: UiState, model: LauncherViewModel, modifier: M
     val idle = state.busy == null
     val found = state.duplicateGroups > 0
 
-    SettingsSection("ХРАНИЛИЩЕ", modifier) {
-        SettingHead("Кэш", humanSize(state.cacheBytes))
-        SettingHint("Временные файлы; сборки, миры и снимки не трогаются")
+    SettingsSection(tr("ХРАНИЛИЩЕ"), modifier) {
+        SettingHead(tr("Кэш"), humanSize(state.cacheBytes))
+        SettingHint(tr("Временные файлы; сборки, миры и снимки не трогаются"))
         Spacer(Modifier.height(10.dp))
         if (clear.running) {
             MPixelLoader()
         } else {
             MDangerButton(
-                "Очистить",
+                tr("Очистить"),
                 onClick = { confirmClear = true },
                 icon = MIcons.trash,
                 enabled = idle && state.cacheBytes > 0,
@@ -801,12 +853,12 @@ private fun StorageSection(state: UiState, model: LauncherViewModel, modifier: M
         Spacer(Modifier.height(12.dp))
         MDivider()
         Spacer(Modifier.height(12.dp))
-        SettingHead("Копии модов", if (found) humanSize(state.duplicateBytes) else null)
-        SettingHint(if (found) "Файл останется у каждой сборки, копия — одна" else "Один мод в разных сборках лежит копиями")
+        SettingHead(tr("Копии модов"), if (found) humanSize(state.duplicateBytes) else null)
+        SettingHint(if (found) tr("Файл останется у каждой сборки, копия — одна") else tr("Один мод в разных сборках лежит копиями"))
         Spacer(Modifier.height(10.dp))
         if (found) {
             MPrimaryButton(
-                "Освободить",
+                tr("Освободить"),
                 onClick = { dedupe.start { model.runDedupe() } },
                 size = MButtonSize.Small,
                 enabled = idle,
@@ -814,7 +866,7 @@ private fun StorageSection(state: UiState, model: LauncherViewModel, modifier: M
             )
         } else {
             MSecondaryButton(
-                "Найти копии",
+                tr("Найти копии"),
                 onClick = { scan.start { model.scanDuplicates() } },
                 icon = MIcons.search,
                 size = MButtonSize.Small,
@@ -826,9 +878,9 @@ private fun StorageSection(state: UiState, model: LauncherViewModel, modifier: M
 
     if (confirmClear) {
         MConfirmDialog(
-            title = "Очистить кэш?",
-            text = "Сборки, миры и снимки останутся",
-            confirm = "Очистить",
+            title = tr("Очистить кэш?"),
+            text = tr("Сборки, миры и снимки останутся"),
+            confirm = tr("Очистить"),
             onConfirm = {
                 confirmClear = false
                 clear.start { model.clearCache() }
@@ -840,15 +892,15 @@ private fun StorageSection(state: UiState, model: LauncherViewModel, modifier: M
 
 @Composable
 private fun WindowLayerSection(state: UiState, model: LauncherViewModel, modifier: Modifier) {
-    SettingsSection("ОКОННЫЙ СЛОЙ", modifier) {
+    SettingsSection(tr("ОКОННЫЙ СЛОЙ"), modifier) {
         MSegmented(
             options = listOf(Prefs.LAYER_PACK, Prefs.LAYER_OWN),
             selected = state.windowLayer,
             onSelect = model::setWindowLayer,
-            label = { layer -> if (layer == Prefs.LAYER_OWN) "Свой" else "Готовый" },
+            label = { layer -> if (layer == Prefs.LAYER_OWN) tr("Свой") else tr("Готовый") },
         )
         Spacer(Modifier.height(6.dp))
-        SettingHint("Смени, если игра не открывается или не видит нажатий")
+        SettingHint(tr("Смени, если игра не открывается или не видит нажатий"))
     }
 }
 
@@ -864,15 +916,15 @@ private fun RuntimeSection(state: UiState, model: LauncherViewModel, modifier: M
         if (uri != null) importing.start { model.importRuntime { context.contentResolver.openInputStream(uri) } }
     }
 
-    SettingsSection("РАНТАЙМ", modifier) {
-        MInfoRow("Установлен", state.importedRuntime ?: "нет")
+    SettingsSection(tr("РАНТАЙМ"), modifier) {
+        MInfoRow(tr("Установлен"), state.importedRuntime ?: tr("нет"))
         if (!state.bundledRuntime && state.importedRuntime == null) {
-            SettingHint("Скачается сам при первом запуске игры")
+            SettingHint(tr("Скачается сам при первом запуске игры"))
         }
         Spacer(Modifier.height(10.dp))
         MButtonRow {
             MPrimaryButton(
-                if (state.importedRuntime == null) "Выбрать файл" else "Заменить",
+                if (state.importedRuntime == null) tr("Выбрать файл") else tr("Заменить"),
                 onClick = { picker.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
                 icon = MIcons.folder,
                 size = MButtonSize.Small,
@@ -881,7 +933,7 @@ private fun RuntimeSection(state: UiState, model: LauncherViewModel, modifier: M
             )
             if (state.bundledRuntime) {
                 MSecondaryButton(
-                    "Развернуть",
+                    tr("Развернуть"),
                     onClick = { unpack.start { model.installBundledRuntime(force = true) } },
                     icon = MIcons.refresh,
                     size = MButtonSize.Small,
@@ -890,16 +942,16 @@ private fun RuntimeSection(state: UiState, model: LauncherViewModel, modifier: M
                 )
             }
             if (state.importedRuntime != null) {
-                MDangerButton("Удалить", onClick = { confirmDrop = true }, enabled = idle && !drop.running)
+                MDangerButton(tr("Удалить"), onClick = { confirmDrop = true }, enabled = idle && !drop.running)
             }
         }
     }
 
     if (confirmDrop) {
         MConfirmDialog(
-            title = "Удалить рантайм?",
-            text = "Без него игра не запустится, пока не поставишь снова",
-            confirm = "Удалить",
+            title = tr("Удалить рантайм?"),
+            text = tr("Без него игра не запустится, пока не поставишь снова"),
+            confirm = tr("Удалить"),
             onConfirm = {
                 confirmDrop = false
                 drop.start { model.dropRuntime() }
@@ -914,22 +966,22 @@ private fun DeviceSection(state: UiState, model: LauncherViewModel, modifier: Mo
     val clipboard = LocalClipboardManager.current
     val parts = state.deviceReport.split(" · ")
 
-    SettingsSection("ОБ УСТРОЙСТВЕ", modifier) {
+    SettingsSection(tr("ОБ УСТРОЙСТВЕ"), modifier) {
         if (parts.size >= 4) {
-            MInfoRow("Телефон", parts[0])
+            MInfoRow(tr("Телефон"), parts[0])
             MInfoRow("Android", parts[1].removePrefix("Android "), mono = true)
-            MInfoRow("Процессор", parts[2], mono = true)
-            MInfoRow("Память", parts[3], mono = true)
+            MInfoRow(tr("Процессор"), parts[2], mono = true)
+            MInfoRow(tr("Память"), parts[3], mono = true)
         } else if (state.deviceReport.isNotBlank()) {
-            MInfoRow("Телефон", state.deviceReport)
+            MInfoRow(tr("Телефон"), state.deviceReport)
         }
-        MInfoRow("Лаунчер", state.appVersion, mono = true)
+        MInfoRow(tr("Лаунчер"), state.appVersion, mono = true)
         Spacer(Modifier.height(6.dp))
         MTextButton(
-            "Скопировать",
+            tr("Скопировать"),
             onClick = {
                 clipboard.setText(AnnotatedString("Millida Mobile ${state.appVersion} · ${state.deviceReport}"))
-                model.notice("Скопировано — вставь в чат поддержки")
+                model.notice(tr("Скопировано — вставь в чат поддержки"))
             },
             icon = MIcons.copy,
         )
@@ -944,35 +996,28 @@ private fun FeedbackSection(
     onBug: () -> Unit,
     modifier: Modifier,
 ) {
-    SettingsSection("ОБРАТНАЯ СВЯЗЬ", modifier) {
+    SettingsSection(tr("ОБРАТНАЯ СВЯЗЬ"), modifier) {
         MListRow(
-            title = "Написать отзыв",
-            subtitle = "Оценка и пара слов",
+            title = tr("Написать отзыв"),
+            subtitle = tr("Оценка и пара слов"),
             icon = MIcons.star,
             plate = false,
             onClick = onReview,
         )
         MDivider()
         MListRow(
-            title = "Сообщить об ошибке",
-            subtitle = "С журналом последней игры",
+            title = tr("Сообщить об ошибке"),
+            subtitle = tr("С журналом последней игры"),
             icon = MIcons.flag,
             plate = false,
             onClick = onBug,
         )
         MDivider()
         MSwitchRow(
-            "Отчёты о вылетах",
-            "Без ников, токенов и файлов",
+            tr("Отчёты о вылетах"),
+            tr("Без ников, токенов и файлов"),
             support.crashReports,
             model.support::setCrashReports,
-        )
-        MDivider()
-        MSwitchRow(
-            "Анонимная статистика",
-            "Без ников и файлов — только цифры",
-            support.anonymousStats,
-            model.support::setAnonymousStats,
         )
     }
 }

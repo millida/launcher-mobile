@@ -107,10 +107,14 @@ internal object PxArt {
     val book: String = "..kkkkkkkk...kooooooook..kooooooootk.kooyyyyootk.kooooooootk.kooooooootk.kooooooootk.kooooooootk.kooooooootk.kOttttttttk..kOOOOOOOOk...kkkkkkkk."
     val image: String = ".kkkkkkkkkk.kooooooooookkobbbbbbbbokkobbbwwbbbokkobbbbbbbbokkobbbbbglbokkobgbbglllokkollgllllgokkogllllgggokkooooooooook.kkkkkkkkkk............."
     val map: String = ".kkkkkkkkkk.kttttttttttkktllttbbbttkktlllbbbbttkkttlllbbtttkkttllltrtttkktttllttttktkttbblllllttktbbbbllllttkttttttttttk.kkkkkkkkkk............."
+    val globe: String = "....kkkk......kkbbbbkk...kbblbbbbbk.kbllllbbbbbkkblllbbbllbkkbbllbbllllkkbbblbbblllkkbbbbbbbllbkkbblbbbbbbbk.kbllbbbbbk...kkbbbbkk......kkkk...."
     val server: String = ".kkkkkkkkkk.kddddddddddkkdnnnnnnlldkkdnnnnnnnndkkddddddddddk.kkkkkkkkkk.kddddddddddkkdnnnnnnlldkkdnnnnnnnndkkddddddddddk.kkkkkkkkkk............."
     val blocks: String = ".kkkkkkkkkk.kllllllllllkkllgllllgllkkgglggglgggkkogggoggogokkooooooooookkooOooooOookkoooooOooookkoOooooooookkooooOoooOokkooooooooook.kkkkkkkkkk."
+    val mcGrass: String = "....kkkk......kkllllkk...kllglllllk.kggllllllggkkggggllggggkkgOggggggogkkOOOgOoggookkOOOOOoooookkOnOOOoonook.kOOOOooook...kkOOookk......kkkk...."
     val trophy: String = "..kkkkkkkk...kyyyyyyyyk.kyyywyyyyyykkykywyyyYkykkyyyyyyyYyyk.kkyyyyyYkk....kyyyYk.......kyYk.......kkyYkk.....kyyyyYYk....kYYYYYYk.....kkkkkk..."
     val zap: String = "......kkk........kyyyk......kyyyk......kyyyk......kyyykkk....kyyyyyyyk....kkkyyyk......kyyyk......kyyyk......kyykk........kk...................."
+    val discord: String = "..............kk....kk...kwwkkkkwwk.kwwwwwwwwwwkkwwwwwwwwwwkwwwkkwwkkwwwwwwkkwwkkwwwwwwwwwwwwwwwkwwwwwwwwwwkkwwkkkkkkwwk.kk......kk............."
+    val telegram: String = "..kBBBBBBk...kBBBBBBBBk.kBBBBBBBBBBkBBBBBBBBwwBBBBBBBBwwwwBBBBBwwwwwwwBBBBwwwwwwwwBBBBBBwwswwBBBBBBBBswwBBBBkBBBBsBBBBBk.kBBBBBBBBk...kBBBBBBk.."
     val flame: String = ".....k..........kfk........kffk..k.....kfffkkfk...kfffffkfk..kffffyfffk..kfffyyfffk..kffyyyyffk..kffywwyffk...kfywwyfk.....kffffk.......kkkk...."
     val gift: String = "...kk..kk.....krrkkrrk...kkkrrrrkkk.kwwwwrrwwwwkkwwwwrrwwwwkkssssrrssssk.kwwwrrwwwk..kwwwrrwwwk..kwwwrrwwwk..kwwwrrwwwk..ksssrrsssk...kkkkkkkk.."
     val hammer: String = "..kkkkkk.....kddddddk...kddddddddk..kddddddddnk..kkkookkkk.....kook........kook........kook........kook........kOOk.........kk.................."
@@ -141,6 +145,7 @@ internal object PxArt {
     val paw: String = "..kk....kk...kssk..kssk..ksskk.ksskkkssksskkssks.kkksskkkk.k..kwwwwwwk...kwwwwwwwwk..kwwwwwwwwk..kwwwwwwwwk...kwwkkwwk.....kk..kk..............."
     val looks: String = "....kkkk.......kooook......kooook.....kkooookk...kooooooook..kokooookok..kokooookok...kkokkokk.....kokkok.....kddddddk...kddddddddk...kkkkkkkk.."
     val wsLooks: String = "......................cccc...........cc..cc..............cc.............cc.............cc.............cccc...........cc..cc.........cc....cc.......cc......cc.....cc........cc...cc..........cc..cccccccccccccc..CCCCCCCCCCCCCC................................."
+    val wsShop: String = ".....................cccccc.........cc....cc........c......c......cccccccccccc....cccccccccccc....ccc......ccc....cccccccccccc....cccccCCccccc....cccccCCccccc....cccccccccccc....cccccccccccc....cccccccccccc....CCCCCCCCCCCC.................................."
     val wsSkin: String = ".....cccccc..........cccccc..........c.cc.c..........cccccc..........cccccc......................ccc.cccccc.ccc..ccc.cccccc.ccc..ccc.cccccc.ccc..ccc.cccccc.ccc..CCC.cccccc.CCC......cccCCC..........cccCCC..........cccCCC..........cccCCC....................."
     val wsCape: String = "....................CCCCCCCC........cccccccc........cCcccCcc........cCcccCcc.......ccCcccCccc......ccCcccCccc......ccCcccCccc......ccCcccCccc.....cccCcccCcccc....cccCcccCcccc....cccCcccCcccc....cccCcccCcccc....cccccccccccc....cc..cc..cc.c.................."
     val wsHead: String = "....................................cccccccc........cccccccc........cccccccc........cccccccc........cccccccc........cccccccc........cccccccc........CCCCCCCC........CCCCCCCC.....cccccccccccccc..cccccccccccccc................................................."
@@ -238,10 +243,14 @@ internal object PxArt {
         "book" to book,
         "image" to image,
         "map" to map,
+        "globe" to globe,
         "server" to server,
         "blocks" to blocks,
+        "mc-grass" to mcGrass,
         "trophy" to trophy,
         "zap" to zap,
+        "discord" to discord,
+        "telegram" to telegram,
         "flame" to flame,
         "gift" to gift,
         "hammer" to hammer,
@@ -272,6 +281,7 @@ internal object PxArt {
         "paw" to paw,
         "looks" to looks,
         "ws-looks" to wsLooks,
+        "ws-shop" to wsShop,
         "ws-skin" to wsSkin,
         "ws-cape" to wsCape,
         "ws-head" to wsHead,

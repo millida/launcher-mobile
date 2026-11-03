@@ -21,6 +21,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.ui.LocalUiFeedback
 import net.millida.launcher.ui.MBadge
@@ -36,10 +37,10 @@ import net.millida.launcher.ui.pixelSurface
 import net.millida.launcher.ui.plateFrame
 import kotlin.math.roundToInt
 
-private val POSES: List<Pair<SkinPose, String>> = listOf(
-    SkinPose.Idle to "Стоит",
-    SkinPose.Walk to "Идёт",
-    SkinPose.Wave to "Машет",
+private val POSES: List<Pair<SkinPose, String>> get() = listOf(
+    SkinPose.Idle to tr("Стоит"),
+    SkinPose.Walk to tr("Идёт"),
+    SkinPose.Wave to tr("Машет"),
 )
 
 @Composable
@@ -85,7 +86,7 @@ internal fun CharacterStage(
         }
         if (trying) {
             MBadge(
-                "Примерка",
+                tr("Примерка"),
                 color = colors.info,
                 background = colors.infoSoft,
                 modifier = Modifier

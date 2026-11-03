@@ -4,6 +4,8 @@ import kotlinx.coroutines.CancellationException
 import net.millida.launcher.core.account.Unauthorized
 import java.io.IOException
 
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trSource
 /**
  * Anything the hosting client refuses or fails to do arrives as this, already
  * worded for the player. Nothing here is swallowed: a caller that ignores it
@@ -11,27 +13,27 @@ import java.io.IOException
  */
 class HostingError(message: String, cause: Throwable? = null) : IOException(message, cause)
 
-private const val FALLBACK = "сервис хостинга не ответил, попробуй позже"
+private val FALLBACK: String get() = tr("сервис хостинга не ответил, попробуй позже")
 
-private val STATUS_TEXT = mapOf(
-    400 to "запрос не принят — проверь введённые данные",
-    401 to "сессия Millida закончилась — войди в аккаунт заново",
-    402 to "не хватает средств на балансе — пополни счёт и повтори",
-    403 to "Millida отказала в этом действии — не хватает прав на сервере",
-    404 to "не найдено — возможно, это уже удалено",
-    405 to "действие недоступно — обнови приложение и повтори",
-    408 to "сервер не ответил вовремя — повтори попытку",
-    409 to "занято — выбери другое значение",
-    410 to "ссылка устарела — запроси новую",
-    413 to "файл слишком большой — уменьши размер и повтори",
-    415 to "такой формат файла не поддерживается",
-    422 to "данные заполнены неверно — проверь поля",
-    423 to "действие временно заблокировано — повтори позже",
-    429 to "слишком много попыток подряд — подожди немного и повтори",
-    500 to "сбой на стороне Millida — повтори через минуту",
-    502 to "Millida временно недоступна — повтори через минуту",
-    503 to "Millida перегружена или обновляется — повтори через минуту",
-    504 to "Millida не успела ответить — повтори через минуту",
+private val STATUS_TEXT get() = mapOf(
+    400 to tr("запрос не принят — проверь введённые данные"),
+    401 to tr("сессия Millida закончилась — войди в аккаунт заново"),
+    402 to tr("не хватает средств на балансе — пополни счёт и повтори"),
+    403 to tr("Millida отказала в этом действии — не хватает прав на сервере"),
+    404 to tr("не найдено — возможно, это уже удалено"),
+    405 to tr("действие недоступно — обнови приложение и повтори"),
+    408 to tr("сервер не ответил вовремя — повтори попытку"),
+    409 to tr("занято — выбери другое значение"),
+    410 to tr("ссылка устарела — запроси новую"),
+    413 to tr("файл слишком большой — уменьши размер и повтори"),
+    415 to tr("такой формат файла не поддерживается"),
+    422 to tr("данные заполнены неверно — проверь поля"),
+    423 to tr("действие временно заблокировано — повтори позже"),
+    429 to tr("слишком много попыток подряд — подожди немного и повтори"),
+    500 to tr("сбой на стороне Millida — повтори через минуту"),
+    502 to tr("Millida временно недоступна — повтори через минуту"),
+    503 to tr("Millida перегружена или обновляется — повтори через минуту"),
+    504 to tr("Millida не успела ответить — повтори через минуту"),
 )
 
 // MillidaAuth reports a bodyless failure as this sentence, and it is the only
@@ -50,16 +52,17 @@ private val NOISE = listOf(
     Regex("^throttlerexception.*", RegexOption.IGNORE_CASE),
 )
 
-internal fun statusText(code: Int): String = STATUS_TEXT[code] ?: "Millida ответила кодом $code — повтори попытку"
+internal fun statusText(code: Int): String = STATUS_TEXT[code] ?: tr("Millida ответила кодом {code} — повтори попытку", code)
 
 internal fun hostingFailure(action: String, error: Throwable): HostingError {
     if (error is HostingError) return error
     if (error is Unauthorized) return HostingError("$action: ${statusText(401)}", error)
     val raw = error.message.orEmpty().trim()
-    val code = STATUS_ONLY.find(raw)?.groupValues?.get(1)?.toIntOrNull()
+    val probe = trSource(raw)
+    val code = STATUS_ONLY.find(probe)?.groupValues?.get(1)?.toIntOrNull()
     val reason = when {
         code != null -> statusText(code)
-        raw.isEmpty() || NOISE.any { it.matches(raw) } -> FALLBACK
+        raw.isEmpty() || NOISE.any { it.matches(probe) } -> FALLBACK
         else -> raw
     }
     return HostingError("$action: $reason", error)

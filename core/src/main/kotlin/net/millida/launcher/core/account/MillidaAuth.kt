@@ -16,6 +16,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -23,11 +24,12 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.Base64
+import java.util.concurrent.TimeUnit
 
 const val MILLIDA_API = "https://api.millida.net/v2"
 const val MILLIDA_YGGDRASIL = "$MILLIDA_API/yggdrasil"
 
-class Unauthorized(message: String = "сессия Millida недействительна") : IOException(message)
+class Unauthorized(message: String = tr("сессия Millida недействительна")) : IOException(message)
 
 data class LauncherInit(
     val deviceCode: String,
@@ -45,7 +47,7 @@ class MillidaAuth(
         val response = call("/auth/launcher/init", "POST", buildJsonObject { put("clientName", clientName) }, null).asObject()
         val code = response.text("deviceCode")
         val user = response.text("userCode")
-        if (code.isEmpty() || user.isEmpty()) throw IOException("сервер не выдал код входа")
+        if (code.isEmpty() || user.isEmpty()) throw IOException(tr("сервер не выдал код входа"))
         return LauncherInit(
             deviceCode = code,
             userCode = user,
@@ -58,13 +60,13 @@ class MillidaAuth(
         val response = call("/auth/launcher/poll", "POST", buildJsonObject { put("deviceCode", deviceCode) }, null).asObject()
         when (val status = response.text("status")) {
             "ok" -> Unit
-            "denied" -> throw IOException("вход отклонён на странице Millida")
-            "expired" -> throw IOException("код входа истёк — начни заново")
+            "denied" -> throw IOException(tr("вход отклонён на странице Millida"))
+            "expired" -> throw IOException(tr("код входа истёк — начни заново"))
             "pending", "" -> return false
-            else -> throw IOException("сервер ответил статусом $status")
+            else -> throw IOException(tr("сервер ответил статусом {status}", status))
         }
         val access = response.text("accessToken")
-        if (access.isEmpty()) throw IOException("в ответе нет accessToken")
+        if (access.isEmpty()) throw IOException(tr("в ответе нет accessToken"))
         vault.write(KEY_ACCESS, access)
         response.text("refreshToken").takeIf { it.isNotEmpty() }?.let { vault.write(KEY_REFRESH, it) }
         return true
@@ -73,7 +75,7 @@ class MillidaAuth(
     suspend fun profile(): JsonObject = authorized("/auth/me", "GET", null)
 
     suspend fun gameSession(): GameSession {
-        var lastError = "не удалось получить сессию игры"
+        var lastError = tr("не удалось получить сессию игры")
         repeat(SESSION_ATTEMPTS) { attempt ->
             try {
                 val response = authorized("/launcher/game-session", "POST", buildJsonObject { })
@@ -86,7 +88,7 @@ class MillidaAuth(
                         yggdrasil = "$apiBase/yggdrasil",
                     )
                 }
-                lastError = "в ответе нет accessToken"
+                lastError = tr("в ответе нет accessToken")
             } catch (unauthorized: Unauthorized) {
                 throw unauthorized
             } catch (error: IOException) {
@@ -95,6 +97,17 @@ class MillidaAuth(
             if (attempt + 1 < SESSION_ATTEMPTS) delay(700L * (attempt + 1))
         }
         throw IOException(lastError)
+    }
+
+    suspend fun modSessionToken(): String? {
+        if (!signedIn()) return null
+        val response = try {
+            authorizedElement("/launcher/mod-session", "POST", buildJsonObject { }, MOD_SESSION_TIMEOUT_MS)
+        } catch (failure: IOException) {
+            return null
+        }
+        val token = (response as? JsonObject)?.get("token") as? JsonPrimitive
+        return token?.takeIf { it.isString }?.content?.trim()?.ifEmpty { null }
     }
 
     fun signedIn(): Boolean = !vault.read(KEY_ACCESS).isNullOrEmpty()
@@ -107,18 +120,52 @@ class MillidaAuth(
     suspend fun authorized(path: String, method: String, payload: JsonObject?): JsonObject =
         authorizedElement(path, method, payload).asObject()
 
+    /** An answer as it came: the status and the text, whatever the status. */
+    data class RawAnswer(val status: Int, val body: String)
+
+    /**
+     * For website screens, which show the server's errors themselves: the answer is returned with its
+     * status instead of being turned into an exception. A signed-in player goes with the session (renewed
+     * once on 401); a guest goes without. The token never leaves this class.
+     */
+    suspend fun raw(path: String, method: String, bodyText: String?): RawAnswer {
+        val token = vault.read(KEY_ACCESS)
+        val first = rawCall(path, method, bodyText, token)
+        if (first.status != 401 || token == null) return first
+        val fresh = try {
+            refresh(token)
+        } catch (offline: IOException) {
+            null
+        } ?: return first
+        return rawCall(path, method, bodyText, fresh)
+    }
+
+    private suspend fun rawCall(path: String, method: String, bodyText: String?, token: String?): RawAnswer =
+        withContext(Dispatchers.IO) {
+            if (!path.startsWith("/") || path.contains("..")) throw IOException("недопустимый путь запроса")
+            val body = bodyText?.toRequestBody(JSON)
+            val request = Request.Builder()
+                .url(apiBase + path)
+                .method(method, body ?: if (method == "GET") null else ByteArray(0).toRequestBody(JSON))
+                .header("Accept", "application/json")
+                .apply { token?.let { header("Authorization", "Bearer $it") } }
+                .build()
+            client.newCall(request).execute().use { RawAnswer(it.code, it.body?.string().orEmpty()) }
+        }
+
     /** Some of our endpoints answer with a list, not an object. */
     suspend fun authorizedElement(
         path: String,
         method: String,
         payload: JsonObject?,
+        callTimeoutMs: Long = 0L,
     ): JsonElement {
-        val token = vault.read(KEY_ACCESS) ?: throw Unauthorized("вход в Millida не выполнен")
+        val token = vault.read(KEY_ACCESS) ?: throw Unauthorized(tr("вход в Millida не выполнен"))
         return try {
-            call(path, method, payload, token)
+            call(path, method, payload, token, callTimeoutMs)
         } catch (unauthorized: Unauthorized) {
             val fresh = refresh(token) ?: throw unauthorized
-            call(path, method, payload, fresh)
+            call(path, method, payload, fresh, callTimeoutMs)
         }
     }
 
@@ -177,11 +224,16 @@ class MillidaAuth(
         if (!current.isNullOrEmpty() && current != spent) return@withLock current
         val refreshToken = vault.read(KEY_REFRESH) ?: return@withLock null
         return@withLock try {
-            val response = call("/auth/refresh", "POST", buildJsonObject { put("refreshToken", refreshToken) }, null).asObject()
+            val (body, cookies) = exchange("/auth/refresh", "POST", buildJsonObject { put("refreshToken", refreshToken) }, null)
+            val response = body.asObject()
             val access = response.text("accessToken")
             if (access.isEmpty()) return@withLock null
             vault.write(KEY_ACCESS, access)
-            response.text("refreshToken").takeIf { it.isNotEmpty() }?.let { vault.write(KEY_REFRESH, it) }
+            // The server rotates the refresh token on every renewal and hands the new one in
+            // the rt2 cookie only. Keeping the spent one means the next renewal reuses it, the
+            // server takes that for a stolen session and ends it: «Вход Millida истёк» in two days.
+            val renewed = response.text("refreshToken").ifEmpty { refreshFromCookies(cookies).orEmpty() }
+            if (renewed.isNotEmpty()) vault.write(KEY_REFRESH, renewed)
             access
         } catch (unauthorized: Unauthorized) {
             signOut()
@@ -194,8 +246,18 @@ class MillidaAuth(
         method: String,
         payload: JsonObject?,
         token: String?,
-    ): JsonElement = withContext(Dispatchers.IO) {
-        if (!path.startsWith("/") || path.contains("..")) throw IOException("недопустимый путь запроса")
+        callTimeoutMs: Long = 0L,
+    ): JsonElement = exchange(path, method, payload, token, callTimeoutMs).first
+
+    /** The answer together with its Set-Cookie lines. */
+    private suspend fun exchange(
+        path: String,
+        method: String,
+        payload: JsonObject?,
+        token: String?,
+        callTimeoutMs: Long = 0L,
+    ): Pair<JsonElement, List<String>> = withContext(Dispatchers.IO) {
+        if (!path.startsWith("/") || path.contains("..")) throw IOException(tr("недопустимый путь запроса"))
         val body = payload?.let {
             MojangJson.encodeToString(JsonObject.serializer(), it).toRequestBody(JSON)
         }
@@ -205,24 +267,27 @@ class MillidaAuth(
             .header("Accept", "application/json")
             .apply { token?.let { header("Authorization", "Bearer $it") } }
             .build()
-        client.newCall(request).execute().use { response ->
+        val pending = client.newCall(request)
+        if (callTimeoutMs > 0) pending.timeout().timeout(callTimeoutMs, TimeUnit.MILLISECONDS)
+        pending.execute().use { response ->
             val text = response.body?.string().orEmpty()
             if (response.code == 401) throw Unauthorized()
             if (!response.isSuccessful) {
-                throw IOException(errorMessage(text) ?: "сервер ответил ${response.code}")
+                throw IOException(errorMessage(text) ?: tr("сервер ответил {code}", response.code))
             }
-            if (text.isBlank()) buildJsonObject { } else parseBody(text)
+            val cookies = response.headers("Set-Cookie")
+            (if (text.isBlank()) buildJsonObject { } else parseBody(text)) to cookies
         }
     }
 
     private fun parseBody(text: String): JsonElement = try {
         MojangJson.parseToJsonElement(text)
     } catch (broken: SerializationException) {
-        throw IOException("сервер Millida ответил не JSON — попробуй ещё раз позже", broken)
+        throw IOException(tr("сервер Millida ответил не JSON — попробуй ещё раз позже"), broken)
     }
 
     private fun JsonElement.asObject(): JsonObject =
-        this as? JsonObject ?: throw IOException("сервер вернул не тот ответ, что ожидался")
+        this as? JsonObject ?: throw IOException(tr("сервер вернул не тот ответ, что ожидался"))
 
     private fun errorMessage(text: String): String? = try {
         val json = MojangJson.parseToJsonElement(text).jsonObject
@@ -242,9 +307,20 @@ class MillidaAuth(
     private val refreshLock = Mutex()
 
     companion object {
+        /** The cookie the server puts the renewed refresh token in (F-C3). */
+        private const val REFRESH_COOKIE = "rt2"
+
+        /** The renewed refresh token from Set-Cookie lines; an emptied (cleared) cookie is no token. */
+        internal fun refreshFromCookies(lines: List<String>): String? = lines.firstNotNullOfOrNull { line ->
+            val pair = line.substringBefore(';').trim()
+            val name = pair.substringBefore('=', "").trim()
+            pair.substringAfter('=', "").trim().removeSurrounding("\"").takeIf { name == REFRESH_COOKIE && it.isNotEmpty() }
+        }
+
         const val KEY_ACCESS = "millida-access"
         const val KEY_REFRESH = "millida-refresh"
         private const val SESSION_ATTEMPTS = 3
+        private const val MOD_SESSION_TIMEOUT_MS = 6_000L
         private const val EXPIRY_MARGIN_MS = 30_000L
         private val JSON = "application/json".toMediaType()
     }

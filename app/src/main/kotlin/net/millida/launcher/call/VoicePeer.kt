@@ -12,6 +12,7 @@ import net.millida.launcher.core.call.CallSignalKind
 import net.millida.launcher.core.call.IceConfig
 import net.millida.launcher.core.call.PeerFlags
 import net.millida.launcher.core.call.PeerQuality
+import net.millida.launcher.core.i18n.tr
 import org.webrtc.AudioTrack
 import org.webrtc.DataChannel
 import org.webrtc.IceCandidate
@@ -104,7 +105,7 @@ class VoicePeer(
     }
 
     private val pc: PeerConnection = factory.createPeerConnection(rtcConfig(ice), observer)
-        ?: throw IllegalStateException("голосовое соединение не создалось")
+        ?: throw IllegalStateException(tr("голосовое соединение не создалось"))
 
     private val channel: DataChannel? = pc.createDataChannel(
         "state",
@@ -245,14 +246,14 @@ class VoicePeer(
         val sdp = object : SdpObserver {
             override fun onCreateSuccess(description: SessionDescription?) {
                 if (!cont.isActive) return
-                if (description == null) cont.resumeWithException(IllegalStateException("пустое описание"))
+                if (description == null) cont.resumeWithException(IllegalStateException(tr("пустое описание")))
                 else cont.resume(description)
             }
 
             override fun onSetSuccess() = Unit
 
             override fun onCreateFailure(error: String?) {
-                if (cont.isActive) cont.resumeWithException(IllegalStateException(error ?: "описание не собралось"))
+                if (cont.isActive) cont.resumeWithException(IllegalStateException(error ?: tr("описание не собралось")))
             }
 
             override fun onSetFailure(error: String?) = Unit
@@ -275,7 +276,7 @@ class VoicePeer(
             override fun onCreateFailure(error: String?) = Unit
 
             override fun onSetFailure(error: String?) {
-                if (cont.isActive) cont.resumeWithException(IllegalStateException(error ?: "описание не принято"))
+                if (cont.isActive) cont.resumeWithException(IllegalStateException(error ?: tr("описание не принято")))
             }
         }
         if (local) pc.setLocalDescription(sdp, description) else pc.setRemoteDescription(sdp, description)

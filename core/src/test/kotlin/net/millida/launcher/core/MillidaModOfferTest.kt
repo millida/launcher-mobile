@@ -3,6 +3,7 @@ package net.millida.launcher.core
 import net.millida.launcher.core.catalog.CatalogFile
 import net.millida.launcher.core.catalog.CatalogVersion
 import net.millida.launcher.core.catalog.ContentKind
+import net.millida.launcher.core.cosmetics.LaunchModAction
 import net.millida.launcher.core.cosmetics.CosmeticsModState
 import net.millida.launcher.core.cosmetics.CosmeticsModStatus
 import net.millida.launcher.core.cosmetics.MillidaModOffer
@@ -65,10 +66,20 @@ class MillidaModOfferTest {
             Case("only catalogue title known", listOf(mod("", title = "Fabric API", name = "x.jar")), true),
             Case("unrelated mods only", listOf(mod("sodium"), mod("iris")), false),
             Case("empty build", emptyList(), false),
+            Case("Fabric API switched off does not load", listOf(mod("fabric-api").copy(enabled = false, name = "fabric-api.jar.disabled")), false),
         )
         for (case in cases) {
             assertEquals("Fabric API detection broke for: ${case.why}", case.has, MillidaModOffer.hasFabricApi(case.files))
         }
+    }
+
+    @Test
+    fun jarWithoutItsFabricApiIsRepairedOnStart() {
+        val on = state(installedFile = "m.jar", availableFile = "m.jar")
+        assertEquals(LaunchModAction.UPDATE, MillidaModOffer.onLaunch(on, intact = true, declined = false, apiMissing = true))
+        assertEquals(LaunchModAction.NONE, MillidaModOffer.onLaunch(on, intact = true, declined = false, apiMissing = false))
+        val off = state(installedFile = "m.jar.disabled", availableFile = "m.jar", enabled = false)
+        assertEquals("a jar the player switched off needs no API", LaunchModAction.NONE, MillidaModOffer.onLaunch(off, intact = true, declined = false, apiMissing = true))
     }
 
     @Test

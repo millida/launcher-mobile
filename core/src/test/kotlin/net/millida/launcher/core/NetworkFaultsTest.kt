@@ -50,9 +50,15 @@ class NetworkFaultsTest {
 
     @Test
     fun `совет про DNS называет адрес и что делать`() {
-        val advice = NetworkFaults.nameLookupAdvice("сервера Millida")
-        assertTrue("в совете не назван адрес: $advice", advice.contains("сервера Millida"))
-        assertTrue("в совете нет шага про интернет: $advice", advice.contains("Проверь интернет"))
-        assertTrue("в совете нет обхода через VPN: $advice", advice.contains("VPN"))
+        val cases = listOf(
+            NetworkFaults.hostLookupAdvice("api.millida.net") to "api.millida.net",
+            NetworkFaults.microsoftLookupAdvice("login.live.com") to "login.live.com",
+            NetworkFaults.updatesLookupAdvice() to "канала обновлений",
+        )
+        for ((advice, subject) in cases) {
+            assertTrue("в совете не назван адрес: $advice", advice.contains(subject))
+            assertTrue("в совете нет шага про интернет: $advice", advice.contains("Проверь интернет"))
+            assertTrue("в совете нет обхода через VPN: $advice", advice.contains("VPN"))
+        }
     }
 }

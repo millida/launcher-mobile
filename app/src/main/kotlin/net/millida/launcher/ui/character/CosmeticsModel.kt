@@ -23,6 +23,7 @@ import net.millida.launcher.core.cosmetics.Outfits
 import net.millida.launcher.core.cosmetics.VARIANT_SEP
 import net.millida.launcher.core.cosmetics.WornCosmetic
 import net.millida.launcher.core.cosmetics.defaultVariant
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.rubies.WardrobeBill
 import net.millida.launcher.core.skins.ShowcaseCard
 import net.millida.launcher.core.skins.ShowcaseKind
@@ -129,9 +130,9 @@ class CosmeticsModel(
             val ownedCodes = owned?.let { catalog.ownedCodes(it.codes, it.variants).toSet() }
             val wornCards = worn?.map(catalog::fromServer)
             val failure = when {
-                owned == null -> "Права на вещи не загрузились — нажми «Обновить»"
+                owned == null -> tr("Права на вещи не загрузились — нажми «Обновить»")
                 uuid.isNullOrBlank() -> null
-                worn == null -> "Надетое не загрузилось — нажми «Обновить»"
+                worn == null -> tr("Надетое не загрузилось — нажми «Обновить»")
                 else -> null
             }
             mutable.update { current ->
@@ -198,7 +199,7 @@ class CosmeticsModel(
         if (mine.isNotEmpty() && current.busy.isEmpty()) {
             val next = current.worn.filterNot { worn -> mine.any { it.slot == worn.slot } } +
                 mine.map { WornCosmetic(it.id, it.slot, defaultVariant(it.variants)?.name.orEmpty()) }
-            send(next, mine.first().id, "Надето — видно в игре") { state ->
+            send(next, mine.first().id, tr("Надето — видно в игре")) { state ->
                 state.copy(fitting = state.fitting.filterNot { item -> mine.any { it.slot == item.slot } })
             }
         }
@@ -220,14 +221,14 @@ class CosmeticsModel(
         val offTryOn: (CosmeticsState) -> CosmeticsState = { state -> state.copy(fitting = state.fitting.filterNot { it.slot in boughtSlots }) }
         if (current.busy.isNotEmpty()) {
             mutable.update(offTryOn)
-            notice("Куплено — нажми на вещь, чтобы надеть", false)
+            notice(tr("Куплено — нажми на вещь, чтобы надеть"), false)
             return
         }
         send(
             next = WardrobeBill.dressAfter(current.worn, bought),
             busy = bought.first().id,
-            done = "Куплено и надето — видно в игре",
-            failed = "Куплено, но не надето — нажми на вещь",
+            done = tr("Куплено и надето — видно в игре"),
+            failed = tr("Куплено, но не надето — нажми на вещь"),
             afterFailed = offTryOn,
             after = offTryOn,
         )
@@ -252,13 +253,13 @@ class CosmeticsModel(
         val current = mutable.value
         if (current.busy.isNotEmpty()) return
         if (current.locked(item)) {
-            notice("Эта вещь ещё не открыта — её можно только примерить", false)
+            notice(tr("Эта вещь ещё не открыта — её можно только примерить"), false)
             return
         }
         val already = current.isWorn(item)
         val next = current.worn.filter { it.slot != item.slot && it.id != item.id }.toMutableList()
         if (!already) next.add(WornCosmetic(item.id, item.slot, variant.ifEmpty { defaultVariant(item.variants)?.name.orEmpty() }))
-        send(next, item.id, if (already) "Снято" else "Надето — видно в игре") { state ->
+        send(next, item.id, if (already) tr("Снято") else tr("Надето — видно в игре")) { state ->
             if (already) state else state.copy(fitting = state.fitting.filterNot { it.slot == item.slot })
         }
     }
@@ -269,14 +270,14 @@ class CosmeticsModel(
         if (current.busy.isNotEmpty()) return
         mutable.update { it.copy(fitting = it.fitting.filterNot { item -> item.slot in slots }) }
         if (current.worn.none { it.slot in slots }) return
-        send(current.worn.filterNot { it.slot in slots }, CosmeticsState.BUSY_OFF, "Снято") { it }
+        send(current.worn.filterNot { it.slot in slots }, CosmeticsState.BUSY_OFF, tr("Снято")) { it }
     }
 
     private fun send(
         next: List<WornCosmetic>,
         busy: String,
         done: String,
-        failed: String = "Не удалось изменить косметику",
+        failed: String = tr("Не удалось изменить косметику"),
         afterFailed: (CosmeticsState) -> CosmeticsState = { it },
         after: (CosmeticsState) -> CosmeticsState,
     ) {
@@ -349,7 +350,7 @@ class CosmeticsModel(
             val list = try {
                 withContext(Dispatchers.IO) { outfitStore.load(accountId) }
             } catch (failure: Exception) {
-                notice(failure.message ?: "Сохранённые образы не читаются", true)
+                notice(failure.message ?: tr("Сохранённые образы не читаются"), true)
                 emptyList()
             }
             mutable.update { if (it.accountId == accountId) it.copy(outfits = list) else it }
@@ -365,7 +366,7 @@ class CosmeticsModel(
                 if (done != null) notice(done, false)
             } catch (failure: Exception) {
                 mutable.update { if (it.outfits == next) it.copy(outfits = before) else it }
-                notice(failure.message ?: "Образ не сохранился — повтори", true)
+                notice(failure.message ?: tr("Образ не сохранился — повтори"), true)
             }
         }
     }
@@ -374,15 +375,15 @@ class CosmeticsModel(
         val current = mutable.value
         val same = current.outfits.firstOrNull { Outfits.same(it, look) }
         if (same != null) {
-            notice("Это «${same.name}». Надень другое — и сохрани", false)
+            notice(tr("Это «{name}». Надень другое — и сохрани", same.name), false)
             return
         }
         if (current.outfits.size >= Outfits.LIMIT) {
-            notice("Больше ${Outfits.LIMIT} образов не сохранить — удали ненужный", true)
+            notice(tr("Больше {LIMIT} образов не сохранить — удали ненужный", Outfits.LIMIT), true)
             return
         }
         val next = Outfits.add(current.outfits, look, System.currentTimeMillis().toString(36))
-        keepOutfits(current.accountId, next, "Образ сохранён: «${next.last().name}»")
+        keepOutfits(current.accountId, next, tr("Образ сохранён: «{0}»", next.last().name))
     }
 
     fun renameOutfit(id: String, name: String) {
@@ -393,7 +394,7 @@ class CosmeticsModel(
 
     fun removeOutfit(id: String) {
         val current = mutable.value
-        keepOutfits(current.accountId, Outfits.remove(current.outfits, id), "Образ удалён")
+        keepOutfits(current.accountId, Outfits.remove(current.outfits, id), tr("Образ удалён"))
     }
 
     /**
@@ -420,14 +421,14 @@ class CosmeticsModel(
                     mutable.update { it.copy(worn = wear, fitting = emptyList()) }
                 }
                 if (skipped.isNotEmpty()) {
-                    notice("«${outfit.name}» надет, закрытых вещей пропущено: ${skipped.size}", false)
+                    notice(tr("«{name}» надет, закрытых вещей пропущено: {size}", outfit.name, skipped.size), false)
                 } else {
-                    notice("«${outfit.name}» надет", false)
+                    notice(tr("«{name}» надет", outfit.name), false)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                notice("Образ надет не целиком: " + loadErrorText(failure).replaceFirstChar { it.lowercase() }, true)
+                notice(tr("Образ надет не целиком: {0}", loadErrorText(failure).replaceFirstChar { it.lowercase() }), true)
             } finally {
                 mutable.update { it.copy(outfitBusy = "") }
             }

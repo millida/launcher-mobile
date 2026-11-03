@@ -23,6 +23,8 @@ import net.millida.launcher.core.cosmetics.Look
 import net.millida.launcher.core.cosmetics.OutfitCape
 import net.millida.launcher.core.cosmetics.OutfitSkin
 import net.millida.launcher.core.cosmetics.WornCosmetic
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.core.skins.SkinCatalog
 import net.millida.launcher.ui.MIconButton
 import net.millida.launcher.ui.MIcons
@@ -43,23 +45,29 @@ internal enum class WearTarget { Licence, Millida, SignedOut }
 
 /**
  * The wardrobe sections in the desktop's order (Skins.tsx sectionList): looks,
- * skins, capes, then one section per cosmetic part. [section] is the
- * [CosmeticSections] key a cosmetic tab shows.
+ * the shop for a Millida account, skins, capes, then one section per cosmetic
+ * part. [section] is the [CosmeticSections] key a cosmetic tab shows. The
+ * account's skins, the skin catalogue and import live in «Скины», the quest
+ * capes in «Плащи», where the desktop keeps them.
  */
-internal enum class CharacterTab(val label: String, val section: String? = null) {
-    LOOKS("Образы"),
-    SKIN("Скины"),
-    CAPE("Плащи"),
-    HEAD("Голова", "head"),
-    BODY("Тело", "body"),
-    BACK("Спина", "back"),
-    PETS("Питомцы", "pet"),
-    EMOTES("Эмоции", CosmeticSections.EMOTES),
-    WARDROBE("Гардероб"),
-    CATALOG("Каталог"),
-    REWARDS("Награды"),
-    IMPORT("Импорт"),
+internal enum class CharacterTab(private val labelKey: String, val section: String? = null) {
+    LOOKS(trKey("Образы")),
+    SHOP(trKey("Магазин")),
+    SKIN(trKey("Скины")),
+    CAPE(trKey("Плащи")),
+    HEAD(trKey("Голова"), "head"),
+    BODY(trKey("Тело"), "body"),
+    BACK(trKey("Спина"), "back"),
+    PETS(trKey("Питомцы"), "pet"),
+    EMOTES(trKey("Эмоции"), CosmeticSections.EMOTES),;
+
+    val label: String get() = tr(labelKey)
 }
+
+/** The desktop's chip keys: «Мои» in skins, «За задания» in capes. */
+internal const val SKIN_CHIP_MINE = "mine"
+internal const val CAPE_CHIP_ALL = "all"
+internal const val CAPE_CHIP_QUEST = "quest"
 
 internal fun CharacterTab.icon(): MillidaIcon = when (this) {
     CharacterTab.SKIN -> MIcons.wardrobeSkin
@@ -70,10 +78,7 @@ internal fun CharacterTab.icon(): MillidaIcon = when (this) {
     CharacterTab.PETS -> MIcons.wardrobePet
     CharacterTab.EMOTES -> MIcons.wardrobeEmote
     CharacterTab.LOOKS -> MIcons.looks
-    CharacterTab.WARDROBE -> MIcons.wardrobeLooks
-    CharacterTab.CATALOG -> MIcons.catalog
-    CharacterTab.REWARDS -> MIcons.trophy
-    CharacterTab.IMPORT -> MIcons.upload
+    CharacterTab.SHOP -> MIcons.wardrobeShop
 }
 
 @Immutable
@@ -176,7 +181,7 @@ internal fun FittingBar(
             )
             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
     ) {
-        Text("ПРИМЕРКА", style = MillidaType.caption, color = colors.info, maxLines = 1)
+        Text(tr("ПРИМЕРКА"), style = MillidaType.caption, color = colors.info, maxLines = 1)
         Spacer(Modifier.height(2.dp))
         Text(
             fitting.title,
@@ -201,17 +206,17 @@ internal fun FittingBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MSecondaryButton("Отмена", onClick = onCancel, modifier = Modifier.weight(1f), enabled = !wearing)
+            MSecondaryButton(tr("Отмена"), onClick = onCancel, modifier = Modifier.weight(1f), enabled = !wearing)
             when {
                 fitting.wear != null -> MPrimaryButton(
-                    "Надеть",
+                    tr("Надеть"),
                     onClick = onWear,
                     modifier = Modifier.weight(1f),
                     icon = MIcons.check,
                     loading = wearing,
                 )
                 fitting.signIn -> MPrimaryButton(
-                    "Войти",
+                    tr("Войти"),
                     onClick = onSignIn,
                     modifier = Modifier.weight(1f),
                     icon = MIcons.login,
@@ -219,7 +224,7 @@ internal fun FittingBar(
             }
             val save = fitting.save
             if (save != null) {
-                MIconButton(MIcons.download, onClick = save, label = "В библиотеку", enabled = !wearing)
+                MIconButton(MIcons.download, onClick = save, label = tr("В библиотеку"), enabled = !wearing)
             }
         }
     }

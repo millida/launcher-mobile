@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import net.millida.launcher.core.i18n.tr
 /**
  * A server writes its greeting in the game's own colour codes. Printing them as
  * "§a" turns the line into rubbish, and stripping them makes every server look
@@ -233,22 +234,22 @@ private val MOTD_FRAME = PixelFrame(
 
 /** Server tags come as codes; players read words. */
 fun categoryLabel(code: String): String = when (code.uppercase()) {
-    "SURVIVAL" -> "Выживание"
-    "VANILLA" -> "Ванилла"
+    "SURVIVAL" -> tr("Выживание")
+    "VANILLA" -> tr("Ванилла")
     "MMORPG" -> "MMORPG"
     "ONEBLOCK" -> "OneBlock"
-    "ANARCHY" -> "Анархия"
-    "MINIGAMES" -> "Мини-игры"
-    "CREATIVE" -> "Креатив"
+    "ANARCHY" -> tr("Анархия")
+    "MINIGAMES" -> tr("Мини-игры")
+    "CREATIVE" -> tr("Креатив")
     "SKYBLOCK" -> "SkyBlock"
-    "ROLEPLAY" -> "Ролевые"
-    "TECHNIC" -> "Технические"
+    "ROLEPLAY" -> tr("Ролевые")
+    "TECHNIC" -> tr("Технические")
     "PVP" -> "PvP"
-    "ADVENTURE" -> "Приключения"
-    "ECONOMY" -> "Экономика"
-    "FACTIONS" -> "Фракции"
-    "HARDCORE" -> "Хардкор"
-    "MODDED" -> "С модами"
-    "OTHER" -> "Другое"
+    "ADVENTURE" -> tr("Приключения")
+    "ECONOMY" -> tr("Экономика")
+    "FACTIONS" -> tr("Фракции")
+    "HARDCORE" -> tr("Хардкор")
+    "MODDED" -> tr("С модами")
+    "OTHER" -> tr("Другое")
     else -> code
 }

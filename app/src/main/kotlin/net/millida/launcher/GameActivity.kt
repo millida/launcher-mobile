@@ -12,8 +12,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.view.WindowCompat
+import net.millida.launcher.core.game.DisplayModeInfo
+import net.millida.launcher.core.game.DisplayModes
+
 import net.millida.launcher.core.account.GameSession
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.runtime.GameKeepAliveService
 import net.millida.launcher.ui.GameHostScreen
 import net.millida.launcher.ui.MillidaTheme
@@ -42,11 +49,19 @@ class GameActivity : ComponentActivity() {
             return
         }
 
-        GameKeepAliveService.start(this, "Игра запущена")
+        ExitTrap.attach(this)
+        val result = readResult(intent)
+        if (result == null) GameKeepAliveService.start(this, tr("Игра запущена"))
 
         val prefs = Prefs(this)
         val themeMode = prefs.themeMode
         val accentId = prefs.accentId
+        if (prefs.highRefresh) askFastestDisplayMode()
+        applyGameCutout(window, prefs.gameUnderCutout)
+        // Where the firmware supports it, the clocks stay at a level the phone can hold for an hour
+        // instead of boosting and then throttling hard: steadier frames once the phone is warm.
+        val power = getSystemService(android.os.PowerManager::class.java)
+        if (power?.isSustainedPerformanceModeSupported == true) window.setSustainedPerformanceMode(true)
         // Keyboard insets reach Compose only when the window does not fit system windows itself.
         WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent {
@@ -56,15 +71,29 @@ class GameActivity : ComponentActivity() {
                 else -> isSystemInDarkTheme()
             }
             MillidaTheme(dark = dark, accentId = accentId) {
-                GameHostScreen(
-                    model = model,
-                    onLeave = { finish() },
-                    onRelaunch = ::relaunch,
-                )
+                // Controls sit where the player placed them and the game draws its own screen: neither mirrors for Arabic or Urdu.
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    GameHostScreen(
+                        model = model,
+                        onLeave = { finish() },
+                        onRelaunch = ::relaunch,
+                        onSwitchVersion = ::switchVersion,
+                    )
+                }
             }
         }
 
-        model.start(request)
+        if (result == null) model.start(request) else model.showResult(request, result)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun askFastestDisplayMode() {
+        val display = runCatching { if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) display else windowManager.defaultDisplay }
+            .getOrNull() ?: return
+        val modes = display.supportedModes.map { DisplayModeInfo(it.modeId, it.physicalWidth, it.physicalHeight, it.refreshRate) }
+        val current = display.mode.let { DisplayModeInfo(it.modeId, it.physicalWidth, it.physicalHeight, it.refreshRate) }
+        val wanted = DisplayModes.fastest(modes, current) ?: return
+        window.attributes = window.attributes.also { it.preferredDisplayModeId = wanted }
     }
 
     /**
@@ -72,7 +101,8 @@ class GameActivity : ComponentActivity() {
      * a screen in the launcher process that waits for this one to end.
      */
     private fun relaunch() {
-        val extras = intent?.extras
+        // "Play again" from the screen of a crashed game starts the game, not that screen once more.
+        val extras = intent?.extras?.let { Bundle(it) }?.apply { RESULT_EXTRAS.forEach { key -> remove(key) } }
         if (extras == null) {
             finish()
             return
@@ -87,6 +117,53 @@ class GameActivity : ComponentActivity() {
     }
 
     /**
+     * The launcher process switches the build to [version], installs it and starts the game again;
+     * this process is closed meanwhile. The launcher waits for it to end before it starts the next one.
+     */
+    private fun switchVersion(version: String) {
+        val profile = intent?.getStringExtra(EXTRA_PROFILE).orEmpty()
+        if (profile.isEmpty()) return
+        relaunching = true
+        runCatching {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    .putExtra(EXTRA_SWITCH_PROFILE, profile)
+                    .putExtra(EXTRA_SWITCH_VERSION, version),
+            )
+        }.onFailure { error ->
+            relaunching = false
+            Log.w(TAG, "лаунчер не открылся для смены версии: ${error.message}")
+        }
+        if (relaunching) model.stop()
+    }
+
+    /**
+     * The game ended by itself and its process is about to be ended with it. After a
+     * crash the launcher process is asked to open this screen anew in a fresh game
+     * process, which shows what happened: this one cannot stay to do it.
+     */
+    fun end(result: GameResult?) {
+        val extras = intent?.extras
+        if (result != null && extras != null) {
+            relaunching = true
+            runCatching {
+                startActivity(Intent(this, GameRelaunchActivity::class.java).putExtras(extras).putExtras(result.extras()))
+            }.onFailure { error ->
+                relaunching = false
+                Log.w(TAG, "итог игры не открылся: ${error.message}")
+            }
+        }
+        releaseServices()
+        finish()
+    }
+
+    private fun releaseServices() {
+        GameKeepAliveService.stop(this)
+        if (!relaunching) BedrockProxyService.stop(this)
+    }
+
+    /**
      * The desktop virtual machine cannot be unloaded, so the process that ran it
      * has to end together with the screen: otherwise the next launch lands in a
      * process where a machine already exists, and the game never starts. The
@@ -95,10 +172,8 @@ class GameActivity : ComponentActivity() {
      */
     override fun onDestroy() {
         val leaving = isFinishing
-        if (leaving) {
-            GameKeepAliveService.stop(this)
-            if (!relaunching) BedrockProxyService.stop(this)
-        }
+        ExitTrap.detach(this)
+        if (leaving) releaseServices()
         super.onDestroy()
         if (leaving) {
             GameExitMark.set(this)
@@ -125,9 +200,34 @@ class GameActivity : ComponentActivity() {
         )
     }
 
+    private fun readResult(intent: Intent?): GameResult? {
+        val error = intent?.getStringExtra(EXTRA_RESULT_ERROR) ?: return null
+        return GameResult(
+            error = error,
+            cause = intent.getStringExtra(EXTRA_RESULT_CAUSE),
+            logName = intent.getStringExtra(EXTRA_RESULT_LOG).orEmpty(),
+            build = intent.getStringExtra(EXTRA_RESULT_BUILD).orEmpty(),
+            openedAt = intent.getLongExtra(EXTRA_RESULT_OPENED, 0L),
+            sdl = intent.getBooleanExtra(EXTRA_RESULT_SDL, false),
+            retryHelps = intent.getBooleanExtra(EXTRA_RESULT_RETRY, true),
+        )
+    }
+
     companion object {
         private const val TAG = "millida-game"
+        internal const val EXTRA_RESULT_ERROR = "result-error"
+        internal const val EXTRA_RESULT_CAUSE = "result-cause"
+        internal const val EXTRA_RESULT_LOG = "result-log"
+        internal const val EXTRA_RESULT_BUILD = "result-build"
+        internal const val EXTRA_RESULT_OPENED = "result-opened"
+        internal const val EXTRA_RESULT_SDL = "result-sdl"
+        internal const val EXTRA_RESULT_RETRY = "result-retry"
+        private val RESULT_EXTRAS = listOf(
+            EXTRA_RESULT_ERROR, EXTRA_RESULT_CAUSE, EXTRA_RESULT_LOG, EXTRA_RESULT_BUILD, EXTRA_RESULT_OPENED, EXTRA_RESULT_SDL, EXTRA_RESULT_RETRY,
+        )
         private const val EXTRA_PROFILE = "profile"
+        const val EXTRA_SWITCH_PROFILE = "switch-profile"
+        const val EXTRA_SWITCH_VERSION = "switch-version"
         private const val EXTRA_HEAP = "heap"
         private const val EXTRA_WIDTH = "width"
         private const val EXTRA_HEIGHT = "height"
@@ -246,6 +346,31 @@ object GameProcess {
     }
 }
 
+/**
+ * A game that crashed, as the next process shows it: the dying one cannot hold the
+ * screen, so its verdict travels through the launcher process with the start's extras.
+ */
+data class GameResult(
+    val error: String,
+    val cause: String?,
+    /** The file name only: it is looked up in the logs folder, never opened as a path. */
+    val logName: String,
+    val build: String,
+    val openedAt: Long,
+    val sdl: Boolean,
+    val retryHelps: Boolean = true,
+) {
+    fun extras(): Bundle = Bundle().apply {
+        putString(GameActivity.EXTRA_RESULT_ERROR, error)
+        putString(GameActivity.EXTRA_RESULT_CAUSE, cause)
+        putString(GameActivity.EXTRA_RESULT_LOG, logName)
+        putString(GameActivity.EXTRA_RESULT_BUILD, build)
+        putLong(GameActivity.EXTRA_RESULT_OPENED, openedAt)
+        putBoolean(GameActivity.EXTRA_RESULT_SDL, sdl)
+        putBoolean(GameActivity.EXTRA_RESULT_RETRY, retryHelps)
+    }
+}
+
 data class LaunchIntent(
     val profileId: String,
     val heapMb: Int,
@@ -257,3 +382,18 @@ data class LaunchIntent(
     /** The launch signature of a protected pack, issued by our API for this one start. */
     val packJvmArgs: List<String> = emptyList(),
 )
+
+/**
+ * Landscape windows stop at the camera cutout by default, which leaves a black
+ * strip along one side; the player may give that strip to the game.
+ */
+fun applyGameCutout(window: android.view.Window, under: Boolean) {
+    if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) return
+    val mode = if (under) {
+        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+    } else {
+        android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT
+    }
+    if (window.attributes.layoutInDisplayCutoutMode == mode) return
+    window.attributes = window.attributes.also { it.layoutInDisplayCutoutMode = mode }
+}

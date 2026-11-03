@@ -10,6 +10,7 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.put
 import java.security.SecureRandom
 
+import net.millida.launcher.core.i18n.tr
 /**
  * Signalling envelope kinds exactly as trade-api names them
  * (friends/calls/call-mailbox.ts). The last two are written only by the
@@ -87,10 +88,10 @@ object CallEnvelopes {
         seconds: Long? = null,
         roomId: String? = null,
     ): JsonObject {
-        require(kind.fromClient) { "конверт ${kind.wire} пишет только сервер" }
-        require(callId.length in 8..64) { "неверный идентификатор звонка" }
-        require(peerId.isNotBlank() && peerId.length <= 40) { "неверный собеседник" }
-        roomId?.let { require(it.length in 8..64) { "неверная группа" } }
+        require(kind.fromClient) { tr("конверт {wire} пишет только сервер", kind.wire) }
+        require(callId.length in 8..64) { tr("неверный идентификатор звонка") }
+        require(peerId.isNotBlank() && peerId.length <= 40) { tr("неверный собеседник") }
+        roomId?.let { require(it.length in 8..64) { tr("неверная группа") } }
         return buildJsonObject {
             put("callId", callId)
             put("peerId", peerId)

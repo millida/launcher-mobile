@@ -21,6 +21,7 @@ import net.millida.launcher.core.catalog.CatalogSource
 import net.millida.launcher.core.catalog.CatalogVersion
 import net.millida.launcher.core.catalog.ContentKind
 import net.millida.launcher.core.content.InstalledIndex
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.packs.PackProgress
 import net.millida.launcher.core.profile.Profile
 import net.millida.launcher.core.telemetry.EventData
@@ -104,7 +105,7 @@ class AiBuilderModel(
         val current = mutable.value
         if (!current.ready || current.building || current.soon) return
         if (!host.signedIn) {
-            host.notice("Войди в аккаунт Millida — ИИ-сборщик работает в нём", true)
+            host.notice(tr("Войди в аккаунт Millida — ИИ-сборщик работает в нём"), true)
             host.signIn()
             return
         }
@@ -157,24 +158,24 @@ class AiBuilderModel(
                 )
                 mutable.update { AiBuilderState(quota = it.quota) }
                 if (failed.isEmpty()) {
-                    host.notice("Сборка «$name» готова", false)
+                    host.notice(tr("Сборка «{name}» готова", name), false)
                 } else {
-                    host.notice("Не встало: ${failed.take(3).joinToString("; ")}", true)
+                    host.notice(tr("Не встало: {0}", failed.take(3).joinToString("; ")), true)
                 }
             },
         ) { onStep ->
-            onStep(PackProgress("Создаём сборку"))
+            onStep(PackProgress(tr("Создаём сборку")))
             val profile = container.packs.createBuild(name, plan.mcVersion, plan.loader, onStep)
             val dir = container.profiles.directory(profile)
             val total = chosen.mods.size + chosen.resourcepacks.size + chosen.shaders.size
             var done = 0
             val step: (AiMod) -> Unit = { mod ->
                 done += 1
-                onStep(PackProgress("Ставим моды", done, total, mod.title))
+                onStep(PackProgress(tr("Ставим моды"), done, total, mod.title))
             }
             val modsIn = installAll(profile, dir, chosen.mods, ContentKind.MOD, failed, step)
             if (chosen.mods.isNotEmpty() && modsIn == 0) {
-                throw IOException("ни один мод не поставился: ${failed.take(3).joinToString("; ")} — сборка «$name» осталась пустой")
+                throw IOException(tr("ни один мод не поставился: {0} — сборка «{name}» осталась пустой", failed.take(3).joinToString("; "), name))
             }
             installAll(profile, dir, chosen.resourcepacks, ContentKind.RESOURCE_PACK, failed, step)
             installAll(profile, dir, chosen.shaders, ContentKind.SHADER, failed, step)
@@ -213,7 +214,7 @@ class AiBuilderModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                failed += "${mod.title}: ${error.message ?: "не скачался"}"
+                failed += "${mod.title}: ${error.message ?: tr("не скачался")}"
             } finally {
                 step(mod)
             }
@@ -227,7 +228,7 @@ class AiBuilderModel(
         val loader = if (kind == ContentKind.MOD) profile.loader else null
         val versions = container.catalog.versionsFor(item, profile.gameVersion, loader).filter { it.primaryFile() != null }
         return versions.firstOrNull { it.versionType == "release" } ?: versions.firstOrNull()
-            ?: throw IOException("нет версии под ${profile.gameVersion}")
+            ?: throw IOException(tr("нет версии под {gameVersion}", profile.gameVersion))
     }
 
     companion object {

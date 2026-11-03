@@ -51,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
@@ -60,10 +61,12 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -76,16 +79,22 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.compose.SubcomposeAsyncImage
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.round
 import kotlin.math.roundToInt
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 
 internal const val DISABLED_ALPHA = 0.45f
 
@@ -181,7 +190,7 @@ fun MButton(
         modifier
             .alpha(if (enabled) 1f else DISABLED_ALPHA)
             .pressShift(progress)
-            .heightIn(min = size.height)
+            .heightIn(min = if (LocalCompactUi.current) maxOf(size.height, if (size == MButtonSize.Large) 68.dp else 56.dp) else size.height)
             .pixelSurface(fill, MillidaCut.control, look.frame, dots = look.dots)
             .clickable(interaction, indication = null, enabled = active, role = Role.Button, onClick = onClick)
             .padding(start = size.padding, end = size.padding, bottom = sole),
@@ -397,7 +406,7 @@ fun MIconButton(
 }
 
 @Composable
-fun MBackButton(onClick: () -> Unit, modifier: Modifier = Modifier, label: String = "Назад") {
+fun MBackButton(onClick: () -> Unit, modifier: Modifier = Modifier, label: String = tr("Назад")) {
     val colors = millida
     IconPlate(
         icon = MIcons.back,
@@ -555,7 +564,7 @@ fun MField(
                     .clickable(
                         interactionSource = clearInteraction,
                         indication = null,
-                        onClickLabel = "Очистить",
+                        onClickLabel = tr("Очистить"),
                         role = Role.Button,
                     ) { onValueChange("") },
                 contentAlignment = Alignment.Center,
@@ -686,6 +695,11 @@ fun MSectionHeader(
     }
 }
 
+/** A bar drawn filling from the left turns around for Arabic and Urdu, so it fills along the reading direction. */
+internal fun Modifier.readingFill(): Modifier = drawWithContent {
+    if (layoutDirection == LayoutDirection.Rtl) scale(-1f, 1f) { this@drawWithContent.drawContent() } else drawContent()
+}
+
 @Composable
 fun MProgressBar(
     progress: Float?,
@@ -716,7 +730,8 @@ fun MProgressBar(
             .fillMaxWidth()
             .height(8.dp)
             .semantics { progressBarRangeInfo = ProgressBarRangeInfo(shown ?: 0f, 0f..1f) }
-            .pixelSurface(colors.inset, 2.dp),
+            .pixelSurface(colors.inset, 2.dp)
+            .readingFill(),
     ) {
         val w = size.width
         val h = size.height
@@ -938,24 +953,26 @@ fun MSlider(
     val span = valueRange.endInclusive - valueRange.start
     val fraction = if (span <= 0f) 0f else ((value - valueRange.start) / span).coerceIn(0f, 1f)
     val thumb = 22.dp
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
 
     fun valueAt(x: Float, total: Int, thumbPx: Float): Float {
         val usable = total - thumbPx
-        val share = if (usable <= 0f) 0f else ((x - thumbPx / 2f) / usable).coerceIn(0f, 1f)
+        val along = if (rtl) total - x else x
+        val share = if (usable <= 0f) 0f else ((along - thumbPx / 2f) / usable).coerceIn(0f, 1f)
         val snapped = if (stepCount > 0) round(share * (stepCount + 1)) / (stepCount + 1) else share
         return range.start + snapped * (range.endInclusive - range.start)
     }
 
     val gestures = if (enabled) {
         Modifier
-            .pointerInput(Unit) {
+            .pointerInput(rtl) {
                 val thumbPx = thumb.toPx()
                 detectTapGestures { position ->
                     change(valueAt(position.x, size.width, thumbPx))
                     finish?.invoke()
                 }
             }
-            .pointerInput(Unit) {
+            .pointerInput(rtl) {
                 val thumbPx = thumb.toPx()
                 detectHorizontalDragGestures(
                     onDragStart = { position -> change(valueAt(position.x, size.width, thumbPx)) },
@@ -992,7 +1009,8 @@ fun MSlider(
         Canvas(
             Modifier
                 .fillMaxWidth()
-                .height(8.dp),
+                .height(8.dp)
+                .readingFill(),
         ) {
             val thumbPx = thumb.toPx()
             val usable = max(0f, size.width - thumbPx)
@@ -1196,6 +1214,114 @@ fun <T> MTabs(
                 onClick = { if (tab != selected) onSelect(tab) },
             )
         }
+    }
+}
+
+/**
+ * The choice of [MTabs] for a narrow screen with more sections than fit in a row:
+ * the picked one and the whole list under it, so no section hides behind the edge.
+ */
+@Composable
+fun <T> MTabMenu(
+    tabs: List<T>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    label: (T) -> String = { it.toString() },
+    icon: (T) -> MillidaIcon? = { null },
+) {
+    val colors = millida
+    val density = LocalDensity.current
+    var open by remember { mutableStateOf(false) }
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(interaction, UiSoundEvent.Nav)
+    Box(modifier.fillMaxWidth().onSizeChanged { size = it }) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .pixelSurface(if (pressed) colors.segmentFillOn else colors.inset, MillidaCut.control)
+                .clickable(interaction, indication = null, role = Role.DropdownList, onClick = { open = !open })
+                .padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            icon(selected)?.let { MIcon(it, size = 20.dp, color = colors.accentText) }
+            Text(
+                label(selected),
+                modifier = Modifier.weight(1f),
+                style = MillidaType.button.copy(fontSize = 14.5.sp),
+                color = colors.fg,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            MIcon(if (open) MIcons.chevronUp else MIcons.chevronDown, size = 16.dp, color = colors.fgMuted)
+        }
+        if (open) {
+            Popup(
+                alignment = Alignment.TopStart,
+                offset = IntOffset(0, size.height + with(density) { 6.dp.roundToPx() }),
+                onDismissRequest = { open = false },
+                properties = PopupProperties(focusable = true),
+            ) {
+                Column(
+                    Modifier
+                        .width(with(density) { size.width.toDp() })
+                        .pixelSurface(colors.raised, MillidaCut.plate, colors.plateFrame())
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    tabs.forEach { tab ->
+                        TabMenuItem(
+                            text = label(tab),
+                            icon = icon(tab),
+                            picked = tab == selected,
+                            onClick = {
+                                open = false
+                                if (tab != selected) onSelect(tab)
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TabMenuItem(text: String, icon: MillidaIcon?, picked: Boolean, onClick: () -> Unit) {
+    val colors = millida
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(interaction, UiSoundEvent.Nav)
+    val ink = if (picked) colors.accentText else colors.fgMuted
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .pixelSurface(
+                when {
+                    pressed -> colors.surface2
+                    picked -> colors.accentSoft
+                    else -> Color.Transparent
+                },
+                MillidaCut.control,
+            )
+            .selectable(picked, interaction, null, role = Role.Tab, onClick = onClick)
+            .padding(horizontal = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) MIcon(icon, size = 20.dp, color = ink)
+        Text(
+            text,
+            modifier = Modifier.weight(1f),
+            style = MillidaType.button.copy(fontSize = 14.5.sp),
+            color = ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (picked) MIcon(MIcons.check, size = 16.dp, color = ink)
     }
 }
 

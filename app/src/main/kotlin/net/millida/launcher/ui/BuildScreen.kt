@@ -46,6 +46,8 @@ import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.Screen
 import net.millida.launcher.UiState
 import net.millida.launcher.core.catalog.ContentKind
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.ui.build.AddServerSheet
 import net.millida.launcher.ui.build.BuildHeader
 import net.millida.launcher.ui.build.BuildHero
@@ -62,19 +64,21 @@ import net.millida.launcher.ui.home.LocalImportPrompt
 /** The desktop's build tabs (InstancePage.tsx): worlds and servers share one tab with a filter. */
 private val SHOWN_TABS = BuildTab.entries - BuildTab.SERVERS
 
-private enum class WorldFilter(val label: String) {
-    ALL("Все"),
-    SINGLE("Одиночные"),
-    SERVER("Серверы"),
+private enum class WorldFilter(private val labelKey: String) {
+    ALL(trKey("Все")),
+    SINGLE(trKey("Одиночные")),
+    SERVER(trKey("Серверы")),;
+
+    val label: String get() = tr(labelKey)
 }
 
 private fun tabLabel(tab: BuildTab): String = when (tab) {
-    BuildTab.CONTENT -> "Контент"
-    BuildTab.WORLDS -> "Миры и серверы"
-    BuildTab.SERVERS -> "Серверы"
-    BuildTab.SHOTS -> "Скриншоты"
-    BuildTab.LOGS -> "Логи"
-    BuildTab.OPTIONS -> "Параметры"
+    BuildTab.CONTENT -> tr("Контент")
+    BuildTab.WORLDS -> tr("Миры и серверы")
+    BuildTab.SERVERS -> tr("Серверы")
+    BuildTab.SHOTS -> tr("Скриншоты")
+    BuildTab.LOGS -> tr("Логи")
+    BuildTab.OPTIONS -> tr("Параметры")
 }
 
 private fun tabIcon(tab: BuildTab): MillidaIcon = when (tab) {
@@ -216,7 +220,7 @@ fun BuildScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
     } else {
         MScreen(
             modifier = modifier.imePadding(),
-            title = if (scrolled) profile.name else "Сборка",
+            title = if (scrolled) profile.name else tr("Сборка"),
             onBack = { model.back() },
             listState = listState,
             spacing = spacing,
@@ -230,13 +234,12 @@ fun BuildScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = M
                         .background(millida.bg)
                         .padding(vertical = 6.dp),
                 ) {
-                    MTabs(
+                    MTabMenu(
                         tabs = SHOWN_TABS,
                         selected = state.buildTab,
                         onSelect = model::setBuildTab,
                         label = ::tabLabel,
                         icon = ::tabIcon,
-                        scrollable = true,
                     )
                 }
             }
@@ -347,7 +350,7 @@ private fun WideBuild(
 @Composable
 private fun LocalImportSheet(prompt: LocalImportPrompt, onConfirm: () -> Unit, onCancel: () -> Unit) {
     val colors = millida
-    MBottomSheet(onDismiss = onCancel, title = "Добавить файл?") {
+    MBottomSheet(onDismiss = onCancel, title = tr("Добавить файл?")) {
         Text(
             prompt.fileName,
             style = MillidaType.rowTitle,
@@ -366,14 +369,14 @@ private fun LocalImportSheet(prompt: LocalImportPrompt, onConfirm: () -> Unit, o
         Spacer(Modifier.height(20.dp))
         Column {
             MDangerButton(
-                "Всё равно добавить",
+                tr("Всё равно добавить"),
                 onClick = onConfirm,
                 modifier = Modifier.fillMaxWidth(),
                 icon = MIcons.upload,
                 size = MButtonSize.Medium,
             )
             Spacer(Modifier.height(8.dp))
-            MSecondaryButton("Отмена", onClick = onCancel, modifier = Modifier.fillMaxWidth())
+            MSecondaryButton(tr("Отмена"), onClick = onCancel, modifier = Modifier.fillMaxWidth())
         }
     }
 }

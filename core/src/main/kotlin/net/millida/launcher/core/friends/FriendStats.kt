@@ -4,6 +4,7 @@ import kotlinx.serialization.json.buildJsonObject
 import net.millida.launcher.core.account.MillidaAuth
 import java.io.IOException
 
+import net.millida.launcher.core.i18n.tr
 /**
  * Playtime the friends see. Only the hiding half lives here: `/friends/stats`
  * keeps one client snapshot per account and seeds the server-side playtime
@@ -19,7 +20,7 @@ class FriendStatsClient(private val auth: MillidaAuth) {
         } catch (already: FriendsError) {
             throw already
         } catch (error: IOException) {
-            throw FriendsErrors.wrap(error, "Не удалось скрыть наигранное время")
+            throw FriendsErrors.wrap(error, tr("Не удалось скрыть наигранное время"))
         }
     }
 }

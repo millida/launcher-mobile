@@ -11,6 +11,8 @@ import net.millida.launcher.core.account.MillidaAuth
 import java.io.IOException
 import kotlin.math.roundToLong
 
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trPlural
 enum class InviteStatus { PENDING, QUALIFIED, REJECTED }
 
 enum class InviteWait { PLAY, EMAIL, QUEUE, NONE }
@@ -50,18 +52,20 @@ data class InviteOverview(
     val friends: List<InvitedFriend>,
     val invitedBy: InvitedBy?,
     val canApply: Boolean,
+    /** Ids of the opened ladder rewards (`icon-spark`, …): the app icon picker reads them. */
+    val perks: Set<String> = emptySet(),
 )
 
 /** «Позови друга»: the player's code, the ladder of rewards and entering a friend's code. */
 class ReferralsClient(private val auth: MillidaAuth) {
 
-    suspend fun overview(): InviteOverview = guarded("Не удалось загрузить приглашения") {
+    suspend fun overview(): InviteOverview = guarded(tr("Не удалось загрузить приглашения")) {
         Referrals.read(auth.authorized("/launcher/referrals/me", "GET", null))
     }
 
-    suspend fun apply(raw: String): InviteOverview = guarded("Не удалось ввести код") {
+    suspend fun apply(raw: String): InviteOverview = guarded(tr("Не удалось ввести код")) {
         val code = Referrals.normalizeCode(raw)
-        if (code.isEmpty()) throw FriendsError("Введи код друга")
+        if (code.isEmpty()) throw FriendsError(tr("Введи код друга"))
         Referrals.read(auth.authorized("/launcher/referrals/apply", "POST", buildJsonObject { put("code", code) }))
     }
 
@@ -89,7 +93,7 @@ object Referrals {
      */
     fun read(body: JsonObject): InviteOverview {
         val code = normalizeCode(body.text("code"))
-        if (code.isEmpty()) throw FriendsError("Millida не вернула код приглашения")
+        if (code.isEmpty()) throw FriendsError(tr("Millida не вернула код приглашения"))
         val rules = body["rules"] as? JsonObject
         val earned = body["earned"] as? JsonObject
         val next = body["next"] as? JsonObject
@@ -126,12 +130,13 @@ object Referrals {
             },
             invitedBy = by?.let { InvitedBy(it.text("nickname").ifEmpty { null }, statusOf(it.text("status"))) },
             canApply = body.flag("canApply"),
+            perks = body.list("perks").mapNotNull { entry -> (entry as? JsonObject)?.text("id")?.ifEmpty { null } }.toSet(),
         )
     }
 
-    fun daysText(count: Int): String = "$count " + ruPlural(count.toLong(), "день", "дня", "дней")
+    fun daysText(count: Int): String = "$count " + trPlural(count.toLong(), tr("день"), tr("дня"), tr("дней"))
 
-    fun friendsText(count: Int): String = "$count " + ruPlural(count.toLong(), "друг", "друга", "друзей")
+    fun friendsText(count: Int): String = "$count " + trPlural(count.toLong(), tr("друг"), tr("друга"), tr("друзей"))
 
     fun tierRewardText(tier: InviteTier): String = listOfNotNull(
         tier.chestName,
@@ -147,16 +152,16 @@ object Referrals {
     }
 
     fun friendStatusText(friend: InvitedFriend, needSeconds: Long): String = when {
-        friend.status == InviteStatus.QUALIFIED -> "Засчитан"
-        friend.status == InviteStatus.REJECTED -> "Не засчитан"
-        friend.wait == InviteWait.EMAIL -> "Ждёт подтверждения почты"
-        friend.wait == InviteWait.QUEUE -> "Засчитаем в ближайшие сутки"
-        else -> "Играет " + clock(friend.playSeconds) + " из " + clock(needSeconds)
+        friend.status == InviteStatus.QUALIFIED -> tr("Засчитан")
+        friend.status == InviteStatus.REJECTED -> tr("Не засчитан")
+        friend.wait == InviteWait.EMAIL -> tr("Ждёт подтверждения почты")
+        friend.wait == InviteWait.QUEUE -> tr("Засчитаем в ближайшие сутки")
+        else -> tr("Играет {0} из {1}", clock(friend.playSeconds), clock(needSeconds))
     }
 
     fun ruleText(overview: InviteOverview): String {
         val hours = (overview.needPlaySeconds / 3600.0).roundToLong()
-        return "+" + daysText(overview.perFriendPlusDays) + " PLUS за друга, который наиграет " + hours + " ч"
+        return tr("+{0} PLUS за друга, который наиграет {hours} ч", daysText(overview.perFriendPlusDays), hours)
     }
 
     private fun clock(seconds: Long): String {

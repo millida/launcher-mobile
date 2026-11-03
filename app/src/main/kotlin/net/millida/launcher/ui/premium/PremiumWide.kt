@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.millida.launcher.LauncherViewModel
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.premium.Premium
 import net.millida.launcher.core.premium.PremiumAction
 import net.millida.launcher.core.premium.PremiumPack
@@ -74,7 +75,7 @@ private const val ART_PLATE_ALPHA = 0.86f
 
 internal val PREMIUM_CARD_MIN_WIDTH = 240.dp
 
-internal const val PREMIUM_TITLE = "Премиум"
+internal val PREMIUM_TITLE: String get() = tr("Премиум")
 
 @Composable
 private fun heroHeight(): Dp =
@@ -100,7 +101,7 @@ internal fun WidePremiumHero(
     val colors = millida
     val line = pack.tagline ?: Premium.facts(pack).ifEmpty { null }
     val details: (@Composable () -> Unit)? = if (onOpen != null) {
-        { MSecondaryButton("Подробнее", onClick = onOpen) }
+        { MSecondaryButton(tr("Подробнее"), onClick = onOpen) }
     } else {
         null
     }
@@ -157,7 +158,7 @@ internal fun WidePremiumCard(
     modifier: Modifier = Modifier,
 ) {
     val colors = millida
-    val price = if (Premium.hasAccess(pack, sub)) "Открыто" else Premium.priceLabel(pack, plan)
+    val price = if (Premium.hasAccess(pack, sub)) tr("Открыто") else Premium.priceLabel(pack, plan)
     val downloads = pack.downloads ?: 0
     MCard(modifier = modifier, onClick = onOpen, contentPadding = 0.dp) {
         Box(
@@ -243,7 +244,7 @@ internal fun WidePackPage(model: LauncherViewModel, page: PackPageState, modifie
     val sub = model.premium.subscriptionOf(page)
     val detail = page.detail
     val plans = detail?.let { Premium.plans(it, premium.plan) }.orEmpty()
-    val includes = detail?.let { Premium.includes(it) } ?: if (pack.hasServer) listOf("Сервер сборки") else emptyList()
+    val includes = detail?.let { Premium.includes(it) } ?: if (pack.hasServer) listOf(tr("Сервер сборки")) else emptyList()
     val tiles = Premium.tiles(pack, detail?.updatedAt)
     val shots = page.shots
     val video = page.video
@@ -266,7 +267,7 @@ internal fun WidePackPage(model: LauncherViewModel, page: PackPageState, modifie
     ) {
         item(key = "page-back") {
             Row {
-                MSecondaryButton("Назад", onClick = close, icon = MIcons.chevronLeft, size = MButtonSize.Small)
+                MSecondaryButton(tr("Назад"), onClick = close, icon = MIcons.chevronLeft, size = MButtonSize.Small)
             }
         }
         item(key = "page-hero") {
@@ -324,7 +325,7 @@ internal fun WidePackPage(model: LauncherViewModel, page: PackPageState, modifie
         if (includes.isNotEmpty()) {
             item(key = "page-includes") {
                 Column {
-                    MSectionHeader("Что входит")
+                    MSectionHeader(tr("Что входит"))
                     Checks(includes)
                 }
             }
@@ -332,7 +333,7 @@ internal fun WidePackPage(model: LauncherViewModel, page: PackPageState, modifie
         if (plans.isNotEmpty()) {
             item(key = "page-plans") {
                 Column {
-                    MSectionHeader("Подписка")
+                    MSectionHeader(tr("Подписка"))
                     FitGrid(plans, PLAN_MIN_WIDTH, gap = 10.dp) { tier, cell ->
                         MCard(modifier = cell, contentPadding = 12.dp) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -351,7 +352,7 @@ internal fun WidePackPage(model: LauncherViewModel, page: PackPageState, modifie
         if (patches.isNotEmpty()) {
             item(key = "page-patches") {
                 Column {
-                    MSectionHeader("Обновления")
+                    MSectionHeader(tr("Обновления"))
                     patches.forEach { patch ->
                         val day = Premium.untilText(patch.date)
                         Row(Modifier.padding(vertical = 3.dp)) {
@@ -380,15 +381,26 @@ internal fun WidePackPage(model: LauncherViewModel, page: PackPageState, modifie
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         MIcon(MIcons.alert, size = 18.dp, color = colors.warning)
                         Spacer(Modifier.width(8.dp))
-                        Text("Страница не догрузилась", modifier = Modifier.weight(1f), style = MillidaType.small, color = colors.fgMuted)
-                        MTextButton("Повторить", onClick = { model.premium.retryPage() }, icon = MIcons.refresh)
+                        Text(tr("Страница не догрузилась"), modifier = Modifier.weight(1f), style = MillidaType.small, color = colors.fgMuted)
+                        MTextButton(tr("Повторить"), onClick = { model.premium.retryPage() }, icon = MIcons.refresh)
                     }
                 }
             }
         }
+        premium.showcase?.let { showcase ->
+            item(key = "page-more") {
+                PremiumMoreRow(
+                    packs = listOfNotNull(showcase.featured) + showcase.rest,
+                    current = pack.slug,
+                    plan = premium.plan,
+                    onOpen = model.premium::open,
+                    fill = true,
+                )
+            }
+        }
         item(key = "page-legal") {
             Text(
-                "Доступ к сборке: моды скачиваются при установке. Не продукт Mojang." + (pack.ageRating?.let { " $it" } ?: ""),
+                tr("Доступ к сборке: моды скачиваются при установке. Не продукт Mojang.") + (pack.ageRating?.let { " $it" } ?: ""),
                 style = MillidaType.small,
                 color = colors.fgFaint,
             )
@@ -399,7 +411,7 @@ internal fun WidePackPage(model: LauncherViewModel, page: PackPageState, modifie
         BugSheet(
             sending = support.sendingBug,
             onSend = { kind, text, attach, _ ->
-                model.support.sendBug(kind, "Сборка «${pack.title}» (${pack.slug ?: pack.id}): $text", attach) { reporting = false }
+                model.support.sendBug(kind, tr("Сборка «{title}» ({0}): {text}", pack.title, pack.slug ?: pack.id, text), attach) { reporting = false }
             },
             onDismiss = { reporting = false },
         )

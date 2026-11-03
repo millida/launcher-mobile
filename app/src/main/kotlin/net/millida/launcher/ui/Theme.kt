@@ -14,17 +14,29 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ProvidableCompositionLocal
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import net.millida.launcher.core.i18n.I18n
+import net.millida.launcher.core.i18n.Locales
+import net.millida.launcher.core.i18n.Scripts
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
+import net.millida.launcher.core.looks.PremiumLook
 
 @Immutable
 data class MillidaColors(
@@ -153,18 +165,38 @@ data class MillidaAccent(
     val soft: Color,
 )
 
-val MillidaAccents: List<MillidaAccent> = listOf(
-    MillidaAccent("green", "Зелёный", Color(0xFF5EC64D), Color(0x215EC64D)),
-    MillidaAccent("lime", "Лайм", Color(0xFF9BD628), Color(0x249BD628)),
-    MillidaAccent("teal", "Бирюзовый", Color(0xFF22C7A9), Color(0x2422C7A9)),
-    MillidaAccent("cyan", "Голубой", Color(0xFF2CB6E8), Color(0x242CB6E8)),
-    MillidaAccent("blue", "Синий", Color(0xFF4C8DFF), Color(0x244C8DFF)),
-    MillidaAccent("indigo", "Индиго", Color(0xFF6C6BFF), Color(0x246C6BFF)),
-    MillidaAccent("purple", "Фиолетовый", Color(0xFF9B6BFF), Color(0x249B6BFF)),
-    MillidaAccent("pink", "Розовый", Color(0xFFFF6BAA), Color(0x24FF6BAA)),
-    MillidaAccent("red", "Красный", Color(0xFFFF6B5E), Color(0x24FF6B5E)),
-    MillidaAccent("orange", "Оранжевый", Color(0xFFF5923B), Color(0x24F5923B)),
-    MillidaAccent("yellow", "Жёлтый", Color(0xFFF5C93B), Color(0x24F5C93B)),
+val MillidaAccents: List<MillidaAccent> get() = listOf(
+    MillidaAccent("green", tr("Зелёный"), Color(0xFF5EC64D), Color(0x215EC64D)),
+    MillidaAccent("lime", tr("Лайм"), Color(0xFF9BD628), Color(0x249BD628)),
+    MillidaAccent("teal", tr("Бирюзовый"), Color(0xFF22C7A9), Color(0x2422C7A9)),
+    MillidaAccent("cyan", tr("Голубой"), Color(0xFF2CB6E8), Color(0x242CB6E8)),
+    MillidaAccent("blue", tr("Синий"), Color(0xFF4C8DFF), Color(0x244C8DFF)),
+    MillidaAccent("indigo", tr("Индиго"), Color(0xFF6C6BFF), Color(0x246C6BFF)),
+    MillidaAccent("purple", tr("Фиолетовый"), Color(0xFF9B6BFF), Color(0x249B6BFF)),
+    MillidaAccent("pink", tr("Розовый"), Color(0xFFFF6BAA), Color(0x24FF6BAA)),
+    MillidaAccent("red", tr("Красный"), Color(0xFFFF6B5E), Color(0x24FF6B5E)),
+    MillidaAccent("orange", tr("Оранжевый"), Color(0xFFF5923B), Color(0x24F5923B)),
+    MillidaAccent("yellow", tr("Жёлтый"), Color(0xFFF5C93B), Color(0x24F5C93B)),
+    MillidaAccent("emerald", tr("Изумрудный"), Color(0xFF2BB673), Color(0x242BB673)),
+    MillidaAccent("mint", tr("Мятный"), Color(0xFF5FE0B0), Color(0x245FE0B0)),
+    MillidaAccent("sky", tr("Небесный"), Color(0xFF6FC3FF), Color(0x246FC3FF)),
+    MillidaAccent("azure", tr("Лазурный"), Color(0xFF3A6FE0), Color(0x243A6FE0)),
+    MillidaAccent("lavender", tr("Лавандовый"), Color(0xFFB79CFF), Color(0x24B79CFF)),
+    MillidaAccent("magenta", tr("Малиновый"), Color(0xFFE8457A), Color(0x24E8457A)),
+    MillidaAccent("coral", tr("Коралловый"), Color(0xFFFF8A65), Color(0x24FF8A65)),
+    MillidaAccent("amber", tr("Янтарный"), Color(0xFFFFB020), Color(0x24FFB020)),
+    MillidaAccent("sand", tr("Песочный"), Color(0xFFD8B26E), Color(0x24D8B26E)),
+    MillidaAccent("silver", tr("Серебряный"), Color(0xFFBFC7CF), Color(0x24BFC7CF)),
+)
+
+/**
+ * The subscriber's extra swatches (premiumTheme.ts PREMIUM_ACCENTS): known
+ * accents like any other, so a stored choice is never reset to green; whether
+ * the current tier opens them is the picker's and the theme's business.
+ */
+val PremiumAccents: List<MillidaAccent> get() = listOf(
+    MillidaAccent(PremiumLook.ACCENT_PLUS, tr("Золото PLUS"), Color(0xFFF5BD2C), Color(0x26F5BD2C)),
+    MillidaAccent(PremiumLook.ACCENT_DIAMOND, tr("Алмаз Diamond"), Color(0xFF4FB8FF), Color(0x264FB8FF)),
 )
 
 private val CUSTOM_ACCENT = Regex("^#[0-9a-fA-F]{6}$")
@@ -173,15 +205,17 @@ private const val CUSTOM_ACCENT_SOFT_ALPHA = 0.14f
 
 fun isCustomAccent(id: String): Boolean = CUSTOM_ACCENT.matches(id)
 
-fun isKnownAccent(id: String): Boolean = isCustomAccent(id) || MillidaAccents.any { it.id == id }
+fun isKnownAccent(id: String): Boolean =
+    isCustomAccent(id) || MillidaAccents.any { it.id == id } || PremiumAccents.any { it.id == id }
 
 fun accentFromHex(hex: String): MillidaAccent {
     val color = Color(0xFF000000 or hex.removePrefix("#").toLong(16))
-    return MillidaAccent(hex.lowercase(), "Свой цвет", color, color.copy(alpha = CUSTOM_ACCENT_SOFT_ALPHA))
+    return MillidaAccent(hex.lowercase(), tr("Свой цвет"), color, color.copy(alpha = CUSTOM_ACCENT_SOFT_ALPHA))
 }
 
 fun accentById(id: String): MillidaAccent =
     MillidaAccents.firstOrNull { it.id == id }
+        ?: PremiumAccents.firstOrNull { it.id == id }
         ?: if (isCustomAccent(id)) accentFromHex(id) else MillidaAccents.first()
 
 /** CSS `color-mix(in srgb, this share, other)`: a plain per-channel blend, not Compose's Oklab `lerp`. */
@@ -275,6 +309,33 @@ object MillidaPixel {
     val modalScrim = Color(0xB3000000)
     val sheetScrim = Color(0x9E000000)
     val sceneScrim = Color(0xF0030705)
+    val revealCenter = Color(0xFF050807)
+    val revealEdge = Color(0xFF030504)
+    val revealPlate = Color(0xFF15181A)
+    val revealInk = Color(0xFF111111)
+    val revealShade = Color(0x47000000)
+    val badgeGreen = Color(0xFF55FF55)
+    val badgeGreenShade = Color(0xFF153F15)
+    val badgeGold = Color(0xFFFFAA00)
+    val badgeGoldShade = Color(0xFF3F2A00)
+    val nameTagBack = Color(0x5C000000)
+    val nameTagShade = Color(0xFF3F3F3F)
+    val nickGold = Color(0xFFFFD76A)
+    val nickGoldSoft = Color(0xFFFFE08A)
+    val plusGlow = Color(0x38FFBE3C)
+    val heroTop = Color(0xFF1F1914)
+    val heroMiddle = Color(0xFF0B0D14)
+    val heroBottom = Color(0xFF06070A)
+    val heroGlow = Color(0x3DF3B525)
+    val heroGrid = Color(0x0DFFFFFF)
+    val heroLight = Color(0x57FFC933)
+    val heroInk = Color(0xFF111820)
+    val sceneBack = Color(0xFF1A120E)
+    val sceneShade = Color(0x8C000000)
+    val sceneNote = Color(0x9E000000)
+    val tabBack = Color(0x80000000)
+    val tabRow = Color(0x1AFFFFFF)
+    val tabYou = Color(0x38F2AD0D)
     val rubyIcon = Color(0xFFFF5A8A)
     val gold = Color(0xFFFFC933)
     val goldInk = Color(0xFF3A2400)
@@ -348,19 +409,77 @@ object MillidaPixel {
     val lobbyRecArt = Color(0xFF1B2A20)
     val lobbyRecLabel = Color(0xFFFFD23F)
     val lobbyRecGoBottom = Color(0x40000000)
+    val stageInk = Color(0xFF000000)
+    val stageFeetShade = Color(0xFF00280C)
+    val bannerCo = Color(0x99FFFFFF)
+    val bannerTitle = Color(0xEBFFFFFF)
+    val bannerTitleShadow = Color(0x80000000)
+    val bannerGoShade = Color(0x38000000)
+    val bannerDot = Color(0x59FFFFFF)
+    val bannerDiscordNight = Color(0xFF2A2F86)
+    val bannerDiscordLava = Color(0xFF5865F2)
+    val bannerDiscordEm = Color(0xFFB9C0FF)
+    val bannerTelegramNight = Color(0xFF0B4A6E)
+    val bannerTelegramLava = Color(0xFF2AABEE)
+    val bannerTelegramEm = Color(0xFF9FDCFF)
+    val bannerPackNight = Color(0xFF15111D)
+    val bannerPackLava = Color(0xFFFFC531)
+    val bannerPackInk = Color(0xFF1C1405)
+    val bannerPackOnline = Color(0xD115111D)
     val bubbleFill = Color(0xFFF6F5EF)
     val bubbleInk = Color(0xFF17171B)
     val bubbleShade = Color(0x1F000000)
+    val clockPlate = Color(0x8C000000)
+    val railArrowAlpha = 0.82f
+    val plusChip = Color(0xFF2A1F08)
+    val plusChipPressed = Color(0xFF3A2B0B)
+    val diamondChip = Color(0xFF0B2140)
+    val diamondChipPressed = Color(0xFF10305A)
+    val plusChipInk = Color(0xFFFFE08A)
+    val diamondChipInk = Color(0xFFBFE8FF)
+    val plusAdd = Color(0xFFF5BD2C)
+    val plusAddGlow = Color(0xE6FFBE28)
+    val plusAddGlowDim = Color(0x66FFBE28)
+    val plusMarkSole = Color(0xFF1C1003)
+    val plusMarkLine = Color(0xFF3A2306)
+    val plusMarkBody = Color(0xFFF5BD2C)
+    val plusMarkHi = Color(0xFFFFE58A)
+    val plusMarkLo = Color(0xFFC4840F)
+    val diamondMarkSole = Color(0xFF06142B)
+    val diamondMarkLine = Color(0xFF0B2346)
+    val diamondMarkBody = Color(0xFF4FB8FF)
+    val diamondMarkHi = Color(0xFFD2F1FF)
+    val diamondMarkLo = Color(0xFF2A73D0)
+    val offMarkSole = Color(0xFF111111)
+    val offMarkLine = Color(0xFF222222)
+    val offMarkBody = Color(0xFF8B8F93)
+    val offMarkHi = Color(0xFFB9BDC1)
+    val offMarkLo = Color(0xFF63676B)
+    val markShine = Color(0x8CFFFFFF)
+    val trustPlate = Color(0xFFFFFFFF)
+    val trustInk = Color(0xFF10161B)
+    val trustHeadLine = Color(0xFFE3E8EC)
+    val trustRowLine = Color(0xFFECEFF2)
+    val trustGreen = Color(0xFF1F9D3A)
+    val trustTagInk = Color(0xFF1F7A34)
+    val trustTagPlate = Color(0xFFE6F6EA)
+    val trustMuted = Color(0xFF7A858F)
+    val brandMicrosoft = listOf(Color(0xFFF25022), Color(0xFF7FBA00), Color(0xFF00A4EF), Color(0xFFFFB900))
+    val brandMojang = Color(0xFFF0313B)
+    val brandGithub = Color(0xFF181717)
 }
 
-enum class Rarity(val color: Color, val plate: String, val title: String) {
-    COMMON(Color(0xFF98A0A4), "Обычная", "Обычная"),
-    UNCOMMON(Color(0xFF5AC445), "Необычная", "Необычная"),
-    RARE(Color(0xFF4994E9), "Редкая", "Редкая"),
-    EPIC(Color(0xFFB466DB), "Эпическая", "Эпическая"),
-    LEGENDARY(Color(0xFFF2BA36), "Легенда", "Легендарная"),
-    MYTHIC(Color(0xFFF14159), "Миф", "Мифическая"),
-    RELIC(Color(0xFFEDEDF3), "Невозможная", "Невозможная");
+enum class Rarity(val color: Color, private val plateKey: String, private val titleKey: String) {
+    COMMON(Color(0xFF98A0A4), trKey("Обычная"), trKey("Обычная")),
+    UNCOMMON(Color(0xFF5AC445), trKey("Необычная"), trKey("Необычная")),
+    RARE(Color(0xFF4994E9), trKey("Редкая"), trKey("Редкая")),
+    EPIC(Color(0xFFB466DB), trKey("Эпическая"), trKey("Эпическая")),
+    LEGENDARY(Color(0xFFF2BA36), trKey("Легенда"), trKey("Легендарная")),
+    MYTHIC(Color(0xFFF14159), trKey("Миф"), trKey("Мифическая")),
+    RELIC(Color(0xFFEDEDF3), trKey("Невозможная"), trKey("Невозможная"));
+
+    val plate: String get() = tr(plateKey)
+    val title: String get() = tr(titleKey)
 
     val sparkles: Boolean get() = this >= EPIC
     val animated: Boolean get() = this >= MYTHIC
@@ -407,7 +526,7 @@ object MillidaMotion {
     fun steps(count: Int): Easing = StepsEasing(count)
 }
 
-object MillidaType {
+private object BaseType {
     val brand = TextStyle(
         fontFamily = UnboundedFamily,
         fontWeight = FontWeight.Black,
@@ -488,23 +607,80 @@ object MillidaType {
         lineHeight = 13.sp,
     )
     val pixel = TextStyle(
-        fontFamily = MonocraftFamily,
-        fontWeight = FontWeight.Normal,
+        fontFamily = GeistFamily,
+        fontWeight = FontWeight.ExtraBold,
         fontSize = 14.sp,
         lineHeight = 17.sp,
     )
     val pixelLarge = TextStyle(
-        fontFamily = MonocraftFamily,
-        fontWeight = FontWeight.Normal,
+        fontFamily = UnboundedFamily,
+        fontWeight = FontWeight.Bold,
         fontSize = 22.sp,
         lineHeight = 26.sp,
     )
     val pixelSmall = TextStyle(
-        fontFamily = MonocraftFamily,
-        fontWeight = FontWeight.Normal,
+        fontFamily = GeistFamily,
+        fontWeight = FontWeight.ExtraBold,
         fontSize = 11.sp,
         lineHeight = 13.sp,
     )
+}
+
+object MillidaType {
+    val brand: TextStyle get() = scale().brand
+    val screenTitle: TextStyle get() = scale().screenTitle
+    val barTitle: TextStyle get() = scale().barTitle
+    val dialogTitle: TextStyle get() = scale().dialogTitle
+    val sectionTitle: TextStyle get() = scale().sectionTitle
+    val caption: TextStyle get() = scale().caption
+    val button: TextStyle get() = scale().button
+    val rowTitle: TextStyle get() = scale().rowTitle
+    val body: TextStyle get() = scale().body
+    val small: TextStyle get() = scale().small
+    val tileTitle: TextStyle get() = scale().tileTitle
+    val tabLabel: TextStyle get() = scale().tabLabel
+    val pixel: TextStyle get() = scale().pixel
+    val pixelLarge: TextStyle get() = scale().pixelLarge
+    val pixelSmall: TextStyle get() = scale().pixelSmall
+
+    @Volatile
+    private var cached: TypeScale? = null
+
+    private fun scale(): TypeScale {
+        val script = ScriptType.of(I18n.code)
+        return cached?.takeIf { it.script == script } ?: TypeScale(script).also { cached = it }
+    }
+}
+
+internal class TypeScale(val script: ScriptType) {
+    val brand: TextStyle = script.apply(BaseType.brand)
+    val screenTitle: TextStyle = script.apply(BaseType.screenTitle)
+    val barTitle: TextStyle = script.apply(BaseType.barTitle)
+    val dialogTitle: TextStyle = script.apply(BaseType.dialogTitle)
+    val sectionTitle: TextStyle = script.apply(BaseType.sectionTitle)
+    val caption: TextStyle = script.apply(BaseType.caption)
+    val button: TextStyle = script.apply(BaseType.button)
+    val rowTitle: TextStyle = script.apply(BaseType.rowTitle)
+    val body: TextStyle = script.apply(BaseType.body)
+    val small: TextStyle = script.apply(BaseType.small)
+    val tileTitle: TextStyle = script.apply(BaseType.tileTitle)
+    val tabLabel: TextStyle = script.apply(BaseType.tabLabel)
+    val pixel: TextStyle = script.apply(BaseType.pixel)
+    val pixelLarge: TextStyle = script.apply(BaseType.pixelLarge)
+    val pixelSmall: TextStyle = script.apply(BaseType.pixelSmall)
+}
+
+/** The current language's locale on every style: Han glyphs differ between Chinese and Japanese, and Urdu takes Nastaliq. */
+internal data class ScriptType(val tag: String, val lineScale: Float, val systemFace: Boolean) {
+    fun apply(style: TextStyle): TextStyle = style.copy(
+        fontFamily = if (systemFace) FontFamily.Default else style.fontFamily,
+        lineHeight = if (lineScale != 1f && style.lineHeight.isSp) (style.lineHeight.value * lineScale).sp else style.lineHeight,
+        localeList = LocaleList(tag),
+    )
+
+    companion object {
+        fun of(code: String): ScriptType = ScriptType(Locales.info(code).intl, Scripts.lineScale(code), Scripts.systemFace(code))
+    }
 }
 
 val LocalMillidaColors: ProvidableCompositionLocal<MillidaColors> =
@@ -515,7 +691,27 @@ val LocalReducedMotion: ProvidableCompositionLocal<Boolean> = staticCompositionL
 val millida: MillidaColors
     @Composable get() = LocalMillidaColors.current
 
-private fun typography(tokens: MillidaColors): Typography {
+private fun typography(tokens: MillidaColors, script: ScriptType): Typography = baseTypography(tokens).let { t ->
+    Typography(
+        displayLarge = script.apply(t.displayLarge),
+        displayMedium = script.apply(t.displayMedium),
+        displaySmall = script.apply(t.displaySmall),
+        headlineLarge = script.apply(t.headlineLarge),
+        headlineMedium = script.apply(t.headlineMedium),
+        headlineSmall = script.apply(t.headlineSmall),
+        titleLarge = script.apply(t.titleLarge),
+        titleMedium = script.apply(t.titleMedium),
+        titleSmall = script.apply(t.titleSmall),
+        bodyLarge = script.apply(t.bodyLarge),
+        bodyMedium = script.apply(t.bodyMedium),
+        bodySmall = script.apply(t.bodySmall),
+        labelLarge = script.apply(t.labelLarge),
+        labelMedium = script.apply(t.labelMedium),
+        labelSmall = script.apply(t.labelSmall),
+    )
+}
+
+private fun baseTypography(tokens: MillidaColors): Typography {
     val base = Typography()
     fun TextStyle.ui(): TextStyle = copy(fontFamily = GeistFamily)
     fun TextStyle.display(weight: FontWeight): TextStyle = copy(fontFamily = UnboundedFamily, fontWeight = weight)
@@ -525,7 +721,7 @@ private fun typography(tokens: MillidaColors): Typography {
         displaySmall = base.displaySmall.display(FontWeight.Black),
         headlineLarge = base.headlineLarge.display(FontWeight.Bold),
         headlineMedium = base.headlineMedium.display(FontWeight.Bold),
-        headlineSmall = MillidaType.screenTitle.copy(color = tokens.fg),
+        headlineSmall = BaseType.screenTitle.copy(color = tokens.fg),
         titleLarge = base.titleLarge.ui().copy(fontWeight = FontWeight.ExtraBold),
         titleMedium = TextStyle(
             fontFamily = GeistFamily,
@@ -574,16 +770,28 @@ private fun typography(tokens: MillidaColors): Typography {
     )
 }
 
-fun millidaTokens(dark: Boolean, accentId: String): MillidaColors =
-    (if (dark) darkTokens else lightTokens).withAccent(accentById(accentId))
+fun millidaTokens(dark: Boolean, accentId: String, premium: Boolean = false): MillidaColors {
+    val tokens = (if (dark) darkTokens else lightTokens).withAccent(accentById(accentId))
+    return if (premium) tokens.withPremiumLines() else tokens
+}
+
+/** premium-theme.css: thin lines in the theme's colour on docks and frames, nothing else repainted. */
+private fun MillidaColors.withPremiumLines(): MillidaColors = copy(
+    border = accent.copy(alpha = PREMIUM_LINE_ALPHA),
+    dockOutline = accent.copy(alpha = PREMIUM_DOCK_ALPHA),
+)
+
+private const val PREMIUM_LINE_ALPHA = 0.28f
+private const val PREMIUM_DOCK_ALPHA = 0.35f
 
 @Composable
 fun MillidaTheme(
     dark: Boolean = isSystemInDarkTheme(),
     accentId: String = "green",
+    premium: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val tokens = remember(dark, accentId) { millidaTokens(dark, accentId) }
+    val tokens = remember(dark, accentId, premium) { millidaTokens(dark, accentId, premium) }
     val reducedMotion = remember { !ValueAnimator.areAnimatorsEnabled() }
     val scheme = if (dark) {
         darkColorScheme(
@@ -615,11 +823,14 @@ fun MillidaTheme(
         )
     }
 
+    val language by I18n.locale.collectAsState()
+    val script = remember(language) { ScriptType.of(language) }
     CompositionLocalProvider(
         LocalMillidaColors provides tokens,
         LocalReducedMotion provides reducedMotion,
+        LocalLayoutDirection provides if (Locales.info(language).rtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
     ) {
-        MaterialTheme(colorScheme = scheme, typography = remember(tokens) { typography(tokens) }) {
+        MaterialTheme(colorScheme = scheme, typography = remember(tokens, script) { typography(tokens, script) }) {
             CompositionLocalProvider(LocalContentColor provides tokens.fg, content = content)
         }
     }

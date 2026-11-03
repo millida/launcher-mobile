@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -17,127 +19,151 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.rubies.CreatorClient
 import net.millida.launcher.core.rubies.CreatorStatus
-import net.millida.launcher.core.rubies.CreatorSupport
 import net.millida.launcher.ui.MAvatar
 import net.millida.launcher.ui.MButtonSize
-import net.millida.launcher.ui.MCard
 import net.millida.launcher.ui.MField
 import net.millida.launcher.ui.MIcon
+import net.millida.launcher.ui.MIconButton
 import net.millida.launcher.ui.MIcons
 import net.millida.launcher.ui.MPrimaryButton
-import net.millida.launcher.ui.MSecondaryButton
-import net.millida.launcher.ui.MTextButton
+import net.millida.launcher.ui.MillidaCut
+import net.millida.launcher.ui.MillidaIcon
 import net.millida.launcher.ui.MillidaPixel
 import net.millida.launcher.ui.MillidaType
+import net.millida.launcher.ui.PixelFrame
+import net.millida.launcher.ui.Rarity
 import net.millida.launcher.ui.millida
 import net.millida.launcher.ui.mixSrgb
+import net.millida.launcher.ui.pixelSurface
 
-private fun sinceText(iso: String): String = dayMonth(iso)?.let { "с $it" }.orEmpty()
-
-/**
- * "Код автора" at the bottom of the shop, like Support-a-Creator. Until the
- * service has the routes the banner stays and the input honestly answers
- * "скоро заработают" instead of pretending success.
- */
+/** The desktop's banner frame under the shop: art on the left, a big title, one line and one row of action. */
 @Composable
-internal fun CreatorCodeCard(
-    status: CreatorStatus,
-    busy: Boolean,
-    onApply: (code: String, onError: (String) -> Unit, onDone: () -> Unit) -> Unit,
-    onRemove: () -> Unit,
-    onBecome: () -> Unit,
+private fun Banner(
+    tone: Color,
+    art: @Composable () -> Unit,
+    title: String,
+    line: String,
     modifier: Modifier = Modifier,
+    row: @Composable () -> Unit,
 ) {
     val colors = millida
-    var editing by rememberSaveable { mutableStateOf(false) }
-    var code by rememberSaveable { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    val current = status.current
-    val on = current != null && !editing
-    MCard(
-        modifier = modifier,
-        background = MillidaPixel.counter.mixSrgb(colors.surface, 0.10f),
-        contentPadding = 14.dp,
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            MIcon(MIcons.heart, size = 18.dp, color = MillidaPixel.counter)
-            Spacer(Modifier.width(8.dp))
-            Text("Код автора", modifier = Modifier.weight(1f), style = MillidaType.sectionTitle, color = colors.fg, maxLines = 1)
-            MTextButton("Стать автором", onClick = onBecome, color = colors.fgSubtle)
-        }
-        Spacer(Modifier.height(10.dp))
-        if (on && current != null) {
-            Supported(current)
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MSecondaryButton("Сменить", onClick = { editing = true }, enabled = !busy)
-                MTextButton("Убрать", onClick = onRemove, enabled = !busy, color = colors.fgSubtle)
-            }
-        } else {
-            Text("Поддержи любимого автора", style = MillidaType.rowTitle, color = colors.fg)
-            Text("Автор получает часть с твоих покупок — тебе ничего не стоит", style = MillidaType.small, color = colors.fgSubtle)
-            Spacer(Modifier.height(10.dp))
-            val submit = {
-                val typed = code.trim()
-                if (typed.isNotEmpty() && !busy) {
-                    error = null
-                    onApply(typed, { error = it }, {
-                        editing = false
-                        code = ""
-                    })
-                }
-            }
-            MField(
-                value = code,
-                onValueChange = { value ->
-                    code = value.uppercase().take(CreatorClient.MAX_CODE)
-                    error = null
-                },
-                placeholder = "Код автора",
-                modifier = Modifier.fillMaxWidth(),
-                onImeAction = submit,
-                autoCorrectEnabled = false,
+    Row(
+        modifier
+            .fillMaxWidth()
+            .pixelSurface(
+                tone.mixSrgb(colors.surface, 0.14f),
+                MillidaCut.plate,
+                PixelFrame(outline = tone.mixSrgb(colors.surface, 0.6f), outlineWidth = 2.dp, bottom = MillidaPixel.tileBottom, bottomWidth = 5.dp),
             )
-            error?.let {
-                Spacer(Modifier.height(6.dp))
-                Text(it, style = MillidaType.small, color = colors.danger)
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                MPrimaryButton("Поддержать", onClick = submit, enabled = code.isNotBlank(), size = MButtonSize.Medium, loading = busy)
-                if (editing) MTextButton("Отмена", onClick = { editing = false })
-            }
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(84.dp), contentAlignment = Alignment.Center) { art() }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                title,
+                style = MillidaType.sectionTitle.copy(fontSize = 20.sp, fontWeight = FontWeight.Black),
+                color = colors.fg,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(line, style = MillidaType.small, color = colors.fgMuted)
+            Spacer(Modifier.height(2.dp))
+            row()
         }
     }
 }
 
 @Composable
-private fun Supported(current: CreatorSupport) {
+private fun ArtTrio(big: MillidaIcon, small: MillidaIcon, tone: Color) {
+    Box(Modifier.size(84.dp)) {
+        MIcon(big, size = 64.dp, color = tone, modifier = Modifier.align(Alignment.Center))
+        MIcon(small, size = 28.dp, color = millida.fg, modifier = Modifier.align(Alignment.BottomEnd))
+        MIcon(MIcons.sparkle, size = 20.dp, color = Rarity.LEGENDARY.color, modifier = Modifier.align(Alignment.TopStart))
+    }
+}
+
+/** «Стань автором»: the pair of «Поддержи автора», it leads to the creators' page on the site. */
+@Composable
+internal fun CreatorBecomeBanner(onBecome: () -> Unit, modifier: Modifier = Modifier) {
+    Banner(
+        tone = Rarity.LEGENDARY.color,
+        art = { ArtTrio(MIcons.star, MIcons.camera, Rarity.LEGENDARY.color) },
+        title = tr("Стань автором"),
+        line = tr("Получай 50% с покупок по твоему коду"),
+        modifier = modifier,
+    ) {
+        MPrimaryButton(tr("Хочу"), onClick = onBecome, icon = MIcons.externalLink)
+    }
+}
+
+/**
+ * «Поддержи автора», one compact banner: the code field and «Ок»; once a code
+ * is set, the creator's face and name with a cross to remove it. Until the
+ * service has the routes the input honestly answers instead of pretending.
+ */
+@Composable
+internal fun CreatorSupportBanner(
+    status: CreatorStatus?,
+    busy: Boolean,
+    onApply: (code: String, onError: (String) -> Unit, onDone: () -> Unit) -> Unit,
+    onRemove: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val colors = millida
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Box { MAvatar(url = current.avatarUrl, size = 56.dp, icon = MIcons.heart) }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text("Ты поддерживаешь", style = MillidaType.small, color = colors.fgSubtle)
-            Text(
-                current.name,
-                style = MillidaType.rowTitle.copy(fontWeight = FontWeight.Black),
-                color = colors.fg,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            val since = sinceText(current.since)
-            Text(
-                listOfNotNull(current.code, since.takeIf { it.isNotEmpty() }).joinToString(" · "),
-                style = MillidaType.small,
-                color = colors.fgSubtle,
-                maxLines = 1,
-            )
+    var code by rememberSaveable { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val current = status?.current
+    Banner(
+        tone = MillidaPixel.counter,
+        art = {
+            if (current != null) {
+                MAvatar(url = current.avatarUrl, size = 72.dp, icon = MIcons.heart)
+            } else {
+                ArtTrio(MIcons.heart, MIcons.user, MillidaPixel.counter)
+            }
+        },
+        title = current?.name ?: tr("Поддержи автора"),
+        line = tr("Автор получит деньги с твоих покупок"),
+        modifier = modifier,
+    ) {
+        if (current != null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                MIcon(MIcons.heart, size = 20.dp, color = MillidaPixel.counter)
+                MIconButton(MIcons.close, onClick = onRemove, enabled = !busy, label = tr("Убрать код"))
+            }
+        } else {
+            val submit = {
+                val typed = code.trim()
+                if (typed.isNotEmpty() && !busy) {
+                    error = null
+                    onApply(typed, { error = it }, { code = "" })
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                MField(
+                    value = code,
+                    onValueChange = { value ->
+                        code = value.uppercase().take(CreatorClient.MAX_CODE)
+                        error = null
+                    },
+                    placeholder = tr("КОД"),
+                    modifier = Modifier.weight(1f),
+                    onImeAction = submit,
+                    autoCorrectEnabled = false,
+                )
+                MPrimaryButton(tr("Ок"), onClick = submit, enabled = code.isNotBlank(), size = MButtonSize.Medium, loading = busy)
+            }
+            error?.let { Text(it, style = MillidaType.small, color = colors.danger) }
         }
     }
 }

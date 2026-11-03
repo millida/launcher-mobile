@@ -3,6 +3,7 @@ package net.millida.launcher.core.packs
 import kotlinx.serialization.Serializable
 import net.millida.launcher.core.atomicWriteText
 import net.millida.launcher.core.catalog.ModrinthCatalog
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
@@ -79,6 +80,8 @@ object PackHosts {
     val DEFAULT: Set<String> = ModrinthCatalog.ALLOWED_HOSTS + setOf(
         "garage.millida.net",
         "cdn.millida.net",
+        // The catalogue mirror hands out the same copies under this name too.
+        "cdn.millida.trade",
     )
 
     fun hostOf(url: String): Pair<String, String>? {
@@ -136,7 +139,7 @@ data class PackHostPolicy(
     @Throws(IOException::class)
     fun check(url: String) {
         if (!allows(url)) {
-            throw IOException("сборка ведёт на посторонний адрес: $url — установка остановлена, сообщи автору сборки")
+            throw IOException(tr("сборка ведёт на посторонний адрес: {url} — установка остановлена, сообщи автору сборки", url))
         }
     }
 }
@@ -167,7 +170,7 @@ object PackLoaders {
         val name = value.substringBefore('-')
         val version = value.substringAfter('-', "")
         val kind = BY_ID[name]
-            ?: throw IOException("сборка собрана под загрузчик «$name», которого лаунчер не знает — обнови лаунчер")
+            ?: throw IOException(tr("сборка собрана под загрузчик «{name}», которого лаунчер не знает — обнови лаунчер", name))
         return kind to version
     }
 

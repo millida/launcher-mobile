@@ -11,6 +11,7 @@ import net.millida.launcher.core.catalog.CatalogItem
 import net.millida.launcher.core.catalog.CatalogSource
 import net.millida.launcher.core.catalog.CatalogVersion
 import net.millida.launcher.core.catalog.ContentKind
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.install.GameInstaller
 import net.millida.launcher.core.install.InstallStage
 import net.millida.launcher.core.loader.LoaderKind
@@ -93,10 +94,10 @@ class BuildMetaStore(private val layout: GameLayout) {
      */
     @Throws(IOException::class)
     fun setCover(profileId: String, source: File): BuildMeta {
-        if (!source.isFile) throw IOException("картинка не найдена: ${source.name}")
-        if (source.length() > MAX_COVER_BYTES) throw IOException("картинка больше 12 МБ — возьми поменьше")
+        if (!source.isFile) throw IOException(tr("картинка не найдена: {name}", source.name))
+        if (source.length() > MAX_COVER_BYTES) throw IOException(tr("картинка больше 12 МБ — возьми поменьше"))
         val extension = source.name.substringAfterLast('.', "").lowercase()
-        if (extension !in COVER_EXTENSIONS) throw IOException("обложка может быть PNG, JPEG или WebP")
+        if (extension !in COVER_EXTENSIONS) throw IOException(tr("обложка может быть PNG, JPEG или WebP"))
 
         val folder = SafePath.join(layout.profiles, profileId).also { it.mkdirs() }
         val target = File(folder, "cover.$extension")
@@ -336,7 +337,7 @@ class BuildOps(
         val from = store.directory(profile)
         val to = SafePath.join(layout.profiles, id)
         if (to.exists() && to.list()?.isNotEmpty() == true) {
-            throw IOException("папка сборки $id уже занята")
+            throw IOException(tr("папка сборки {id} уже занята", id))
         }
 
         try {
@@ -361,7 +362,7 @@ class BuildOps(
                 catalog.install(version, ContentKind.MOD, to)
                 moved++
             } catch (error: Exception) {
-                failed += "${entry.file.title} — ${error.message ?: "не удалось скачать"}"
+                failed += "${entry.file.title} — ${error.message ?: tr("не удалось скачать")}"
             }
         }
         onProgress(MigrateProgress(resolved.size, resolved.size, ""))
@@ -389,7 +390,7 @@ class BuildOps(
      */
     @Throws(IOException::class)
     fun duplicate(profile: Profile, withContent: Boolean = true): Profile {
-        val name = "${profile.name} (копия)"
+        val name = tr("{name} (копия)", profile.name)
         val id = store.newId(name)
         val from = store.directory(profile)
         val to = SafePath.join(layout.profiles, id)
@@ -399,7 +400,7 @@ class BuildOps(
                 from.copyRecursively(to, overwrite = false)
             } catch (error: Exception) {
                 to.deleteRecursively()
-                throw IOException("не удалось скопировать файлы сборки: ${error.message}")
+                throw IOException(tr("не удалось скопировать файлы сборки: {message}", error.message))
             }
         }
         val copy = profile.copy(id = id, name = name, lastPlayedAt = 0, playtimeSec = 0)
@@ -501,16 +502,16 @@ class BuildOps(
         val found = try {
             findProject(file, gameVersion, loader)
         } catch (error: Exception) {
-            return Resolved(file, null, null, error.message ?: "каталог не ответил")
-        } ?: return Resolved(file, null, null, "не нашли в каталоге")
+            return Resolved(file, null, null, error.message ?: tr("каталог не ответил"))
+        } ?: return Resolved(file, null, null, tr("не нашли в каталоге"))
 
         val versions = try {
             catalog.versions(found, gameVersion, loader)
         } catch (error: Exception) {
-            return Resolved(file, found, null, error.message ?: "каталог не ответил")
+            return Resolved(file, found, null, error.message ?: tr("каталог не ответил"))
         }
         val best = versions.firstOrNull { it.primaryFile() != null }
-            ?: return Resolved(file, found, null, "нет файла под $gameVersion · ${loader.label}")
+            ?: return Resolved(file, found, null, tr("нет файла под {gameVersion} · {label}", gameVersion, loader.label))
         return Resolved(file, found, best, "")
     }
 

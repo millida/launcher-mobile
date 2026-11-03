@@ -1,6 +1,7 @@
 package net.millida.launcher.core.cosmetics
 
 import net.millida.launcher.core.catalog.CatalogVersion
+import net.millida.launcher.core.content.newestInstallable
 import net.millida.launcher.core.content.InstalledIndex
 import net.millida.launcher.core.profile.ContentFile
 
@@ -34,8 +35,12 @@ object MillidaModOffer {
         intact: Boolean,
         declined: Boolean,
         updateDue: Boolean = true,
+        apiMissing: Boolean = false,
     ): LaunchModAction = when {
         state == null -> LaunchModAction.NONE
+        // A jar that is on without the Fabric API it requires aborts the start with «Mod 'Millida' requires fabric-api»
+        // (39 phones, 3 days of telemetry, 10.2026): the update path puts the API back.
+        state.installed && state.installedEnabled && state.canInstall && apiMissing -> LaunchModAction.UPDATE
         state.installed && state.installedEnabled && state.canInstall && updateDue &&
             (state.status == CosmeticsModStatus.OUTDATED || !intact) -> LaunchModAction.UPDATE
         wanted(state, declined) -> LaunchModAction.OFFER
@@ -59,12 +64,10 @@ object MillidaModOffer {
     /** The Fabric builds of the mod refuse to load without Fabric API beside them. */
     fun needsFabricApi(loaderId: String): Boolean = loaderId == "fabric" || loaderId == "quilt"
 
-    fun hasFabricApi(files: List<ContentFile>): Boolean = InstalledIndex.of(files).has(*FABRIC_API_NAMES)
+    /** A copy switched off (`.disabled`) does not load, so it does not count. */
+    fun hasFabricApi(files: List<ContentFile>): Boolean = InstalledIndex.of(files.filter { it.enabled }).has(*FABRIC_API_NAMES)
 
-    fun pickFabricApi(versions: List<CatalogVersion>): CatalogVersion? {
-        val usable = versions.filter { it.primaryFile() != null }
-        return usable.firstOrNull { it.versionType == "release" } ?: usable.firstOrNull()
-    }
+    fun pickFabricApi(versions: List<CatalogVersion>): CatalogVersion? = versions.newestInstallable()
 }
 
 enum class LaunchModAction { NONE, OFFER, UPDATE }

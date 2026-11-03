@@ -44,6 +44,51 @@ class RendererBlackScreenTest {
         assertFalse(RendererFallback.crashedAtInit(RendererKind.KRYPTON, text))
     }
 
+    private val lwjglAbort = "FATAL ERROR in native method: [LWJGL] Thread[#3,Render thread,5,main]: " +
+        "No context is current or a function that is not available in the current context was called. " +
+        "The JVM will abort execution.\n\tat org.lwjgl.opengl.GL33C.glVertexAttribDivisor(Native Method)"
+
+    @Test
+    fun `вызов функции GL, которой у слоя нет, считается сбоем любого рендерера`() {
+        for (kind in RendererKind.entries) {
+            assertTrue(
+                "LWJGL обрывает игру, когда слой не дал функцию: $kind надо сменить, иначе сборка падает на каждом запуске",
+                RendererFallback.crashedAtInit(kind, lwjglAbort),
+            )
+        }
+        assertFalse(
+            "обычный вылет мода рендерер не трогает",
+            RendererFallback.crashedAtInit(RendererKind.KRYPTON, "java.lang.NullPointerException: mod"),
+        )
+    }
+
+    @Test
+    fun `запуск, оборвавшийся вместе с процессом, разбирается по своему журналу при следующем`() {
+        data class Case(val pending: String, val log: String, val failed: String?, val why: String)
+
+        val entry = RendererFallback.entry("krypton", "profile-1", "26.3")
+        val pending = RendererFallback.pendingStart(entry, RendererKind.KRYPTON, "game-20261012-150330.log")
+        val cases = listOf(
+            Case(pending, lwjglAbort, entry, "процесс умер на вызове GL — рендерер запоминается, хотя после сбоя не выполнилось ни строки"),
+            Case(pending, "[12:00] [Render thread/INFO]: Stopping!", null, "журнал без сбоя рендерера: игру убила система или закрыл игрок"),
+            Case(pending, "", null, "журнала уже нет — гадать нельзя"),
+            Case("", lwjglAbort, null, "записи о запуске нет"),
+            Case("мусор", lwjglAbort, null, "запись другого формата не читается как сбой"),
+            Case(RendererFallback.pendingStart(entry, RendererKind.KRYPTON, ""), lwjglAbort, null, "запись без имени журнала ничего не доказывает"),
+        )
+        for (case in cases) {
+            val asked = ArrayList<String>()
+            val failed = RendererFallback.diedAtInit(case.pending) { name -> asked += name; case.log }
+            assertEquals("оборванный запуск: ${case.why}", case.failed, failed)
+            assertTrue("читается только журнал самого запуска: ${case.why}", asked.all { it == "game-20261012-150330.log" })
+        }
+        assertEquals(
+            "запомненный рендерер пропускается автовыбором именно для этой сборки и версии",
+            setOf("krypton"),
+            RendererFallback.failedAtInit(setOf(entry), "profile-1", "26.3"),
+        )
+    }
+
     @Test
     fun `Unexpected error на Zink запоминается, на Krypton нет`() {
         val text = "---- Minecraft Crash Report ----\nDescription: Unexpected error"

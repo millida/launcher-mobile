@@ -1,6 +1,7 @@
 package net.millida.launcher.core.runtime
 
 import net.millida.launcher.core.atomicWriteText
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.profile.ContentFile
 import java.io.File
 import java.io.IOException
@@ -35,11 +36,19 @@ object MobileGluesSetup {
     const val FOLDER = ".mobileglues"
     const val DIR_VARIABLE = "MG_DIR_PATH"
     private const val CONFIG_FILE = "config.json"
+    private const val IGNORE_SHADER_ERRORS = 2
 
-    val config: String = """
+    val config: String = configFor(ignoreShaderErrors = false)
+
+    /**
+     * MobileGlues asks for its «ignore shader and program errors» level from
+     * Minecraft 26.3 on: the game there stops on a status the translated shader
+     * reports although it works.
+     */
+    fun configFor(ignoreShaderErrors: Boolean): String = """
         {
           "enableANGLE": 2,
-          "enableNoError": 0,
+          "enableNoError": ${if (ignoreShaderErrors) IGNORE_SHADER_ERRORS else 0},
           "enableExtTimerQuery": 0,
           "enableExtComputeShader": 0,
           "enableExtDirectStateAccess": 0,
@@ -55,9 +64,10 @@ object MobileGluesSetup {
     fun environment(folder: File): Map<String, String> = mapOf(DIR_VARIABLE to folder.absolutePath)
 
     /** Returns true when the file had to be written. */
-    fun writeConfig(folder: File): Boolean {
+    fun writeConfig(folder: File, ignoreShaderErrors: Boolean = false): Boolean {
+        val config = configFor(ignoreShaderErrors)
         if (!folder.isDirectory && !folder.mkdirs()) {
-            throw IOException("папка настроек MobileGlues не создалась: ${folder.absolutePath}")
+            throw IOException(tr("папка настроек MobileGlues не создалась: {absolutePath}", folder.absolutePath))
         }
         val file = File(folder, CONFIG_FILE)
         if (file.isFile && file.readText() == config) return false

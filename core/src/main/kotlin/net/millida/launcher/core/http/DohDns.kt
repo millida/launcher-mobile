@@ -44,7 +44,7 @@ class DohDns(
 
         val resolved = askEndpoints(hostname)
         if (resolved.isEmpty()) {
-            throw UnknownHostException(NetworkFaults.nameLookupAdvice(hostname))
+            throw UnknownHostException(NetworkFaults.hostLookupAdvice(hostname))
                 .apply { initCause(systemFailure) }
         }
         cache[key] = Cached(resolved, clock() + cacheTtlMillis)

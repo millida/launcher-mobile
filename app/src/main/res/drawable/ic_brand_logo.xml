@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The sign from millida.net (public/millida-trade-logo.svg): a pixel square with cut corners, lit top-left, shaded bottom-right. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="376dp"
+    android:height="376dp"
+    android:viewportWidth="376"
+    android:viewportHeight="376">
+    <group>
+        <clip-path android:pathData="M24,0H352V24H376V352H352V376H24V352H0V24H24Z" />
+        <path android:fillColor="#5EC64D" android:pathData="M24,0H352V24H376V352H352V376H24V352H0V24H24Z" />
+        <path android:fillColor="#FFFFFF" android:fillAlpha="0.3" android:pathData="M0,0H376V18H0Z" />
+        <path android:fillColor="#FFFFFF" android:fillAlpha="0.1" android:pathData="M0,0H18V376H0Z" />
+        <path android:fillColor="#000000" android:fillAlpha="0.14" android:pathData="M358,0H376V376H358Z" />
+        <path android:fillColor="#000000" android:fillAlpha="0.32" android:pathData="M0,346H376V376H0Z" />
+        <path android:strokeColor="#000000" android:strokeAlpha="0.16" android:strokeWidth="20"
+            android:pathData="M24,0H352V24H376V352H352V376H24V352H0V24H24Z" />
+    </group>
+    <group android:translateY="-8">
+        <group android:translateX="10" android:translateY="10">
+            <path android:fillColor="#000000" android:fillAlpha="0.22"
+                android:pathData="M210.071 120.946H120.949V254.654H254.641L254.642 165.517H299.209V254.654H299.222V299.222H76.3809V120.946H76.3672V76.3774H210.071V120.946ZM210.071 210.084H165.503V165.516H210.071V210.084ZM299.209 120.947H254.656V165.515H210.088V120.947H254.641V76.3784H299.209V120.947Z" />
+        </group>
+        <path android:fillColor="#FFFFFF"
+            android:pathData="M210.071 120.946H120.949V254.654H254.641L254.642 165.517H299.209V254.654H299.222V299.222H76.3809V120.946H76.3672V76.3774H210.071V120.946ZM210.071 210.084H165.503V165.516H210.071V210.084ZM299.209 120.947H254.656V165.515H210.088V120.947H254.641V76.3784H299.209V120.947Z" />
+    </group>
+</vector>

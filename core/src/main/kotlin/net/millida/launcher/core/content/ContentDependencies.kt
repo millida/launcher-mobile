@@ -6,6 +6,7 @@ import net.millida.launcher.core.catalog.CatalogItem
 import net.millida.launcher.core.catalog.CatalogSource
 import net.millida.launcher.core.catalog.CatalogVersion
 import net.millida.launcher.core.catalog.ContentKind
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.profile.Profile
 import net.millida.launcher.core.profile.ProfileContent
 import java.io.File
@@ -104,7 +105,7 @@ class ContentDependencies(
                     projectId = projectId,
                     title = title,
                     requiredBy = pending.requiredBy,
-                    problem = "нет версии под ${profile.gameVersion} и ${profile.loader.label}",
+                    problem = tr("нет версии под {gameVersion} и {label}", profile.gameVersion, profile.loader.label),
                 )
                 continue
             }
@@ -148,7 +149,7 @@ class ContentDependencies(
                 installed.remember(node.projectId, node.title)
                 done += node.title
             } catch (error: IOException) {
-                failed[node.title] = error.message ?: "не удалось скачать"
+                failed[node.title] = error.message ?: tr("не удалось скачать")
             }
         }
         return DependencyInstallReport(done, failed)

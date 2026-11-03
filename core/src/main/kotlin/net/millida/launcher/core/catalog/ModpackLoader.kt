@@ -1,5 +1,6 @@
 package net.millida.launcher.core.catalog
 
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderInstaller
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.packs.PackVersionChoice
@@ -20,11 +21,11 @@ class ModpackLoader(
     override suspend fun resolve(gameVersion: String, loader: LoaderKind, loaderVersion: String): PackVersionChoice {
         if (loader == LoaderKind.VANILLA) return PackVersionChoice(gameVersion, loaderVersion)
         val installer = installerOf(loader)
-            ?: throw IOException("${loader.label} на телефоне пока не ставится — выбери сборку на другом загрузчике")
+            ?: throw IOException(tr("{label} на телефоне пока не ставится — выбери сборку на другом загрузчике", loader.label))
         val version = loaderVersion.ifBlank {
             val candidates = installer.versions(gameVersion)
             (candidates.firstOrNull { it.stable } ?: candidates.firstOrNull())?.version
-                ?: throw IOException("для $gameVersion нет версий ${loader.label} — выбери другую версию сборки")
+                ?: throw IOException(tr("для {gameVersion} нет версий {label} — выбери другую версию сборки", gameVersion, loader.label))
         }
         return PackVersionChoice(installer.install(gameVersion, version), version)
     }

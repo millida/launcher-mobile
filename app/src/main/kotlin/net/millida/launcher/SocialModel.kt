@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import net.millida.launcher.core.account.Unauthorized
 import net.millida.launcher.core.friends.BeatStatus
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.telemetry.BeatState
 import net.millida.launcher.core.friends.BlockedPlayer
 import net.millida.launcher.core.friends.ChatMessage
@@ -52,6 +53,7 @@ import net.millida.launcher.core.friends.RealtimeTopic
 import net.millida.launcher.core.friends.ReferralsClient
 import net.millida.launcher.core.friends.RequestOutcome
 import net.millida.launcher.core.friends.ServerInvites
+import net.millida.launcher.core.friends.WaypointShare
 import net.millida.launcher.core.friends.ThreadMessage
 import net.millida.launcher.core.friends.audible
 import net.millida.launcher.core.friends.shown
@@ -248,7 +250,7 @@ class SocialModel(
                 val failure = page.exceptionOrNull()
                 if (failure.signInLost()) host.recheckSignIn()
                 mutable.update { s ->
-                    s.copy(chat = s.chat.copy(loading = false, error = failure.readable("Переписка не открылась — нажми «Повторить»")))
+                    s.copy(chat = s.chat.copy(loading = false, error = failure.readable(tr("Переписка не открылась — нажми «Повторить»"))))
                 }
                 return@launch
             }
@@ -298,7 +300,7 @@ class SocialModel(
             val loaded = page.getOrNull()
             mutable.update { s ->
                 if (loaded == null) {
-                    s.copy(chat = s.chat.copy(olderLoading = false, olderError = page.exceptionOrNull().readable("Старые сообщения не загрузились")))
+                    s.copy(chat = s.chat.copy(olderLoading = false, olderError = page.exceptionOrNull().readable(tr("Старые сообщения не загрузились"))))
                 } else {
                     val ids = s.chat.lines.mapTo(HashSet()) { it.message.id }
                     val older = loaded.messages.filter { it.id.isEmpty() || it.id !in ids }.map { ChatLine(it) }
@@ -337,7 +339,7 @@ class SocialModel(
                 }
                 val attachment = uploaded.getOrNull()
                 if (attachment == null) {
-                    fail(uploaded.exceptionOrNull(), "Картинка не отправилась — попробуй ещё раз")
+                    fail(uploaded.exceptionOrNull(), tr("Картинка не отправилась — попробуй ещё раз"))
                     return@launch
                 }
                 val draft = ChatMessage(
@@ -369,7 +371,7 @@ class SocialModel(
                 }
                 val attachment = uploaded.getOrNull()
                 if (attachment == null) {
-                    fail(uploaded.exceptionOrNull(), "Голосовое не отправилось — попробуй ещё раз")
+                    fail(uploaded.exceptionOrNull(), tr("Голосовое не отправилось — попробуй ещё раз"))
                     return@launch
                 }
                 val draft = ChatMessage(
@@ -413,7 +415,7 @@ class SocialModel(
             val view = result.getOrNull()
             if (view == null) {
                 setReactions(target, messageId, before)
-                fail(result.exceptionOrNull(), "Реакция не поставилась")
+                fail(result.exceptionOrNull(), tr("Реакция не поставилась"))
                 return@launch
             }
             setReactions(target, messageId, view.reactions)
@@ -450,7 +452,7 @@ class SocialModel(
         val result = withContext(Dispatchers.IO) { socialAttempt { container.friends.editMessage(messageId, text) } }
         val view = result.getOrNull()
         if (view == null) {
-            fail(result.exceptionOrNull(), "Сообщение не изменилось — повтори")
+            fail(result.exceptionOrNull(), tr("Сообщение не изменилось — повтори"))
             onDone(false)
             return@launch
         }
@@ -463,7 +465,7 @@ class SocialModel(
         val result = withContext(Dispatchers.IO) { socialAttempt { container.friends.deleteMessage(messageId) } }
         val view = result.getOrNull()
         if (view == null) {
-            fail(result.exceptionOrNull(), "Сообщение не удалилось — повтори")
+            fail(result.exceptionOrNull(), tr("Сообщение не удалилось — повтори"))
             return@launch
         }
         applyView(target, view.copy(id = view.id.ifEmpty { messageId }, deleted = true))
@@ -472,38 +474,38 @@ class SocialModel(
 
     fun addFriend(nickname: String): Job {
         val nick = nickname.trim()
-        return act(ADD_FRIEND_KEY, "Заявка не ушла — проверь ник и повтори") {
+        return act(ADD_FRIEND_KEY, tr("Заявка не ушла — проверь ник и повтори")) {
             when (container.friends.addByNickname(nick)) {
-                RequestOutcome.SENT -> "Заявка ушла: $nick"
-                RequestOutcome.ACCEPTED -> "$nick теперь в друзьях"
-                RequestOutcome.ALREADY_FRIENDS -> "$nick уже в друзьях"
+                RequestOutcome.SENT -> tr("Заявка ушла: {nick}", nick)
+                RequestOutcome.ACCEPTED -> tr("{nick} теперь в друзьях", nick)
+                RequestOutcome.ALREADY_FRIENDS -> tr("{nick} уже в друзьях", nick)
             }
         }
     }
 
     fun accept(requestId: String): Job {
         val nick = requestNick(requestId)
-        return act(requestKey(requestId), "Заявка не принялась — повтори") {
+        return act(requestKey(requestId), tr("Заявка не принялась — повтори")) {
             container.friends.acceptRequest(requestId)
-            if (nick.isEmpty()) "Теперь вы друзья" else "$nick теперь в друзьях"
+            if (nick.isEmpty()) tr("Теперь вы друзья") else tr("{nick} теперь в друзьях", nick)
         }
     }
 
-    fun decline(requestId: String): Job = act(requestKey(requestId), "Заявка не отклонилась — повтори") {
+    fun decline(requestId: String): Job = act(requestKey(requestId), tr("Заявка не отклонилась — повтори")) {
         container.friends.declineRequest(requestId)
         null
     }
 
-    fun cancel(requestId: String): Job = act(requestKey(requestId), "Заявка не отменилась — повтори") {
+    fun cancel(requestId: String): Job = act(requestKey(requestId), tr("Заявка не отменилась — повтори")) {
         container.friends.cancelRequest(requestId)
         null
     }
 
     fun remove(userId: String): Job {
         val nick = friendNick(userId)
-        return act(friendKey(userId), "Не получилось убрать из друзей — повтори") {
+        return act(friendKey(userId), tr("Не получилось убрать из друзей — повтори")) {
             container.friends.removeFriend(userId)
-            "$nick убран из друзей"
+            tr("{nick} убран из друзей", nick)
         }
     }
 
@@ -513,20 +515,20 @@ class SocialModel(
      */
     fun block(userId: String): Job {
         val nick = friendNick(userId)
-        return act(friendKey(userId), "Не получилось заблокировать — повтори") {
+        return act(friendKey(userId), tr("Не получилось заблокировать — повтори")) {
             container.friends.blockPlayer(userId)
             val dropped = socialAttempt { container.friends.removeFriend(userId) }
             loadBlocked()
-            if (dropped.isSuccess) "$nick заблокирован" else "$nick заблокирован, но остался в друзьях — убери его вручную"
+            if (dropped.isSuccess) tr("{nick} заблокирован", nick) else tr("{nick} заблокирован, но остался в друзьях — убери его вручную", nick)
         }
     }
 
     fun unblock(entry: BlockedPlayer): Job {
-        val nick = entry.nickname.ifEmpty { "Игрок" }
-        return act(blockKey(entry.blockedId), "Не получилось разблокировать — повтори", reloadFriends = false) {
+        val nick = entry.nickname.ifEmpty { tr("Игрок") }
+        return act(blockKey(entry.blockedId), tr("Не получилось разблокировать — повтори"), reloadFriends = false) {
             container.friends.unblock(entry.blockedId)
             mutable.update { s -> s.copy(blocked = s.blocked.filterNot { it.blockedId == entry.blockedId }) }
-            "$nick разблокирован"
+            tr("{nick} разблокирован", nick)
         }
     }
 
@@ -541,7 +543,7 @@ class SocialModel(
                 if (list != null) {
                     s.copy(blocked = list, blockedLoading = false, blockedError = null)
                 } else {
-                    s.copy(blockedLoading = false, blockedError = result.exceptionOrNull().readable("Список блокировок не загрузился"))
+                    s.copy(blockedLoading = false, blockedError = result.exceptionOrNull().readable(tr("Список блокировок не загрузился")))
                 }
             }
             if (result.exceptionOrNull().signInLost()) host.recheckSignIn()
@@ -707,8 +709,8 @@ class SocialModel(
                     FriendAlert(
                         kind = NotifyKind.REQUEST,
                         key = "request:" + request.userId.ifEmpty { request.id },
-                        title = request.nickname.ifEmpty { "Игрок" },
-                        text = "Хочет добавить тебя в друзья",
+                        title = request.nickname.ifEmpty { tr("Игрок") },
+                        text = tr("Хочет добавить тебя в друзья"),
                         open = AlertOpen.Friends(FriendsTab.REQUESTS),
                     ),
                 )
@@ -729,7 +731,7 @@ class SocialModel(
                 is ChatTarget.Dm -> FriendAlert(
                     kind = NotifyKind.MSG,
                     key = threadKey(target),
-                    title = item.message.fromNick.ifEmpty { friendNickOrNull(target.userId) ?: "Друг" },
+                    title = item.message.fromNick.ifEmpty { friendNickOrNull(target.userId) ?: tr("Друг") },
                     text = previewText(item),
                     open = AlertOpen.Chat(target),
                 )
@@ -819,11 +821,11 @@ class SocialModel(
                     return@launch
                 }
                 if (fresh == null) {
-                    fail(fetched.exceptionOrNull(), "Не удалось проверить твои серверы — повтори")
+                    fail(fetched.exceptionOrNull(), tr("Не удалось проверить твои серверы — повтори"))
                     return@launch
                 }
                 mutable.update { it.copy(pendingInvite = PendingInvite(target, nick, System.currentTimeMillis())) }
-                host.notice("Создай сервер — $nick позовём, когда он запустится")
+                host.notice(tr("Создай сервер — {nick} позовём, когда он запустится", nick))
                 onNoServer()
             } finally {
                 mutable.update { it.copy(pending = it.pending - key) }
@@ -835,7 +837,7 @@ class SocialModel(
 
     /** The lobby "Позвать": a plain line into the friend's chat; the button stays pressed only on success. */
     fun lobbyCall(friend: Friend, modeTitle: String?): Job {
-        val nick = friend.nickname.ifEmpty { "друга" }
+        val nick = friend.nickname.ifEmpty { tr("друга") }
         return scope.launch {
             if (friend.userId in mutable.value.called) return@launch
             mutable.update { it.copy(called = it.called + friend.userId) }
@@ -844,11 +846,11 @@ class SocialModel(
                 socialAttempt { container.friends.send(target, ServerInvites.lobbyCall(modeTitle)) }
             }
             if (result.isSuccess) {
-                host.notice("Позвали $nick")
+                host.notice(tr("Позвали {nick}", nick))
                 return@launch
             }
             mutable.update { it.copy(called = it.called - friend.userId) }
-            fail(result.exceptionOrNull(), "Не удалось позвать")
+            fail(result.exceptionOrNull(), tr("Не удалось позвать"))
         }
     }
 
@@ -863,7 +865,7 @@ class SocialModel(
                 if (overview != null) {
                     s.copy(invites = s.invites.copy(overview = overview, loading = false, error = null))
                 } else {
-                    s.copy(invites = s.invites.copy(loading = false, error = result.exceptionOrNull().readable("Не удалось загрузить приглашения")))
+                    s.copy(invites = s.invites.copy(loading = false, error = result.exceptionOrNull().readable(tr("Не удалось загрузить приглашения"))))
                 }
             }
             if (result.exceptionOrNull().signInLost()) host.recheckSignIn()
@@ -877,13 +879,13 @@ class SocialModel(
             val result = withContext(Dispatchers.IO) { socialAttempt { referrals.apply(code) } }
             val overview = result.getOrNull()
             if (overview == null) {
-                fail(result.exceptionOrNull(), "Не удалось ввести код")
+                fail(result.exceptionOrNull(), tr("Не удалось ввести код"))
                 return@launch
             }
             inviteSeq.incrementAndGet()
             mutable.update { it.copy(invites = it.invites.copy(overview = overview, loading = false, error = null)) }
             container.uiSoundPlayer.play(UiSoundEvent.Achievement)
-            host.notice("Код друга принят")
+            host.notice(tr("Код друга принят"))
         } finally {
             mutable.update { it.copy(invites = it.invites.copy(applying = false)) }
         }
@@ -894,10 +896,10 @@ class SocialModel(
             socialAttempt { container.friends.send(target, ServerInvites.forServer(server)) }
         }
         if (result.isFailure) {
-            fail(result.exceptionOrNull(), "Приглашение не ушло — попробуй ещё раз")
+            fail(result.exceptionOrNull(), tr("Приглашение не ушло — попробуй ещё раз"))
             return false
         }
-        host.notice("Позвали $nick на «${ServerInvites.serverTitle(server)}»")
+        host.notice(tr("Позвали {nick} на «{0}»", nick, ServerInvites.serverTitle(server)))
         return true
     }
 
@@ -925,7 +927,7 @@ class SocialModel(
     private fun hidePlaytime() {
         scope.launch {
             val result = withContext(Dispatchers.IO) { socialAttempt { stats.hide() } }
-            if (result.isFailure) fail(result.exceptionOrNull(), "Наигранное время у друзей не скрылось — переключи ещё раз")
+            if (result.isFailure) fail(result.exceptionOrNull(), tr("Наигранное время у друзей не скрылось — переключи ещё раз"))
         }
     }
 
@@ -959,7 +961,7 @@ class SocialModel(
                 val failure = result.exceptionOrNull()
                 if (failure.signInLost()) host.recheckSignIn()
                 replaceLine(target, localId) {
-                    it.copy(state = SendState.Failed, error = failure.readable("Сообщение не ушло"))
+                    it.copy(state = SendState.Failed, error = failure.readable(tr("Сообщение не ушло")))
                 }
             }
         }
@@ -1029,8 +1031,8 @@ class SocialModel(
 
     /** Who types in the open thread, by name; the desktop reads the same two poll fields (src/App.tsx). */
     private fun typersOf(poll: FriendsPoll, showing: ChatTarget): List<String> = when (showing) {
-        is ChatTarget.Dm -> if (showing.userId in poll.typing) listOf(friendNickOrNull(showing.userId) ?: "Собеседник") else emptyList()
-        is ChatTarget.Room -> poll.roomTyping[showing.roomId].orEmpty().map { id -> nickOf(id) ?: "Кто-то" }
+        is ChatTarget.Dm -> if (showing.userId in poll.typing) listOf(friendNickOrNull(showing.userId) ?: tr("Собеседник")) else emptyList()
+        is ChatTarget.Room -> poll.roomTyping[showing.roomId].orEmpty().map { id -> nickOf(id) ?: tr("Кто-то") }
     }
 
     private fun nickOf(userId: String): String? =
@@ -1083,13 +1085,13 @@ class SocialModel(
         host.ui.value.friends.firstOrNull { it.userId == userId }?.nickname?.takeIf { it.isNotEmpty() }
 
     private fun roomTitle(roomId: String): String =
-        host.ui.value.dialogs.firstOrNull { it.kind == DialogKind.ROOM && it.id == roomId }?.title?.takeIf { it.isNotEmpty() } ?: "Группа"
+        host.ui.value.dialogs.firstOrNull { it.kind == DialogKind.ROOM && it.id == roomId }?.title?.takeIf { it.isNotEmpty() } ?: tr("Группа")
 
     private fun requestNick(requestId: String): String =
         host.ui.value.friendRequests?.incoming?.firstOrNull { it.id == requestId }?.nickname.orEmpty()
 
     private fun friendNick(userId: String): String =
-        host.ui.value.friends.firstOrNull { it.userId == userId }?.nickname?.takeIf { it.isNotEmpty() } ?: "Игрок"
+        host.ui.value.friends.firstOrNull { it.userId == userId }?.nickname?.takeIf { it.isNotEmpty() } ?: tr("Игрок")
 
     private fun nextLocalId(): String = "local-" + localSeq.incrementAndGet()
 
@@ -1193,7 +1195,7 @@ fun ChatMessage.preview(): ChatReplyPreview = ChatReplyPreview(
     id = id,
     me = me,
     from = fromNick,
-    text = text.take(REPLY_PREVIEW_CHARS),
+    text = WaypointShare.parse(text)?.let(WaypointShare::preview) ?: text.take(REPLY_PREVIEW_CHARS),
     deleted = deleted,
     kind = attachment?.kind,
 )
@@ -1212,12 +1214,14 @@ private fun ChatMessage.mergedWith(view: ChatMessage): ChatMessage = copy(
 private fun previewText(item: ThreadMessage): String {
     val message = item.message
     val call = CallLogs.parse(message.text)
+    val mark = WaypointShare.parse(message.text)
     val body = when {
-        ServerInvites.parse(message.text) != null -> "Приглашение на сервер"
+        ServerInvites.parse(message.text) != null -> tr("Приглашение на сервер")
+        mark != null -> WaypointShare.preview(mark)
         call != null -> CallLogs.title(call, message.me)
-        message.attachment?.kind == "image" -> "Картинка"
-        message.attachment?.kind == "voice" -> "Голосовое сообщение"
-        message.attachment != null && message.text.isEmpty() -> "Вложение"
+        message.attachment?.kind == "image" -> tr("Картинка")
+        message.attachment?.kind == "voice" -> tr("Голосовое сообщение")
+        message.attachment != null && message.text.isEmpty() -> tr("Вложение")
         else -> Eltaller.plain(message.text).replace('\n', ' ').take(REPLY_PREVIEW_CHARS)
     }
     val author = message.fromNick.takeIf { item.target is ChatTarget.Room && it.isNotEmpty() }
@@ -1244,6 +1248,6 @@ private fun Throwable?.signInLost(): Boolean {
 }
 
 private fun Throwable?.readable(fallback: String): String {
-    if (signInLost()) return "Вход Millida истёк — войди заново"
+    if (signInLost()) return tr("Вход Millida истёк — войди заново")
     return this?.message?.trim()?.takeIf { it.isNotEmpty() }?.replaceFirstChar { it.uppercase() } ?: fallback
 }

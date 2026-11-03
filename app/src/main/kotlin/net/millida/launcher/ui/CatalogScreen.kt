@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -53,14 +54,19 @@ import net.millida.launcher.core.catalog.CatalogItem
 import net.millida.launcher.core.catalog.MillidaFilters
 import net.millida.launcher.core.catalog.MillidaKind
 import net.millida.launcher.core.catalog.ModpackLoader
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.catalog.NewBuild
 import net.millida.launcher.ui.catalog.CatalogDetailSheet
 import net.millida.launcher.ui.catalog.CatalogItemPage
 import net.millida.launcher.ui.catalog.CatalogModel
+import net.millida.launcher.ui.catalog.CatalogStars
 import net.millida.launcher.ui.catalog.CatalogTab
+import net.millida.launcher.ui.catalog.StarEntry
+import net.millida.launcher.ui.catalog.StarResult
 import net.millida.launcher.ui.catalog.DependencySheet
 import net.millida.launcher.ui.catalog.DownloadsFact
+import net.millida.launcher.ui.catalog.PackStatFact
 import net.millida.launcher.ui.catalog.ItemAction
 import net.millida.launcher.ui.catalog.ItemJob
 import net.millida.launcher.ui.catalog.ModpackJob
@@ -87,6 +93,10 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
     val listState = rememberLazyListState()
     var picking by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<CatalogItem?>(null) }
+    val stars = remember { CatalogStars.of(context) }
+    val starred by stars.items.collectAsStateWithLifecycle()
+    var showStars by rememberSaveable { mutableStateOf(false) }
+    var starSection by rememberSaveable { mutableStateOf<String?>(null) }
 
     val target = cs.target(state.profiles, state.activeProfileId)
     val kind = cs.tab.kind
@@ -122,7 +132,7 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
     val scope = rememberCoroutineScope()
 
     fun startNewBuild(kindId: String, title: String, versions: List<String>, loaders: List<String>, then: () -> Unit) {
-        val plan = NewBuild.plan(kindId, versions, loaders) ?: return
+        val plan = NewBuild.plan(kindId, versions, loaders, state.phoneVersions) ?: return
         scope.launch {
             val before = model.ui.value.profiles.mapTo(HashSet()) { it.id }
             model.createProfile(NewBuild.name(title), plan.version, plan.loader).join()
@@ -152,7 +162,7 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
         MField(
             value = cs.query,
             onValueChange = catalog::setQuery,
-            placeholder = "Поиск по разделу «${cs.tab.label}»",
+            placeholder = tr("Поиск по разделу «{label}»", cs.tab.label),
             leadingIcon = MIcons.search,
             clearable = true,
             imeAction = ImeAction.Search,
@@ -162,33 +172,49 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
             },
         )
     }
+    val toggleStar: (CatalogTab, CatalogItem) -> Unit = { tab, item ->
+        when (stars.toggle(tab, item)) {
+            StarResult.FULL -> model.notice(tr("В избранном уже {STAR_LIMIT} — убери лишнее", CatalogStars.STAR_LIMIT), true)
+            StarResult.FAILED -> model.notice(tr("Не удалось сохранить избранное: память телефона недоступна"), true)
+            StarResult.ON, StarResult.OFF -> Unit
+        }
+    }
+    val publish: () -> Unit = { model.openLinkOrNotice(context, publishUrl(cs.tab)) }
     val sectionTabs: @Composable () -> Unit = {
         MTabs(
-            tabs = CatalogTab.entries,
-            selected = cs.tab,
-            onSelect = catalog::setTab,
-            label = { it.label },
+            tabs = CATALOG_PICKS,
+            selected = if (showStars) STARS_PICK else cs.tab,
+            onSelect = { pick ->
+                if (pick == null) {
+                    showStars = true
+                } else {
+                    showStars = false
+                    catalog.setTab(pick)
+                }
+            },
+            label = { pick -> pick?.label ?: if (starred.isEmpty()) tr("Избранное") else tr("Избранное {size}", starred.size) },
+            icon = { pick -> if (pick == null) MIcons.star else null },
             scrollable = true,
         )
     }
     val scopeLine: @Composable () -> Unit = {
         if (kind != null && target != null) {
             MChip(
-                text = "Для «${target.name}» · ${CatalogModel.buildLabel(kind, target)}",
+                text = tr("Для «{name}» · {0}", target.name, CatalogModel.buildLabel(kind, target)),
                 selected = true,
                 onClick = { picking = true },
                 icon = MIcons.box,
             )
         } else if (cs.tab == CatalogTab.MAPS && target != null) {
             MChip(
-                text = "Для «${target.name}» · ${target.gameVersion}",
+                text = tr("Для «{name}» · {gameVersion}", target.name, target.gameVersion),
                 selected = true,
                 onClick = { picking = true },
                 icon = MIcons.box,
             )
         } else if (kind == null && cs.tab.foreign) {
             Text(
-                "Fabric, Quilt, Forge и NeoForge · каждая встаёт отдельной сборкой",
+                tr("Fabric, Quilt, Forge и NeoForge · каждая встаёт отдельной сборкой"),
                 style = MillidaType.small,
                 color = millida.fgFaint,
                 maxLines = 1,
@@ -215,12 +241,26 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
         )
     }
     val aiRow: @Composable () -> Unit = {
-        MListRow(title = "Собрать с ИИ", icon = MIcons.sparkle, onClick = aiBuilder::open)
+        MListRow(title = tr("Собрать с ИИ"), icon = MIcons.sparkle, onClick = aiBuilder::open)
     }
-    val results: LazyListScope.() -> Unit = {
+    val favourites: LazyListScope.() -> Unit = {
+        starredItems(
+            entries = starred,
+            only = starSection,
+            columns = columns,
+            onOnly = { starSection = it },
+            onBrowse = {
+                showStars = false
+                catalog.setTab(CatalogTab.MODS)
+            },
+            onOpen = { entry -> entry.catalogTab?.let { tab -> catalog.openStarred(tab, entry.item) } },
+            onStar = { entry -> entry.catalogTab?.let { tab -> toggleStar(tab, entry.item) } },
+        )
+    }
+    val sectionResults: LazyListScope.() -> Unit = {
         cs.modpack?.let { job ->
             item(key = "modpack-job") {
-                MBusyCard(label = "Ставим «${job.title}»", progress = job.progress, note = job.stage)
+                MBusyCard(label = tr("Ставим «{title}»", job.title), progress = job.progress, note = job.stage)
             }
         }
         if (showsMillida) {
@@ -271,16 +311,16 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
             noMods -> item(key = "no-mods") {
                 MEmptyState(
                     icon = MIcons.box,
-                    title = "Сборка без модов",
-                    actionText = "Выбрать сборку",
+                    title = tr("Сборка без модов"),
+                    actionText = tr("Выбрать сборку"),
                     onAction = { picking = true },
                 )
             }
             needsBuild -> item(key = "no-build") {
                 MEmptyState(
                     icon = MIcons.chest,
-                    title = "Сначала нужна сборка",
-                    actionText = "Готовые сборки",
+                    title = tr("Сначала нужна сборка"),
+                    actionText = tr("Готовые сборки"),
                     onAction = { catalog.setTab(CatalogTab.MODPACKS) },
                     actionIcon = MIcons.chest,
                 )
@@ -294,8 +334,8 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                 val searching = cs.query.isNotBlank()
                 MEmptyState(
                     icon = if (searching) MIcons.search else cs.tab.icon,
-                    title = if (searching) "Ничего не нашлось" else "Здесь пока пусто",
-                    actionText = if (searching) "Показать весь раздел" else null,
+                    title = if (searching) tr("Ничего не нашлось") else tr("Здесь пока пусто"),
+                    actionText = if (searching) tr("Показать весь раздел") else null,
                     onAction = if (searching) ({ catalog.setQuery("") }) else null,
                     primary = false,
                 )
@@ -318,16 +358,18 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                     installed = intoBuild && cs.installed.find(item) != null,
                     job = cs.jobs[item.key],
                     modpackJob = cs.modpack?.takeIf { it.key == item.key },
-                    installLabel = if (intoBuild) "В сборку" else "Установить",
+                    installLabel = if (intoBuild) tr("В сборку") else tr("Установить"),
                     installIcon = if (intoBuild) MIcons.plus else MIcons.download,
                     onNewBuild = cs.tab.kind
                         ?.let { contentKind -> MillidaKind.entries.firstOrNull { it.content == contentKind }?.id }
-                        ?.takeIf { intoBuild && NewBuild.plan(it, item.gameVersions, item.loaderIds) != null }
+                        ?.takeIf { intoBuild && NewBuild.plan(it, item.gameVersions, item.loaderIds, state.phoneVersions) != null }
                         ?.let { kindId -> { startNewBuild(kindId, item.title, item.gameVersions, item.loaderIds) { catalog.install(item) } } },
                     icon = cs.tab.icon,
                     cover = if (cs.tab.showsCover) item.cover else null,
                     onRemove = { removing = item },
                     onOpen = { catalog.openDetail(item) },
+                    starred = starred.any { it.tab == cs.tab.name && it.item.key == item.key },
+                    onStar = { toggleStar(cs.tab, item) },
                 )
             }
             if (cs.items.isNotEmpty()) {
@@ -340,6 +382,8 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
             }
         }
     }
+
+    val results: LazyListScope.() -> Unit = { if (showStars) favourites() else sectionResults() }
 
     val millidaDetail = ms.detail
     val itemDetail = cs.detail
@@ -391,9 +435,11 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
         WideCatalog(
             modifier = modifier,
             listState = listState,
-            sectionTitle = cs.tab.label,
-            foreign = cs.tab.foreign,
-            modpacks = cs.tab == CatalogTab.MODPACKS,
+            sectionTitle = if (showStars) tr("Избранное") else cs.tab.label,
+            foreign = cs.tab.foreign && !showStars,
+            modpacks = cs.tab == CatalogTab.MODPACKS && !showStars,
+            onPublish = publish,
+            searchable = !showStars,
             searchField = searchField,
             sectionTabs = sectionTabs,
             scopeLine = scopeLine,
@@ -408,16 +454,23 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                 wideHub.library = true
                 model.open(Screen.HOME)
             },
-            filters = packFilters,
+            filters = { if (!showStars) packFilters() },
+            activeFilters = listOfNotNull(
+                cs.packVersion.takeIf { cs.tab == CatalogTab.MODPACKS },
+                cs.packLoader.takeIf { cs.tab == CatalogTab.MODPACKS },
+            ).size + if (cs.filter != CatalogFilter.ALL) 1 else 0,
             itemPage = itemPage,
         )
     } else {
         MScreen(
             modifier = modifier.imePadding(),
-            title = "Каталог",
+            title = tr("Каталог"),
             listState = listState,
+            actions = {
+                MIconButton(MIcons.upload, onClick = publish, label = tr("Выложить своё"))
+            },
         ) {
-            item(key = "search") { searchField() }
+            if (!showStars) item(key = "search") { searchField() }
             stickyHeader(key = "tabs") {
                 Box(
                     Modifier
@@ -428,12 +481,14 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                     sectionTabs()
                 }
             }
-            item(key = "scope") { scopeLine() }
-            if (cs.tab.foreign) {
-                item(key = "sources") { sources() }
-            }
-            if (cs.tab == CatalogTab.MODPACKS) {
-                item(key = "ai-builder") { aiRow() }
+            if (!showStars) {
+                item(key = "scope") { scopeLine() }
+                if (cs.tab.foreign) {
+                    item(key = "sources") { sources() }
+                }
+                if (cs.tab == CatalogTab.MODPACKS) {
+                    item(key = "ai-builder") { aiRow() }
+                }
             }
             results()
         }
@@ -526,9 +581,9 @@ fun CatalogScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
 
     removing?.let { item ->
         MConfirmDialog(
-            title = "Удалить «${item.title}»?",
-            text = target?.let { "Файл уйдёт из сборки «${it.name}»" },
-            confirm = "Удалить",
+            title = tr("Удалить «{title}»?", item.title),
+            text = target?.let { tr("Файл уйдёт из сборки «{name}»", it.name) },
+            confirm = tr("Удалить"),
             onConfirm = {
                 removing = null
                 catalog.remove(item)
@@ -547,13 +602,15 @@ internal fun CatalogCard(
     installed: Boolean = false,
     job: ItemJob? = null,
     modpackJob: ModpackJob? = null,
-    installLabel: String = "Поставить",
+    installLabel: String = tr("Поставить"),
     icon: MillidaIcon = MIcons.box,
     cover: String? = null,
     onRemove: (() -> Unit)? = null,
     onOpen: (() -> Unit)? = null,
     installIcon: MillidaIcon = MIcons.download,
     onNewBuild: (() -> Unit)? = null,
+    starred: Boolean = false,
+    onStar: (() -> Unit)? = null,
 ) {
     val colors = millida
     MCard(modifier = modifier, onClick = onOpen, contentPadding = 14.dp) {
@@ -581,7 +638,7 @@ internal fun CatalogCard(
                 )
                 if (item.author.isNotBlank()) {
                     Text(
-                        "от ${item.author}",
+                        tr("от {author}", item.author),
                         style = MillidaType.small,
                         color = colors.fgFaint,
                         maxLines = 1,
@@ -599,6 +656,10 @@ internal fun CatalogCard(
                     )
                 }
             }
+            if (onStar != null) {
+                Spacer(Modifier.width(8.dp))
+                StarToggle(starred = starred, onClick = onStar)
+            }
         }
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -610,8 +671,9 @@ internal fun CatalogCard(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 DownloadsFact(item.downloads)
+                PackStatFact(item.projectId, item.slug)
                 if (installed) {
-                    MBadge("Установлено", colors.accentText, colors.accentSoft, icon = MIcons.check)
+                    MBadge(tr("Установлено"), colors.accentText, colors.accentSoft, icon = MIcons.check)
                 } else {
                     MBadge(item.source.label, colors.info, colors.infoSoft)
                 }
@@ -619,18 +681,18 @@ internal fun CatalogCard(
             Spacer(Modifier.width(8.dp))
             when {
                 modpackJob != null -> MButton(
-                    text = percentOf(modpackJob.progress) ?: "Ставим",
+                    text = percentOf(modpackJob.progress) ?: tr("Ставим"),
                     onClick = {},
                     size = MButtonSize.Small,
                     loading = true,
                 )
                 job != null -> MButton(
-                    text = if (job.action == ItemAction.REMOVE) "Удаляем" else percentOf(job.progress) ?: "Ставим",
+                    text = if (job.action == ItemAction.REMOVE) tr("Удаляем") else percentOf(job.progress) ?: tr("Ставим"),
                     onClick = {},
                     size = MButtonSize.Small,
                     loading = true,
                 )
-                installed && onRemove != null -> MDangerButton(text = "Удалить", onClick = onRemove, icon = MIcons.trash)
+                installed && onRemove != null -> MDangerButton(text = tr("Удалить"), onClick = onRemove, icon = MIcons.trash)
                 installed -> Unit
                 else -> MPrimaryButton(
                     text = installLabel,
@@ -643,7 +705,7 @@ internal fun CatalogCard(
         }
         if (onNewBuild != null && job == null && modpackJob == null && !installed) {
             Spacer(Modifier.height(8.dp))
-            MSecondaryButton(text = "Новая сборка", onClick = onNewBuild, modifier = Modifier.fillMaxWidth(), size = MButtonSize.Small)
+            MSecondaryButton(text = tr("Новая сборка"), onClick = onNewBuild, modifier = Modifier.fillMaxWidth(), size = MButtonSize.Small)
         }
         if (modpackJob != null || job?.action == ItemAction.INSTALL) {
             Spacer(Modifier.height(10.dp))
@@ -669,7 +731,7 @@ private fun PackFilters(
     onLoader: (LoaderKind) -> Unit,
 ) {
     MCard(contentPadding = 12.dp) {
-        MSectionTitle("ВЕРСИЯ")
+        MSectionTitle(tr("ВЕРСИЯ"))
         Spacer(Modifier.height(8.dp))
         MButtonRow {
             CatalogModel.PACK_VERSIONS.forEach { option ->
@@ -677,7 +739,7 @@ private fun PackFilters(
             }
         }
         Spacer(Modifier.height(14.dp))
-        MSectionTitle("ЗАГРУЗЧИК")
+        MSectionTitle(tr("ЗАГРУЗЧИК"))
         Spacer(Modifier.height(8.dp))
         MButtonRow {
             ModpackLoader.PHONE_LOADERS.forEach { option ->
@@ -710,11 +772,17 @@ private fun WideCatalog(
     onLobby: () -> Unit,
     onLibrary: () -> Unit,
     filters: @Composable () -> Unit,
+    activeFilters: Int,
     itemPage: (@Composable () -> Unit)?,
+    onPublish: () -> Unit,
+    searchable: Boolean,
 ) {
     val colors = millida
     val lifted by remember(listState) { derivedStateOf { listState.canScrollBackward } }
     val roomy = LocalConfiguration.current.screenHeightDp >= WIDE_ROOMY_HEIGHT_DP
+    // A phone on its side has no room for a third of the screen in filters: the column opens from a button.
+    val compact = LocalCompactUi.current
+    var asideOpen by rememberSaveable { mutableStateOf(false) }
     Column(
         modifier
             .fillMaxSize()
@@ -737,25 +805,32 @@ private fun WideCatalog(
             sectionTabs()
         }
         Row(Modifier.weight(1f)) {
-            Column(
+            if (!compact || asideOpen) Column(
                 Modifier
                     .width(CATALOG_ASIDE_WIDTH)
                     .fillMaxHeight()
                     .verticalScroll(rememberScrollState())
-                    .padding(start = screenPadding, top = 8.dp, bottom = 24.dp),
+                    .padding(start = screenPadding, top = 8.dp, bottom = 24.dp + wideBottomInset()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                scopeLine()
+                if (searchable) scopeLine()
                 if (foreign) sources()
                 filters()
                 if (modpacks) aiRow()
+                MSecondaryButton(
+                    tr("Выложить своё"),
+                    onClick = onPublish,
+                    modifier = Modifier.fillMaxWidth(),
+                    icon = MIcons.upload,
+                    size = MButtonSize.Small,
+                )
             }
             LazyColumn(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxHeight(),
                 state = listState,
-                contentPadding = PaddingValues(start = 14.dp, end = screenPadding, top = 8.dp, bottom = 28.dp),
+                contentPadding = PaddingValues(start = 14.dp, end = screenPadding, top = 8.dp, bottom = 28.dp + wideBottomInset()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item(key = "head") {
@@ -769,11 +844,108 @@ private fun WideCatalog(
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
-                        searchField()
+                        if (compact) {
+                            MChip(
+                                text = tr("Фильтры"),
+                                selected = asideOpen,
+                                onClick = { asideOpen = !asideOpen },
+                                icon = MIcons.filter,
+                                count = activeFilters.takeIf { it > 0 },
+                            )
+                        }
+                        if (searchable) searchField()
                     }
                 }
                 results()
             }
         }
+    }
+}
+
+private val STARS_PICK: CatalogTab? = null
+
+private val CATALOG_PICKS: List<CatalogTab?> = CatalogTab.entries + STARS_PICK
+
+private const val PUBLISH_URL = "https://millida.net/zagruzit"
+
+/** The site's upload page opens on the section the player is looking at, as the desktop's «Выложить своё» does. */
+private fun publishUrl(tab: CatalogTab): String = PUBLISH_URL + "?type=" + when (tab) {
+    CatalogTab.MODS -> "mods"
+    CatalogTab.MODPACKS -> "modpacks"
+    CatalogTab.RESOURCE_PACKS -> "texture-packs"
+    CatalogTab.SHADERS -> "shaders"
+    CatalogTab.DATA_PACKS -> "data-packs"
+    CatalogTab.MAPS -> "maps"
+}
+
+@Composable
+private fun StarToggle(starred: Boolean, onClick: () -> Unit) {
+    val colors = millida
+    MIconButton(
+        icon = MIcons.star,
+        onClick = onClick,
+        tint = if (starred) colors.warning else colors.fgFaint,
+        background = if (starred) colors.warningSoft else colors.surface2,
+        label = if (starred) tr("Убрать из избранного") else tr("В избранное"),
+    )
+}
+
+private fun LazyListScope.starredItems(
+    entries: List<StarEntry>,
+    only: String?,
+    columns: Int,
+    onOnly: (String?) -> Unit,
+    onBrowse: () -> Unit,
+    onOpen: (StarEntry) -> Unit,
+    onStar: (StarEntry) -> Unit,
+) {
+    if (entries.isEmpty()) {
+        item(key = "stars-empty") {
+            MEmptyState(
+                icon = MIcons.star,
+                title = tr("В избранном пусто"),
+                actionText = tr("Открыть моды"),
+                onAction = onBrowse,
+            )
+        }
+        return
+    }
+    val groups = entries.groupingBy { it.tab }.eachCount()
+    val active = only?.takeIf { it in groups }
+    val shown = if (active == null) entries else entries.filter { it.tab == active }
+    if (groups.size > 1) {
+        item(key = "stars-groups") {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                MChip(text = tr("Все"), selected = active == null, onClick = { onOnly(null) })
+                CatalogTab.entries.filter { it.name in groups }.forEach { tab ->
+                    MChip(
+                        text = tab.label,
+                        selected = active == tab.name,
+                        onClick = { onOnly(tab.name) },
+                        count = groups[tab.name],
+                    )
+                }
+            }
+        }
+    }
+    adaptiveItems(shown, columns, key = { "star:" + it.tab + "/" + it.item.key }, contentType = "catalog-star") { entry ->
+        val tab = entry.catalogTab ?: CatalogTab.MODS
+        CatalogCard(
+            item = entry.item,
+            busy = false,
+            onInstall = { onOpen(entry) },
+            installLabel = tr("Открыть"),
+            installIcon = MIcons.chevronRight,
+            icon = tab.icon,
+            cover = if (tab.showsCover) entry.item.cover else null,
+            onOpen = { onOpen(entry) },
+            starred = true,
+            onStar = { onStar(entry) },
+        )
     }
 }

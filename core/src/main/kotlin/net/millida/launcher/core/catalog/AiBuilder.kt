@@ -10,6 +10,8 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import net.millida.launcher.core.account.MillidaAuth
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trSource
 import net.millida.launcher.core.loader.LoaderKind
 import java.io.IOException
 
@@ -63,7 +65,7 @@ class AiBuilderClient(private val auth: MillidaAuth) {
     @Throws(IOException::class)
     suspend fun build(prompt: String, fresh: Boolean): AiPlan {
         val text = prompt.trim().take(AiBuilder.PROMPT_MAX)
-        if (text.length < AiBuilder.PROMPT_MIN) throw IOException("опиши сборку: от ${AiBuilder.PROMPT_MIN} до ${AiBuilder.PROMPT_MAX} символов")
+        if (text.length < AiBuilder.PROMPT_MIN) throw IOException(tr("опиши сборку: от {PROMPT_MIN} до {PROMPT_MAX} символов", AiBuilder.PROMPT_MIN, AiBuilder.PROMPT_MAX))
         val body = auth.authorized(
             "/catalog/ai/build",
             "POST",
@@ -72,7 +74,7 @@ class AiBuilderClient(private val auth: MillidaAuth) {
                 if (fresh) put("fresh", true)
             },
         )
-        return AiBuilder.planFrom(body) ?: throw IOException("ИИ-сборщик ответил не тем — попробуй ещё раз")
+        return AiBuilder.planFrom(body) ?: throw IOException(tr("ИИ-сборщик ответил не тем — попробуй ещё раз"))
     }
 }
 
@@ -80,11 +82,11 @@ object AiBuilder {
     const val PROMPT_MIN = 5
     const val PROMPT_MAX = 500
     const val TITLE_MAX = 24
-    const val SOON = "ИИ-сборщик скоро заработает"
-    const val LIMIT = "Лимит на сегодня — 3 сборки, в PLUS — 30"
-    private const val NO_ANSWER = "ИИ не ответил — попробуй ещё раз"
+    val SOON: String get() = tr("ИИ-сборщик скоро заработает")
+    val LIMIT: String get() = tr("Лимит на сегодня — 3 сборки, в PLUS — 30")
+    private val NO_ANSWER: String get() = tr("ИИ не ответил — попробуй ещё раз")
 
-    val EXAMPLES: List<String> = listOf("Хоррор с зомби на 1.20.1", "Техно и заводы", "Уютная ферма с едой", "Магия и данжи")
+    val EXAMPLES: List<String> get() = listOf(tr("Хоррор с зомби на 1.20.1"), tr("Техно и заводы"), tr("Уютная ферма с едой"), tr("Магия и данжи"))
 
     /** Without them the loader's mods do not start, so they cannot be unticked. */
     val LOCKED_SLUGS: Set<String> = setOf("fabric-api", "qsl")
@@ -96,11 +98,11 @@ object AiBuilder {
         "quilt" to LoaderKind.QUILT,
     )
 
-    private val EXCLUDED_WHY = mapOf(
-        "quarantine" to "ломает запуск на этой версии",
-        "wrong_mc" to "не для этой версии игры",
-        "dep_version" to "не уживается с версией своей зависимости",
-        "duplicate" to "повтор мода",
+    private val EXCLUDED_WHY get() = mapOf(
+        "quarantine" to tr("ломает запуск на этой версии"),
+        "wrong_mc" to tr("не для этой версии игры"),
+        "dep_version" to tr("не уживается с версией своей зависимости"),
+        "duplicate" to tr("повтор мода"),
     )
 
     fun quotaFrom(body: JsonObject): AiQuota = AiQuota(
@@ -117,7 +119,7 @@ object AiBuilder {
         val mods = mods(body["mods"])
         if (mods.isEmpty()) return null
         return AiPlan(
-            title = body.text("title").ifEmpty { "Сборка" },
+            title = body.text("title").ifEmpty { tr("Сборка") },
             mcVersion = version,
             loader = loader,
             mods = mods,
@@ -163,17 +165,18 @@ object AiBuilder {
     /** The server already speaks Russian; only the bare statuses of the gateway are translated here. */
     fun errorText(error: Throwable): String {
         val raw = error.message.orEmpty().trim()
+        val probe = trSource(raw)
         return when {
-            Regex("сервер ответил 503|^service unavailable$", RegexOption.IGNORE_CASE).containsMatchIn(raw) -> SOON
-            Regex("сервер ответил 429|^too many requests$|^throttlerexception", RegexOption.IGNORE_CASE).containsMatchIn(raw) -> LIMIT
-            Regex("сервер ответил 50[024]").containsMatchIn(raw) -> NO_ANSWER
+            Regex("сервер ответил 503|^service unavailable$", RegexOption.IGNORE_CASE).containsMatchIn(probe) -> SOON
+            Regex("сервер ответил 429|^too many requests$|^throttlerexception", RegexOption.IGNORE_CASE).containsMatchIn(probe) -> LIMIT
+            Regex("сервер ответил 50[024]").containsMatchIn(probe) -> NO_ANSWER
             raw.isEmpty() -> NO_ANSWER
             else -> raw
         }
     }
 
     /** A limit or a closed builder is not fixed by asking again. */
-    fun retryable(text: String): Boolean = !text.startsWith("Лимит") && text != SOON
+    fun retryable(text: String): Boolean = text != LIMIT && !trSource(text).startsWith("Лимит") && text != SOON
 
     private fun mods(element: JsonElement?): List<AiMod> =
         (element as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::mod) }.distinctBy { it.projectId }

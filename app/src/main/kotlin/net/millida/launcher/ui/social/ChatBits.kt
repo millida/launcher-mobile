@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import net.millida.launcher.core.call.CallLogEntry
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MAvatar
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -86,7 +87,10 @@ import kotlin.math.max
 import androidx.compose.foundation.clickable
 import net.millida.launcher.core.friends.ServerInvite
 import net.millida.launcher.core.friends.ServerInvites
+import net.millida.launcher.core.friends.SharedMark
+import net.millida.launcher.core.friends.WaypointShare
 import net.millida.launcher.ui.PixelFrame
+import net.millida.launcher.ui.MPrimaryButton
 import net.millida.launcher.ui.MSecondaryButton
 import net.millida.launcher.ui.MButtonSize
 
@@ -115,12 +119,12 @@ internal fun ChatDay(label: String, modifier: Modifier = Modifier) {
 }
 
 internal fun replyLabel(reply: ChatReplyPreview): String = when {
-    reply.deleted -> "Сообщение удалено"
-    reply.kind == "image" || reply.kind == "sticker" -> "Картинка"
-    reply.kind == "voice" -> "Голосовое сообщение"
+    reply.deleted -> tr("Сообщение удалено")
+    reply.kind == "image" || reply.kind == "sticker" -> tr("Картинка")
+    reply.kind == "voice" -> tr("Голосовое сообщение")
     CallLogs.parse(reply.text) != null -> CallLogs.parse(reply.text)?.let { CallLogs.title(it, reply.me) }.orEmpty()
     reply.text.isNotBlank() -> reply.text
-    else -> "Сообщение"
+    else -> tr("Сообщение")
 }
 
 @Composable
@@ -142,6 +146,7 @@ internal fun MessageBubble(
     onJoinServer: ((ServerInvite) -> Unit)? = null,
     onReact: ((String) -> Unit)? = null,
     room: Boolean = false,
+    onCopyText: ((String) -> Unit)? = null,
 ) {
     val colors = millida
     val feedback = LocalUiFeedback.current
@@ -150,8 +155,9 @@ internal fun MessageBubble(
     val actionable = message.id.isNotEmpty() && line.state == SendState.Sent && !message.deleted
     val callLog = if (message.deleted) null else CallLogs.parse(message.text)
     val invite = if (message.deleted || callLog != null) null else ServerInvites.parse(message.text)
-    if (invite != null || (callLog != null && !room)) {
-        StandaloneCard(line, invite, callLog, onCallBack, onJoinServer, onRetry, onDrop, modifier)
+    val mark = if (message.deleted || callLog != null || invite != null) null else WaypointShare.parse(message.text)
+    if (invite != null || mark != null || (callLog != null && !room)) {
+        StandaloneCard(line, invite, mark, callLog, onCallBack, onJoinServer, onCopyText, onRetry, onDrop, modifier)
         return
     }
     val menu by rememberUpdatedState(onMenu)
@@ -208,7 +214,7 @@ internal fun MessageBubble(
             ) {
                 message.replyTo?.takeIf { !message.deleted }?.let { quote ->
                     ReplyQuote(
-                        who = if (quote.me) "Ты" else peerName,
+                        who = if (quote.me) tr("Ты") else peerName,
                         text = replyLabel(quote),
                         onClick = onQuote?.takeIf { quote.id.isNotEmpty() }?.let { jump -> { jump(quote.id) } },
                     )
@@ -220,7 +226,7 @@ internal fun MessageBubble(
                     if (message.text.isNotEmpty()) Spacer(Modifier.height(6.dp))
                 }
                 if (message.deleted) {
-                    Text("Сообщение удалено", style = MillidaType.body, color = colors.fgFaint)
+                    Text(tr("Сообщение удалено"), style = MillidaType.body, color = colors.fgFaint)
                 } else if (callLog != null) {
                     CallLogCard(callLog, mine, onCallBack)
                 } else if (message.text.isNotEmpty()) {
@@ -233,7 +239,7 @@ internal fun MessageBubble(
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
                 ) {
                     if (message.editedAt != null && !message.deleted) {
-                        Text("изм.", style = MillidaType.small, color = colors.fgFaint)
+                        Text(tr("изм."), style = MillidaType.small, color = colors.fgFaint)
                     }
                     Text(clockText(message.ts), style = MillidaType.small, color = colors.fgFaint)
                     if (mine) DeliveryMark(line.state, read)
@@ -284,7 +290,7 @@ private fun FailedRow(error: String?, onRetry: () -> Unit, onDrop: () -> Unit) {
         MIcon(MIcons.alert, size = 14.dp, color = colors.danger)
         Spacer(Modifier.width(6.dp))
         Text(
-            error ?: "Не отправлено",
+            error ?: tr("Не отправлено"),
             modifier = Modifier.weight(1f, fill = false),
             style = MillidaType.small,
             color = colors.danger,
@@ -293,8 +299,8 @@ private fun FailedRow(error: String?, onRetry: () -> Unit, onDrop: () -> Unit) {
         )
     }
     Row {
-        MTextButton("Повторить", onClick = onRetry, icon = MIcons.refresh)
-        MTextButton("Удалить", onClick = onDrop, color = colors.fgSubtle)
+        MTextButton(tr("Повторить"), onClick = onRetry, icon = MIcons.refresh)
+        MTextButton(tr("Удалить"), onClick = onDrop, color = colors.fgSubtle)
     }
 }
 
@@ -307,9 +313,11 @@ private fun FailedRow(error: String?, onRetry: () -> Unit, onDrop: () -> Unit) {
 private fun StandaloneCard(
     line: ChatLine,
     invite: ServerInvite?,
+    mark: SharedMark?,
     callLog: CallLogEntry?,
     onCallBack: (() -> Unit)?,
     onJoinServer: ((ServerInvite) -> Unit)?,
+    onCopyText: ((String) -> Unit)?,
     onRetry: () -> Unit,
     onDrop: () -> Unit,
     modifier: Modifier,
@@ -330,6 +338,8 @@ private fun StandaloneCard(
         ) {
             if (invite != null) {
                 ServerInviteCard(invite, onJoinServer, fill = if (mine) colors.accentSoft else colors.surface2)
+            } else if (mark != null) {
+                MarkCard(mark, onJoinServer, onCopyText, fill = if (mine) colors.accentSoft else colors.surface2)
             } else if (callLog != null) {
                 CallLogCard(callLog, mine, onCallBack, fill = colors.surface2)
             }
@@ -352,7 +362,7 @@ private fun ServerInviteCard(invite: ServerInvite, onJoin: ((ServerInvite) -> Un
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f, fill = false)) {
             Text(
-                "Приглашение на сервер",
+                tr("Приглашение на сервер"),
                 style = MillidaType.small.copy(fontWeight = FontWeight.Bold),
                 color = colors.fg,
                 maxLines = 1,
@@ -367,7 +377,72 @@ private fun ServerInviteCard(invite: ServerInvite, onJoin: ((ServerInvite) -> Un
         }
         if (onJoin != null) {
             Spacer(Modifier.width(10.dp))
-            MSecondaryButton("Зайти", onClick = { onJoin(invite) }, size = MButtonSize.Small)
+            MSecondaryButton(tr("Зайти"), onClick = { onJoin(invite) }, size = MButtonSize.Small)
+        }
+    }
+}
+
+/** The desktop's card for a waypoint shared from the game (src/lib/waypointShare.ts). */
+@Composable
+private fun MarkCard(
+    mark: SharedMark,
+    onJoin: ((ServerInvite) -> Unit)?,
+    onCopy: ((String) -> Unit)?,
+    fill: Color,
+) {
+    val colors = millida
+    val joinable = onJoin != null && ServerInvites.isServerAddr(mark.address)
+    Column(
+        Modifier
+            .pixelSurface(fill, MillidaCut.control)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MIcon(MIcons.map, size = 16.dp, color = colors.accentText)
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f, fill = false)) {
+                Text(
+                    tr("Метка"),
+                    style = MillidaType.small.copy(fontWeight = FontWeight.Bold),
+                    color = colors.fg,
+                    maxLines = 1,
+                )
+                Text(
+                    mark.name,
+                    style = MillidaType.body,
+                    color = colors.fg,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    listOf(WaypointShare.coords(mark), WaypointShare.dimensionLabel(mark.dimension), mark.address).joinToString(" · "),
+                    style = MillidaType.small,
+                    color = colors.fgSubtle,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (onCopy != null || joinable) {
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onCopy != null) {
+                    MSecondaryButton(
+                        tr("Скопировать координаты"),
+                        onClick = { onCopy(WaypointShare.coords(mark)) },
+                        icon = MIcons.copy,
+                        size = MButtonSize.Small,
+                    )
+                }
+                if (joinable && onJoin != null) {
+                    MPrimaryButton(
+                        tr("Зайти на сервер"),
+                        onClick = { onJoin(ServerInvite(mark.address, mark.address)) },
+                        icon = MIcons.play,
+                        size = MButtonSize.Small,
+                    )
+                }
+            }
         }
     }
 }
@@ -441,8 +516,8 @@ private fun Attachment(
         return
     }
     val (icon, label) = when (attachment.kind) {
-        "image", "sticker" -> MIcons.image to "Картинка"
-        else -> MIcons.link to attachment.name.ifEmpty { "Вложение" }
+        "image", "sticker" -> MIcons.image to tr("Картинка")
+        else -> MIcons.link to attachment.name.ifEmpty { tr("Вложение") }
     }
     Row(
         Modifier
@@ -529,7 +604,7 @@ internal fun ChatComposer(
     onRecord: (() -> Unit)? = null,
     onCancelRecord: () -> Unit = {},
     onSendRecord: () -> Unit = {},
-    uploadingText: String = "Отправляем картинку",
+    uploadingText: String = tr("Отправляем картинку"),
 ) {
     val colors = millida
     var picking by remember { mutableStateOf(false) }
@@ -585,7 +660,7 @@ internal fun ChatComposer(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                MIconButton(MIcons.close, onClick = onCancelQuote, label = "Отменить")
+                MIconButton(MIcons.close, onClick = onCancelQuote, label = tr("Отменить"))
             }
         }
         if (recording != null) {
@@ -598,20 +673,20 @@ internal fun ChatComposer(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.Bottom,
         ) {
-            MIconButton(MIcons.smile, onClick = { picking = true }, label = "Смайлы")
+            MIconButton(MIcons.smile, onClick = { picking = true }, label = tr("Смайлы"))
             Spacer(Modifier.width(8.dp))
             MIconButton(
                 MIcons.image,
                 onClick = onPickImage,
                 enabled = !uploading && !editing,
-                label = "Картинка",
+                label = tr("Картинка"),
             )
             Spacer(Modifier.width(8.dp))
             Box(Modifier.weight(1f)) {
                 MField(
                     value = draft,
                     onValueChange = onDraft,
-                    placeholder = if (editing) "Новый текст…" else "Сообщение…",
+                    placeholder = if (editing) tr("Новый текст…") else tr("Сообщение…"),
                     singleLine = false,
                     imeAction = ImeAction.Default,
                     focusRequester = focusRequester,
@@ -626,7 +701,7 @@ internal fun ChatComposer(
                     tint = colors.onAccent,
                     background = colors.accent,
                     enabled = !uploading,
-                    label = "Записать голосовое",
+                    label = tr("Записать голосовое"),
                 )
             } else {
                 MIconButton(
@@ -635,7 +710,7 @@ internal fun ChatComposer(
                     tint = colors.onAccent,
                     background = colors.accent,
                     enabled = draft.isNotBlank(),
-                    label = if (editing) "Сохранить" else "Отправить",
+                    label = if (editing) tr("Сохранить") else tr("Отправить"),
                 )
             }
         }
@@ -660,7 +735,7 @@ private fun RecordingStrip(recording: VoiceRecordingUi, onCancel: () -> Unit, on
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MIconButton(MIcons.trash, onClick = onCancel, tint = colors.danger, label = "Отменить запись")
+        MIconButton(MIcons.trash, onClick = onCancel, tint = colors.danger, label = tr("Отменить запись"))
         Spacer(Modifier.width(10.dp))
         Box(
             Modifier
@@ -693,7 +768,7 @@ private fun RecordingStrip(recording: VoiceRecordingUi, onCancel: () -> Unit, on
             Text(VoiceNotes.formatTime(left), style = MillidaType.small, color = colors.danger)
         }
         Spacer(Modifier.width(10.dp))
-        MIconButton(MIcons.send, onClick = onSend, tint = colors.onAccent, background = colors.accent, label = "Отправить")
+        MIconButton(MIcons.send, onClick = onSend, tint = colors.onAccent, background = colors.accent, label = tr("Отправить"))
     }
 }
 
@@ -716,8 +791,8 @@ internal fun MessageMenu(
         val preview = when {
             callLog != null -> CallLogs.title(callLog, message.me)
             message.text.isNotBlank() -> message.text
-            message.attachment?.kind == "voice" -> "Голосовое сообщение"
-            message.attachment != null -> "Картинка"
+            message.attachment?.kind == "voice" -> tr("Голосовое сообщение")
+            message.attachment != null -> tr("Картинка")
             else -> ""
         }
         if (preview.isNotEmpty()) {
@@ -731,12 +806,12 @@ internal fun MessageMenu(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        MListRow("Ответить", icon = MIcons.reply, onClick = onReply, plate = false, trailing = {})
-        if (onCopy != null) MListRow("Копировать текст", icon = MIcons.copy, onClick = onCopy, plate = false, trailing = {})
-        if (onCopyImage != null) MListRow("Копировать картинку", icon = MIcons.copy, onClick = onCopyImage, plate = false, trailing = {})
-        if (onSaveImage != null) MListRow("Сохранить картинку", icon = MIcons.download, onClick = onSaveImage, plate = false, trailing = {})
-        if (onEdit != null) MListRow("Изменить", icon = MIcons.edit, onClick = onEdit, plate = false, trailing = {})
-        if (onDelete != null) MListRow("Удалить", icon = MIcons.trash, onClick = onDelete, plate = false, trailing = {})
+        MListRow(tr("Ответить"), icon = MIcons.reply, onClick = onReply, plate = false, trailing = {})
+        if (onCopy != null) MListRow(tr("Копировать текст"), icon = MIcons.copy, onClick = onCopy, plate = false, trailing = {})
+        if (onCopyImage != null) MListRow(tr("Копировать картинку"), icon = MIcons.copy, onClick = onCopyImage, plate = false, trailing = {})
+        if (onSaveImage != null) MListRow(tr("Сохранить картинку"), icon = MIcons.download, onClick = onSaveImage, plate = false, trailing = {})
+        if (onEdit != null) MListRow(tr("Изменить"), icon = MIcons.edit, onClick = onEdit, plate = false, trailing = {})
+        if (onDelete != null) MListRow(tr("Удалить"), icon = MIcons.trash, onClick = onDelete, plate = false, trailing = {})
     }
 }
 
@@ -824,7 +899,7 @@ internal fun ImageViewer(url: String, onDismiss: () -> Unit) {
         ) {
             AsyncImage(
                 model = url,
-                contentDescription = "Картинка",
+                contentDescription = tr("Картинка"),
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
@@ -841,7 +916,7 @@ internal fun ImageViewer(url: String, onDismiss: () -> Unit) {
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(16.dp),
             ) {
-                MIconButton(MIcons.close, onClick = onDismiss, label = "Закрыть")
+                MIconButton(MIcons.close, onClick = onDismiss, label = tr("Закрыть"))
             }
         }
     }
@@ -870,7 +945,7 @@ internal fun OlderRow(loading: Boolean, error: String?, onRetry: () -> Unit, mod
                 overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.width(6.dp))
-            MTextButton("Повторить", onClick = onRetry, icon = MIcons.refresh)
+            MTextButton(tr("Повторить"), onClick = onRetry, icon = MIcons.refresh)
         }
     }
 }

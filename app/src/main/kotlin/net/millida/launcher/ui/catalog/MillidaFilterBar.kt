@@ -18,7 +18,8 @@ import net.millida.launcher.core.catalog.MillidaFacet
 import net.millida.launcher.core.catalog.MillidaFacets
 import net.millida.launcher.core.catalog.MillidaFilters
 import net.millida.launcher.core.catalog.MillidaSort
-import net.millida.launcher.core.friends.ruPlural
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trPlural
 import net.millida.launcher.ui.MBottomSheet
 import net.millida.launcher.ui.MChip
 import net.millida.launcher.ui.MEmptyState
@@ -32,7 +33,7 @@ import net.millida.launcher.ui.millida
 private enum class FilterSheet { SORT, VERSION, CATEGORY }
 
 internal fun materials(count: Int): String =
-    "${groupDigits(count.toLong())} ${ruPlural(count.toLong(), "материал", "материала", "материалов")}"
+    "${groupDigits(count.toLong())} ${trPlural(count.toLong(), tr("материал"), tr("материала"), tr("материалов"))}"
 
 /** The site's filter column folded into chips: sort, game version and categories, then the result count. */
 @Composable
@@ -55,14 +56,14 @@ internal fun MillidaFilterBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             MChip(
-                text = filters.sort?.label ?: "Сортировка",
+                text = filters.sort?.label ?: tr("Сортировка"),
                 selected = filters.sort != null,
                 onClick = { sheet = FilterSheet.SORT },
                 icon = MIcons.filter,
             )
             if (versions.isNotEmpty() || !filters.version.isNullOrBlank()) {
                 MChip(
-                    text = filters.version?.takeIf { it.isNotBlank() } ?: "Версия игры",
+                    text = filters.version?.takeIf { it.isNotBlank() } ?: tr("Версия игры"),
                     selected = !filters.version.isNullOrBlank(),
                     onClick = { sheet = FilterSheet.VERSION },
                     icon = MIcons.blocks,
@@ -70,14 +71,14 @@ internal fun MillidaFilterBar(
             }
             if (categories.isNotEmpty() || !filters.category.isNullOrBlank()) {
                 MChip(
-                    text = filters.category?.takeIf { it.isNotBlank() }?.replaceFirstChar { it.uppercase() } ?: "Категории",
+                    text = filters.category?.takeIf { it.isNotBlank() }?.replaceFirstChar { it.uppercase() } ?: tr("Категории"),
                     selected = !filters.category.isNullOrBlank(),
                     onClick = { sheet = FilterSheet.CATEGORY },
                     icon = MIcons.grid,
                 )
             }
             if (filters.active) {
-                MChip(text = "Сбросить", selected = false, onClick = { onChange(MillidaFilters()) }, icon = MIcons.close)
+                MChip(text = tr("Сбросить"), selected = false, onClick = { onChange(MillidaFilters()) }, icon = MIcons.close)
             }
         }
         if (total != null) {
@@ -90,21 +91,21 @@ internal fun MillidaFilterBar(
         onChange(next)
     }
     when (sheet) {
-        FilterSheet.SORT -> MBottomSheet(onDismiss = { sheet = null }, title = "Сортировка") {
+        FilterSheet.SORT -> MBottomSheet(onDismiss = { sheet = null }, title = tr("Сортировка")) {
             MillidaSort.entries.forEach { option ->
                 SheetOption(option.label, filters.sort == option) {
                     pick(filters.copy(sort = if (filters.sort == option) null else option))
                 }
             }
         }
-        FilterSheet.VERSION -> MBottomSheet(onDismiss = { sheet = null }, title = "Версия игры") {
+        FilterSheet.VERSION -> MBottomSheet(onDismiss = { sheet = null }, title = tr("Версия игры")) {
             versions.forEach { facet ->
                 FacetOption(facet, facet.value, filters.version == facet.value) {
                     pick(filters.copy(version = if (filters.version == facet.value) null else facet.value))
                 }
             }
         }
-        FilterSheet.CATEGORY -> MBottomSheet(onDismiss = { sheet = null }, title = "Категории") {
+        FilterSheet.CATEGORY -> MBottomSheet(onDismiss = { sheet = null }, title = tr("Категории")) {
             categories.forEach { facet ->
                 FacetOption(facet, facet.value.replaceFirstChar { it.uppercase() }, filters.category == facet.value) {
                     pick(filters.copy(category = if (filters.category == facet.value) null else facet.value))
@@ -144,9 +145,9 @@ private fun FacetOption(facet: MillidaFacet, label: String, selected: Boolean, o
 internal fun CatalogEmpty(searching: Boolean, onShowAll: () -> Unit, modifier: Modifier = Modifier) {
     MEmptyState(
         icon = if (searching) MIcons.search else MIcons.inbox,
-        title = if (searching) "Ничего не нашлось" else "Здесь пока пусто",
+        title = if (searching) tr("Ничего не нашлось") else tr("Здесь пока пусто"),
         modifier = modifier,
-        actionText = if (searching) "Показать весь раздел" else null,
+        actionText = if (searching) tr("Показать весь раздел") else null,
         onAction = if (searching) onShowAll else null,
         primary = false,
     )

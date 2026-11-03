@@ -1,21 +1,28 @@
 package net.millida.launcher
 
 import android.content.Context
+import android.os.Process
 import android.system.Os
 import android.view.Surface
 import com.movtery.zalithlauncher.bridge.LoggerBridge
 import com.movtery.zalithlauncher.bridge.ZLBridge
 import com.oracle.dalvik.VMLauncher
 import net.millida.launcher.core.game.AngelicaGlesSettings
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.launch.LaunchSpec
+import net.millida.launcher.core.launch.MillidaModToken
+import net.millida.launcher.core.runtime.ExitHook
+import net.millida.launcher.core.runtime.HostAbi
 import net.millida.launcher.core.runtime.InstalledRuntime
 import net.millida.launcher.core.runtime.InstalledSdl
 import net.millida.launcher.core.runtime.JavaHomeLayout
 import net.millida.launcher.core.runtime.MobileGluesSetup
+import net.millida.launcher.core.runtime.RendererCatalog
 import net.millida.launcher.core.runtime.RendererKind
 import net.millida.launcher.core.runtime.RendererVariable
 import net.millida.launcher.core.runtime.SdlGraphics
 import net.millida.launcher.core.runtime.SdlLaunch
+import net.millida.launcher.core.runtime.TurnipDriver
 import net.millida.launcher.runtime.GameSession
 import net.millida.launcher.runtime.RuntimeBridge
 import org.lwjgl.glfw.CallbackBridge
@@ -45,8 +52,13 @@ class PackRuntime(
     private var attachedWidth = 0
     private var attachedHeight = 0
     private var graphics: SdlGraphics? = null
+    private var glxShim: File? = null
+    private var vulkanShim: File? = null
 
     private val translated: Boolean get() = graphics != SdlGraphics.NATIVE_GLES
+
+    /** The switches a manifest entry carries for this renderer, read outside the start as well. */
+    val rendererEnvironment: Map<String, String> get() = runtime.renderer.environment
     private var debugFlags: Map<String, String> = emptyMap()
 
     fun note(text: String) = GameSession.note(sessionLog, text)
@@ -60,13 +72,27 @@ class PackRuntime(
             note("графика: GLES 3.2 телефона напрямую, Angelica в режиме ES, слой перевода не грузится")
             applyAngelicaGles(gameDir)
         }
+        glxShim = SdlLaunch.glxShim(
+            File(context.applicationInfo.nativeLibraryDir, SdlLaunch.GLX_SHIM),
+            rendererFile(),
+            graphics,
+            RendererKind.of(runtime.renderer),
+            runtime.renderer.environment,
+        )?.takeIf { debugFlags["glxShim"] != "off" }
+        if (glxShim != null) note("функции GL игра берёт через прослойку: устаревшие атрибуты GL 3.3 отвечают заглушкой")
+        vulkanShim = SdlLaunch.vulkanShim(
+            File(context.applicationInfo.nativeLibraryDir, SdlLaunch.VK_SHIM),
+            sdl != null,
+            runtime.renderer.environment,
+        )?.takeIf { debugFlags["vkShim"] != "off" }
+        if (vulkanShim != null) note("Vulkan игра берёт через прослойку: поворот экрана остаётся за системой")
         // The environment goes first: the library reads the renderer and the
         // graphics layer once, while it is being loaded.
         applyEnvironment(gameDir, windowWidth, windowHeight)
         loadLibraries()
         LoggerBridge.start(sessionLog.absolutePath)
         RuntimeBridge.guardSignals("after the window layer loaded")
-        LoggerBridge.appendTitle("Millida: готовый оконный слой")
+        LoggerBridge.appendTitle(tr("Millida: готовый оконный слой"))
         ZLBridge.setLdLibraryPath(libraryPath())
         note("путь библиотек передан")
         openRuntimeLibraries()
@@ -94,8 +120,11 @@ class PackRuntime(
             attached = surface
             attachedWidth = width
             attachedHeight = height
-            SdlHost.surfaceChanged(surface, width, height)
-            note("поверхность отдана SDL3, размер $width на $height")
+            val taken = SdlHost.surfaceChanged(surface, width, height)
+            note(
+                if (taken) "поверхность отдана SDL3, размер $width на $height"
+                else "SDL3 занят и поверхность возьмёт позже, размер $width на $height",
+            )
             return
         }
         // A repeated report of the same size makes the game run its resize
@@ -126,8 +155,8 @@ class PackRuntime(
         attachedWidth = 0
         attachedHeight = 0
         if (sdl != null) {
-            SdlHost.surfaceDestroyed()
-            note("окно SDL3 отпущено")
+            val released = SdlHost.surfaceDestroyed()
+            note(if (released) "окно SDL3 отпущено" else "окно SDL3 забрано, пока игра была занята: SDL3 отпустит его следом")
             return
         }
         runCatching { ZLBridge.releaseBridgeWindow() }
@@ -147,13 +176,14 @@ class PackRuntime(
         // buttons, and a short tap falls between two frames of the game.
         CallbackBridge.nativeSetUseInputStackQueue(false)
         runCatching { ZLBridge.setupExitMethod(context.applicationContext) }
+            .onSuccess { hookExit() }
             .onFailure { note("выход из игры не перехвачен: ${it.message}") }
         ZLBridge.chdir(spec.gameDir.absolutePath)
 
         val argv = arguments(spec, heapMb, windowWidth, windowHeight, bridgeJars)
         note("запуск виртуальной машины, аргументов ${argv.size}")
         LoggerBridge.appendTitle("JVM Args")
-        argv.forEach { LoggerBridge.append(it) }
+        argv.forEach { LoggerBridge.append(MillidaModToken.redact(it)) }
 
         RuntimeBridge.guardSignals("before the virtual machine")
         if (!jvmStarted.compareAndSet(false, true)) throw IOException(SECOND_START)
@@ -163,19 +193,57 @@ class PackRuntime(
     }
 
     /**
-     * Only what the libraries themselves declare as dependencies, in that order.
-     * The exit hook and its call interceptor are left out on purpose: the
-     * interceptor expects classes of the launcher it was written for and aborts
-     * the process without them, while the exit code already comes back from the
-     * virtual machine itself.
+     * The Java machine ends the game with the C library's exit, and its code never comes
+     * back from the launch call. The pack's interceptor turns that exit into a call to
+     * ZLNativeInvoker.jvmExit. Its hooking library is opened by the window layer and not
+     * by the loader: its JNI_OnLoad looks for a class of the launcher it was built for.
+     * The count kept around the attempt is explained at [ExitHook.SUSPECT_LIMIT].
      */
+    private fun hookExit() {
+        if (!ExitHook.enabled(runtime.renderer.environment)) {
+            note("перехват выхода игры выключен в манифесте рантайма")
+            return
+        }
+        val hooks = File(nativeDir, ExitHook.HOOKS)
+        val interceptor = File(nativeDir, ExitHook.INTERCEPTOR)
+        if (!hooks.isFile || !interceptor.isFile) {
+            note("в пакете рантайма нет перехватчика выхода — обнови пакет")
+            return
+        }
+        // The hooking library needs this class of the launcher while it loads; if a build ever lacks it,
+        // go without the interceptor instead of aborting a start.
+        if (runCatching { Class.forName(ExitHook.HOOKS_CLASS) }.isFailure) {
+            note("в приложении нет класса перехватчика — запуск идёт без него")
+            return
+        }
+        val guards = GameGuards(context)
+        val version = BuildConfig.VERSION_NAME
+        val unconfirmed = ExitHook.unconfirmed(guards.exitHook, version)
+        if (unconfirmed >= ExitHook.SUSPECT_LIMIT) {
+            note("с перехватчиком выхода игра на этом телефоне $unconfirmed раза подряд не дошла до картинки — запуск идёт без него")
+            return
+        }
+        if (!guards.countExitHook(version, unconfirmed + 1)) {
+            note("отметка перехватчика выхода не записалась — запуск идёт без него")
+            return
+        }
+        runCatching {
+            if (!ZLBridge.dlopen(hooks.absolutePath)) throw IOException(tr("{name} не открылась", hooks.name))
+            System.load(interceptor.absolutePath)
+            ZLBridge.initializeGameExitHook()
+        }
+            .onSuccess { note("выход игры перехвачен") }
+            .onFailure { note("выход игры не перехвачен: ${it.message}") }
+    }
+
+    /** Only what the libraries themselves declare as dependencies, in that order. */
     private fun loadLibraries() {
         val required = "libpojavexec.so"
         listOf("libdriver_helper.so", required)
             .forEach { name ->
                 val file = File(nativeDir, name)
                 if (!file.isFile) {
-                    if (name == required) throw IOException("в пакете рантайма нет $name — обнови пакет")
+                    if (name == required) throw IOException(tr("в пакете рантайма нет {name} — обнови пакет", name))
                     note("нет $name, пропускаем")
                     return@forEach
                 }
@@ -198,6 +266,8 @@ class PackRuntime(
         environment["POJAV_NATIVEDIR"] = nativeDir.absolutePath
         environment["JAVA_HOME"] = javaHome.absolutePath
         environment["HOME"] = gameDir.absolutePath
+        // The Millida mod, when the pack has it, reports the crosshair target here (tap to strike).
+        environment["MILLIDA_TOUCH_TARGET"] = TapTargetFile.point(gameDir)
         // The JVM reports Linux here, so mods expect the XDG folders to exist:
         // lwjgl3ify kills the game on start when $HOME/.local/share is missing.
         environment["XDG_DATA_HOME"] = File(gameDir, ".local/share").apply { mkdirs() }.absolutePath
@@ -229,10 +299,13 @@ class PackRuntime(
             environment["EGL_NAME"] = egl
         }
         environment.putAll(rendererEnvironment())
+        // A leftover flag would keep the native side on the phone's own driver.
+        if (RendererCatalog.isTurnip(runtime.renderer)) runCatching { Os.unsetenv("POJAV_ZINK_PREFER_SYSTEM_DRIVER") }
         environment.putAll(runtime.renderer.environment)
         if (mobileGlues) environment.putAll(mobileGluesEnvironment(gameDir))
         graphics?.let { environment.putAll(SdlLaunch.environment(rendererFile(), it, rendererEgl())) }
         if (!translated) runCatching { Os.unsetenv(SdlLaunch.HINT_OPENGL_LIBRARY) }
+        if (glxShim != null) rendererFile()?.let { environment.putAll(SdlLaunch.glxShimEnvironment(it)) }
         graphics?.let { mode ->
             val shim = if (debugFlags["glesShim"] == "off") {
                 emptyMap()
@@ -261,7 +334,7 @@ class PackRuntime(
 
     private fun mobileGluesEnvironment(gameDir: File): Map<String, String> {
         val folder = MobileGluesSetup.folder(gameDir)
-        runCatching { MobileGluesSetup.writeConfig(folder) }
+        runCatching { MobileGluesSetup.writeConfig(folder, ignoreShaderErrors = sdl != null) }
             .onSuccess { written -> if (written) note("настройки MobileGlues записаны: ${folder.absolutePath}") }
             .onFailure { note("настройки MobileGlues не записаны, он возьмёт свои по умолчанию: ${it.message}") }
         return MobileGluesSetup.environment(folder)
@@ -269,7 +342,17 @@ class PackRuntime(
 
     private fun rendererEnvironment(): Map<String, String> {
         val cache = File(context.cacheDir, "shaders").apply { mkdirs() }
-        return packRendererEnvironment(rendererId(), cache.absolutePath)
+        return packRendererEnvironment(rendererId(), cache.absolutePath, turnipDriverDir())
+    }
+
+    /** Set only for Zink + Turnip; a debug build also takes the driver from files/turnip/ (adb push). */
+    private fun turnipDriverDir(): String? {
+        if (!RendererCatalog.isTurnip(runtime.renderer)) return null
+        val source = RendererCatalog.turnipSource(nativeDir, debugTurnipDirs(context))
+            ?: throw IOException(tr("нет драйвера {name}", RendererCatalog.TURNIP_LIBRARY))
+        val dir = TurnipDriver.prepare(nativeDir, source, File(context.filesDir, "turnip-driver"))
+        note("драйвер Turnip: ${source.absolutePath} (${source.length()} байт)")
+        return dir.absolutePath
     }
 
     /**
@@ -296,16 +379,17 @@ class PackRuntime(
     private fun libraryPath(): String {
         val lib = JavaHomeLayout.nativeDir(javaHome)
         val parts = ArrayList<String>()
-        parts += File(lib, "server").absolutePath
+        parts += JavaHomeLayout.jvmDir(javaHome).absolutePath
         parts += lib.absolutePath
         parts += File(javaHome.parentFile, JavaHomeLayout.nativeDirName(javaHome)).absolutePath
         parts += File(lib, "jli").absolutePath
         parts += nativeDir.absolutePath
         parts += context.applicationInfo.nativeLibraryDir
-        parts += "/system/lib64"
-        parts += "/vendor/lib64"
-        parts += "/vendor/lib64/hw"
-        parts += "/system_ext/lib64"
+        val system = systemLibraryFolder()
+        parts += "/system/$system"
+        parts += "/vendor/$system"
+        parts += "/vendor/$system/hw"
+        parts += "/system_ext/$system"
         return parts.joinToString(":")
     }
 
@@ -327,9 +411,13 @@ class PackRuntime(
         val lib = JavaHomeLayout.nativeDir(javaHome)
         ordered.forEach { name ->
             val direct = File(lib, name)
-            val inServer = File(File(lib, "server"), name)
+            val inServer = File(JavaHomeLayout.jvmDir(javaHome), name)
             val inJli = File(File(lib, "jli"), name)
-            val file = listOf(direct, inServer, inJli).firstOrNull { it.isFile } ?: return@forEach
+            // Java 8 ships no FreeType of its own, and its font library names it as a dependency:
+            // without the pack's copy opened first, the first mod that asks for a font ends the game.
+            val file = listOf(direct, inServer, inJli).firstOrNull { it.isFile }
+                ?: File(nativeDir, name).takeIf { name == FREETYPE && it.isFile }
+                ?: return@forEach
             ZLBridge.dlopen(file.absolutePath)
         }
         lib.walkTopDown().filter { it.isFile && it.extension == "so" }.forEach {
@@ -395,8 +483,8 @@ class PackRuntime(
         sdl?.let { out += SdlLaunch.systemProperties(it, graphics ?: SdlGraphics.TRANSLATED) }
         debugFlags["jvm"]?.split(' ')?.filter { it.isNotBlank() }?.let { out += it }
         out += "-Dorg.lwjgl.system.allocator=system"
-        SdlLaunch.vulkanLoader(sdl != null)?.let { out += it }
-        out += "-Dorg.lwjgl.opengl.libname=" + SdlLaunch.openglLibrary(File(nativeDir, runtime.renderer.library), graphics)
+        SdlLaunch.vulkanLoader(sdl != null, vulkanShim)?.let { out += it }
+        out += "-Dorg.lwjgl.opengl.libname=" + SdlLaunch.openglLibrary(File(nativeDir, runtime.renderer.library), graphics, glxShim)
         out += "-Dorg.lwjgl.openal.libname=${File(nativeDir, "libopenal.so").absolutePath}"
         out += "-Dorg.lwjgl.freetype.libname=${File(nativeDir, "libfreetype.so").absolutePath}"
         // Newer versions of the game ask for these by their own names, and the
@@ -409,6 +497,10 @@ class PackRuntime(
         out += "-Dglfwstub.initEgl=false"
         out += "-Dlog4j2.formatMsgNoLookups=true"
         out += "-Djdk.lang.Process.launchMechanism=FORK"
+        // Netty's epoll and io_uring transports ship glibc builds that bionic cannot load
+        // ("libdl.so.2 not found"); the game takes them because os.name says Linux and dies
+        // on connect. The NIO transport needs no native part.
+        out += "-Dio.netty.transport.noNative=true"
         out += "-Dfml.earlyprogresswindow=false"
         out += "-Dfml.ignoreInvalidMinecraftCertificates=true"
         out += "-Dfml.ignorePatchDiscrepancies=true"
@@ -420,6 +512,9 @@ class PackRuntime(
         out += "-XX:+UseSerialGC"
         out += "-XX:-OmitStackTraceInFastThrow"
         out += "-XX:ActiveProcessorCount=${Runtime.getRuntime().availableProcessors()}"
+        // The Android emulator on Apple M4/M5 reports SVE that the guest cannot execute: the
+        // interpreter dies with SIGILL in System.registerNatives before any game code runs.
+        if (android.os.Build.HARDWARE == "ranchu" || android.os.Build.HARDWARE == "goldfish") out += "-XX:UseSVE=0"
         out += "-Xms${(heapMb / 2).coerceAtLeast(128)}M"
         out += "-Xmx${heapMb}M"
 
@@ -444,9 +539,18 @@ class PackRuntime(
     private companion object {
         /** A process hosts one Java machine: a second launchJVM here crashes instead of starting a game. */
         val jvmStarted = AtomicBoolean(false)
-        const val SECOND_START = "после выхода из игры перезапусти приложение — виртуальная машина Java поднимается один раз"
+        const val FREETYPE = "libfreetype.so"
+        val SECOND_START: String get() = tr("после выхода из игры перезапусти приложение — виртуальная машина Java поднимается один раз")
     }
 }
+
+/** Debug builds only: a Turnip build pushed to files/turnip/ over adb is offered without a new runtime pack. */
+internal fun debugTurnipDirs(context: android.content.Context): List<File> =
+    if (BuildConfig.TEST_HOOKS) listOf(File(context.filesDir, "turnip")) else emptyList()
+
+/** The folder name the system keeps its libraries under for this process: a 32-bit one cannot load from lib64. */
+internal fun systemLibraryFolder(): String =
+    HostAbi.systemLibraryFolder(if (Process.is64Bit()) HostAbi.ARM64 else HostAbi.ARM32)
 
 /**
  * The identifier is what the native side switches on, and it is not the same
@@ -471,12 +575,17 @@ internal fun packRendererId(nativeId: String, library: String): String {
  * through the graphics driver and needs the version overrides, otherwise the
  * game asks for a profile it will not get and draws nothing at all.
  */
-internal fun packRendererEnvironment(id: String, shaderCache: String): Map<String, String> {
+internal fun packRendererEnvironment(id: String, shaderCache: String, turnipDriverDir: String? = null): Map<String, String> {
     if (id.contains("zink")) {
-        return mapOf(
+        // Without the "prefer system driver" flag the native side loads Turnip from DRIVER_PATH, as Zalith does.
+        val driver = if (turnipDriverDir != null) {
+            mapOf("DRIVER_PATH" to turnipDriverDir)
+        } else {
+            mapOf("POJAV_ZINK_PREFER_SYSTEM_DRIVER" to "1")
+        }
+        return driver + mapOf(
             "MESA_LOADER_DRIVER_OVERRIDE" to "zink",
             "GALLIUM_DRIVER" to "zink",
-            "POJAV_ZINK_PREFER_SYSTEM_DRIVER" to "1",
             "MESA_GL_VERSION_OVERRIDE" to "4.6",
             "MESA_GLSL_VERSION_OVERRIDE" to "460",
             "MESA_GLSL_CACHE_DIR" to shaderCache,
@@ -523,7 +632,7 @@ internal fun isLauncherOwnedJvmArg(argument: String): Boolean =
         argument.startsWith("-Duser.home") ||
         argument.startsWith("-XX:MaxMetaspaceSize") ||
         argument.startsWith("-XX:TieredStopAtLevel") ||
-        argument.startsWith("-Dmillida.")
+        (argument.startsWith("-Dmillida.") && !MillidaModToken.isArgument(argument))
 
 /**
  * Debug builds only: a properties file in the build's folder switches parts of
@@ -534,7 +643,7 @@ private object DebugFlags {
     const val ENV_PREFIX = "env."
 
     fun read(gameDir: File): Map<String, String> {
-        if (!BuildConfig.DEBUG) return emptyMap()
+        if (!BuildConfig.TEST_HOOKS) return emptyMap()
         val file = File(gameDir, FILE)
         if (!file.isFile) return emptyMap()
         return runCatching {

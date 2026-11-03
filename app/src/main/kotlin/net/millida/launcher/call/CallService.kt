@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 
+import net.millida.launcher.core.i18n.tr
 /**
  * Keeps a call alive while the launcher is behind the game or in the
  * background. Its notification is also the way to hang up from anywhere.
@@ -35,7 +36,7 @@ class CallService : Service() {
             }
         }
         prepareChannel(this)
-        val title = intent?.getStringExtra(EXTRA_TITLE).orEmpty().ifEmpty { "Звонок" }
+        val title = intent?.getStringExtra(EXTRA_TITLE).orEmpty().ifEmpty { tr("Звонок") }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
         try {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(this, title), type)
@@ -86,7 +87,7 @@ class CallService : Service() {
         private fun prepareChannel(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Звонки", NotificationManager.IMPORTANCE_LOW).also { it.setShowBadge(false) },
+                NotificationChannel(CHANNEL_ID, tr("Звонки"), NotificationManager.IMPORTANCE_LOW).also { it.setShowBadge(false) },
             )
         }
 
@@ -102,14 +103,14 @@ class CallService : Service() {
             )
             return NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(title)
-                .setContentText("Идёт разговор")
+                .setContentText(tr("Идёт разговор"))
                 .setSmallIcon(net.millida.launcher.runtime.R.drawable.ic_stat_millida)
                 .setOngoing(true)
                 .setSilent(true)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setContentIntent(open)
-                .addAction(0, "Завершить", hangUp)
+                .addAction(0, tr("Завершить"), hangUp)
                 .build()
         }
     }

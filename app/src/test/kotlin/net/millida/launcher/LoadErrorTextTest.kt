@@ -23,7 +23,7 @@ class LoadErrorTextTest {
             Case(IOException("обёртка", Unauthorized()), signIn, "сессия узнаётся и в цепочке причин"),
             Case(UnknownHostException("api.millida.net"), offline, "нет DNS — значит нет сети, имя хоста игроку не нужно"),
             Case(ConnectException("refused"), offline, "отказ соединения тоже сеть"),
-            Case(RuntimeException("x", SocketTimeoutException("timeout")), offline, "таймаут в причине — сеть"),
+            Case(RuntimeException("x", SocketTimeoutException("timeout")), "Связь оборвалась — нажми «Повторить», докачаем", "таймаут в причине — связь оборвалась, а не «нет сети»"),
             Case(IllegalStateException("  сервер занят "), "Сервер занят", "сообщение сервера показывается обрезанным и с заглавной"),
             Case(RuntimeException(), fallback, "без сообщения остаётся подсказка повторить"),
             Case(RuntimeException("   "), fallback, "пустое сообщение не превращается в пустую плашку"),

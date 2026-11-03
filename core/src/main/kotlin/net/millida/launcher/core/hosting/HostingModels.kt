@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+import net.millida.launcher.core.i18n.tr
 @Serializable
 data class HostingServerState(
     val id: String = "",
@@ -197,19 +198,19 @@ data class HostingUsage(
 data class HostingActionResult(val message: String, val detail: String = "")
 
 /** Server permissions a share or an API key can carry, labelled for the player. */
-val HOSTING_PERMISSIONS: List<Pair<String, String>> = listOf(
-    "control" to "Запуск и остановка",
-    "console" to "Консоль и команды",
-    "settings" to "Настройки сервера",
-    "content" to "Плагины, моды и версия",
-    "players" to "Игроки, баны и вайтлист",
-    "world" to "Мир: скачать и пересоздать",
-    "backups" to "Резервные копии",
-    "files" to "Файлы и конфиги",
-    "database" to "База данных",
-    "network" to "Адрес, домен и порты",
-    "schedule" to "Расписание",
-    "security" to "Защита от ботов",
+val HOSTING_PERMISSIONS: List<Pair<String, String>> get() = listOf(
+    "control" to tr("Запуск и остановка"),
+    "console" to tr("Консоль и команды"),
+    "settings" to tr("Настройки сервера"),
+    "content" to tr("Плагины, моды и версия"),
+    "players" to tr("Игроки, баны и вайтлист"),
+    "world" to tr("Мир: скачать и пересоздать"),
+    "backups" to tr("Резервные копии"),
+    "files" to tr("Файлы и конфиги"),
+    "database" to tr("База данных"),
+    "network" to tr("Адрес, домен и порты"),
+    "schedule" to tr("Расписание"),
+    "security" to tr("Защита от ботов"),
 )
 
 internal fun JsonObject.str(key: String): String {

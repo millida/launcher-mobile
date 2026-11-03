@@ -44,6 +44,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.ui.MBottomSheet
 import net.millida.launcher.ui.MButtonRow
@@ -100,7 +101,9 @@ internal fun SettingHead(title: String, value: String? = null, modifier: Modifie
             .heightIn(min = 28.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
+        if (title == "Millida Mobile") {
+            net.millida.launcher.ui.BrandLockup(signSize = 20.dp, color = colors.fg, modifier = Modifier.weight(1f))
+        } else Text(
             title,
             modifier = Modifier.weight(1f),
             style = MillidaType.rowTitle,
@@ -134,6 +137,8 @@ internal fun AccentPicker(
     onPick: (String) -> Unit,
     onCustom: (String) -> Unit,
     modifier: Modifier = Modifier,
+    tier: String? = null,
+    onPremium: (String) -> Unit = {},
 ) {
     var picking by remember { mutableStateOf(false) }
     val custom = isCustomAccent(selectedId)
@@ -143,6 +148,7 @@ internal fun AccentPicker(
                 if (accent.id != selectedId) onPick(accent.id)
             }
         }
+        PremiumSwatches(selectedId, tier) { id -> if (id != selectedId) onPremium(id) }
         CustomSwatch(
             color = if (custom) accentById(selectedId).color else null,
             onClick = { picking = true },
@@ -158,7 +164,7 @@ internal fun AccentPicker(
 }
 
 @Composable
-private fun ColorSwatch(
+internal fun ColorSwatch(
     color: Color,
     label: String,
     selected: Boolean,
@@ -192,7 +198,7 @@ private fun CustomSwatch(color: Color?, onClick: () -> Unit) {
             .size(44.dp)
             .pixelSurface(color ?: colors.surface2, MillidaCut.badge, swatchFrame(colors, selected))
             .selectable(selected, interaction, null, role = Role.RadioButton, onClick = onClick)
-            .semantics { contentDescription = "Свой цвет" },
+            .semantics { contentDescription = tr("Свой цвет") },
         contentAlignment = Alignment.Center,
     ) {
         if (color == null) MIcon(MIcons.plus, size = 20.dp, color = colors.fgMuted)
@@ -251,29 +257,29 @@ private fun CustomAccentSheet(initial: String, onPick: (String) -> Unit, onDismi
         typed = hex.removePrefix("#")
         onPick(hex)
     }
-    MBottomSheet(onDismiss = onDismiss, title = "Свой цвет") {
-        SettingHead("Оттенок")
+    MBottomSheet(onDismiss = onDismiss, title = tr("Свой цвет")) {
+        SettingHead(tr("Оттенок"))
         Spacer(Modifier.height(8.dp))
         MButtonRow {
             for (step in 0 until HUE_STEPS) {
                 val stepHue = HUE_TURN * step / HUE_STEPS
                 ColorSwatch(
                     color = Color.hsv(stepHue, 0.8f, 0.9f),
-                    label = "Оттенок ${step + 1}",
+                    label = tr("Оттенок {0}", step + 1),
                     selected = stepHue == hue,
                     size = 36.dp,
                 ) { hue = stepHue }
             }
         }
         Spacer(Modifier.height(16.dp))
-        SettingHead("Яркость")
+        SettingHead(tr("Яркость"))
         Spacer(Modifier.height(8.dp))
         MButtonRow {
             TONES.forEachIndexed { index, (saturation, value) ->
                 val hex = hexOf(Color.hsv(hue, saturation, value))
                 ColorSwatch(
                     color = accentFromHex(hex).color,
-                    label = "Яркость ${index + 1}",
+                    label = tr("Яркость {0}", index + 1),
                     selected = hex == chosen,
                 ) { choose(hex) }
             }
@@ -345,17 +351,17 @@ internal fun rememberTrackedAction(): TrackedAction {
  */
 internal suspend fun importWallpaper(context: Context, uri: Uri): File = withContext(Dispatchers.IO) {
     val folder = File(context.filesDir, WALLPAPER_FOLDER)
-    if (!folder.isDirectory && !folder.mkdirs()) throw IOException("Нет места под картинку — освободи память и повтори")
+    if (!folder.isDirectory && !folder.mkdirs()) throw IOException(tr("Нет места под картинку — освободи память и повтори"))
     val part = File(folder, "incoming.part")
     try {
         val input = context.contentResolver.openInputStream(uri)
-            ?: throw IOException("Картинка не открылась — выбери другую")
+            ?: throw IOException(tr("Картинка не открылась — выбери другую"))
         input.use { source -> part.outputStream().use { target -> source.copyTo(target) } }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(part.path, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException("Это не картинка — выбери PNG или JPG")
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException(tr("Это не картинка — выбери PNG или JPG"))
         val target = File(folder, "wallpaper-${System.currentTimeMillis()}.img")
-        if (!part.renameTo(target)) throw IOException("Картинка не сохранилась — освободи память и повтори")
+        if (!part.renameTo(target)) throw IOException(tr("Картинка не сохранилась — освободи память и повтори"))
         target
     } finally {
         if (part.exists()) part.delete()

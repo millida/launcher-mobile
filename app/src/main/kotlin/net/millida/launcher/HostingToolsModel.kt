@@ -45,6 +45,7 @@ import net.millida.launcher.core.hosting.HostingSftp
 import net.millida.launcher.core.hosting.HostingShare
 import net.millida.launcher.core.hosting.HostingToolAccess
 import net.millida.launcher.core.hosting.HostingWorld
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import java.io.IOException
 import java.io.InputStream
@@ -283,7 +284,7 @@ class HostingToolsModel(
 
     private fun startTransfer(serverId: String, title: String, block: suspend () -> String?) {
         if (transferJob?.isActive == true) {
-            notify("Дождись конца текущей передачи или отмени её", true)
+            notify(tr("Дождись конца текущей передачи или отмени её"), true)
             return
         }
         transferStopped = false
@@ -295,7 +296,7 @@ class HostingToolsModel(
                 val said = block()
                 said?.let { notify(it, false) }
             } catch (cancelled: CancellationException) {
-                if (transferStopped) notify("Передача остановлена", false)
+                if (transferStopped) notify(tr("Передача остановлена"), false)
                 throw cancelled
             } catch (error: Throwable) {
                 notify(readable(error), true)
@@ -362,24 +363,24 @@ class HostingToolsModel(
         val stale = entries.filter { !it.dir && it.name.startsWith(UPLOAD_TEMP_PREFIX) && "$serverId|${it.name}" !in staleWarned }
         if (stale.isEmpty()) return
         stale.forEach { staleWarned += "$serverId|${it.name}" }
-        notify("В файлах остался архив прерванной загрузки «${stale.first().name}» — удали его, если мир уже в списке", true)
+        notify(tr("В файлах остался архив прерванной загрузки «{0}» — удали его, если мир уже в списке", stale.first().name), true)
     }
 
     fun makeFolder(serverId: String, dir: String, name: String, onDone: () -> Unit = {}) =
         perform(serverId, "files:mkdir", onDone = onDone) {
-            val clean = plainName(name, "Назови папку")
+            val clean = plainName(name, tr("Назови папку"))
             client.makeDirectory(serverId, HostingPaths.join(dir.ifEmpty { "." }, clean))
             reloadFilesIf(serverId, dir)
-            "Папка «$clean» создана"
+            tr("Папка «{clean}» создана", clean)
         }
 
     fun renameEntry(serverId: String, dir: String, from: String, to: String, onDone: () -> Unit = {}) =
         perform(serverId, "files:rename:$from", onDone = onDone) {
-            val next = plainName(to, "Впиши новое имя")
+            val next = plainName(to, tr("Впиши новое имя"))
             if (next == from) return@perform null
             client.renameFile(serverId, HostingPaths.join(dir.ifEmpty { "." }, from), HostingPaths.join(dir.ifEmpty { "." }, next))
             reloadFilesIf(serverId, dir)
-            "Переименовано в «$next»"
+            tr("Переименовано в «{next}»", next)
         }
 
     fun deleteEntry(serverId: String, dir: String, entry: HostingFileEntry) =
@@ -404,21 +405,21 @@ class HostingToolsModel(
                     read = { client.extractJob(serverId) },
                     onTick = { job -> _files.update { if (it.serverId == serverId) it.copy(extracting = job) else it } },
                     silentEndMeansDone = true,
-                    failedText = "Архив не распаковался",
-                    unknownText = "Не удалось узнать, чем кончилась распаковка — проверь папку и обнови список",
+                    failedText = tr("Архив не распаковался"),
+                    unknownText = tr("Не удалось узнать, чем кончилась распаковка — проверь папку и обнови список"),
                 )
             } finally {
                 _files.update { if (it.serverId == serverId) it.copy(extracting = null) else it }
             }
             reloadFilesIf(serverId, dir)
-            "Архив «${entry.name}» распакован"
+            tr("Архив «{name}» распакован", entry.name)
         }
 
-    fun uploadFile(serverId: String, dir: String, uri: Uri) = startTransfer(serverId, "Загружаем файл") {
+    fun uploadFile(serverId: String, dir: String, uri: Uri) = startTransfer(serverId, tr("Загружаем файл")) {
         val picked = withContext(Dispatchers.IO) { describe(uri) }
-        val name = plainName(picked.name, "У файла нет имени — переименуй его и выбери снова")
+        val name = plainName(picked.name, tr("У файла нет имени — переименуй его и выбери снова"))
         val target = HostingPaths.join(dir.ifEmpty { "." }, name)
-        val title = "Загружаем $name"
+        val title = tr("Загружаем {name}", name)
         report(title, "", 0, picked.size)
         withContext(Dispatchers.IO) {
             openInput(uri).use { input ->
@@ -426,16 +427,16 @@ class HostingToolsModel(
             }
         }
         reloadFilesIf(serverId, dir)
-        "Загружено: $name"
+        tr("Загружено: {name}", name)
     }
 
-    fun downloadFile(serverId: String, dir: String, name: String, target: Uri) = startTransfer(serverId, "Скачиваем $name") {
+    fun downloadFile(serverId: String, dir: String, name: String, target: Uri) = startTransfer(serverId, tr("Скачиваем {name}", name)) {
         val path = HostingPaths.join(dir.ifEmpty { "." }, name)
-        val title = "Скачиваем $name"
+        val title = tr("Скачиваем {name}", name)
         writeDocument(target) { sink ->
             client.downloadFileTo(serverId, path, sink) { got, total -> report(title, "", got, total) }
         }
-        "Скачано на телефон: $name"
+        tr("Скачано на телефон: {name}", name)
     }
 
     fun openEditor(serverId: String, path: String) {
@@ -487,7 +488,7 @@ class HostingToolsModel(
             } finally {
                 _editor.update { state -> if (state != null && state.path == path) state.copy(saving = false) else state }
             }
-            "Сохранено — применится после перезапуска"
+            tr("Сохранено — применится после перезапуска")
         }
     }
 
@@ -535,13 +536,13 @@ class HostingToolsModel(
                 read = { client.restoreJob(serverId) },
                 onTick = { job -> _backups.update { if (it.serverId == serverId) it.copy(restoring = job) else it } },
                 silentEndMeansDone = true,
-                failedText = "Копия не развернулась",
-                unknownText = "Не удалось узнать, чем кончилось восстановление — проверь мир и обнови список",
+                failedText = tr("Копия не развернулась"),
+                unknownText = tr("Не удалось узнать, чем кончилось восстановление — проверь мир и обнови список"),
             )
         } finally {
             _backups.update { if (it.serverId == serverId) it.copy(restoring = null) else it }
         }
-        if (confirmed) "Сервер восстановлен из копии" else "Восстановление больше не видно в задачах — проверь мир"
+        if (confirmed) tr("Сервер восстановлен из копии") else tr("Восстановление больше не видно в задачах — проверь мир")
     }
 
     fun deleteBackup(serverId: String, backup: HostingBackup) =
@@ -569,8 +570,8 @@ class HostingToolsModel(
                 _backups.update { it.copy(items = list, loading = false, error = null) }
                 val waited = before.filter { it.copyPending }.map { it.id }.toSet()
                 val finished = list.filter { it.id in waited && !it.copyPending }
-                if (finished.any { it.copyFailed }) notify("Копия не собралась — создай её ещё раз", true)
-                if (finished.any { !it.copyFailed }) notify("Копия готова", false)
+                if (finished.any { it.copyFailed }) notify(tr("Копия не собралась — создай её ещё раз"), true)
+                if (finished.any { !it.copyFailed }) notify(tr("Копия готова"), false)
                 if (list.none { it.copyPending }) return@launch
             }
         }
@@ -607,7 +608,7 @@ class HostingToolsModel(
     fun switchWorld(serverId: String, world: HostingWorld) = perform(serverId, "worlds:switch:${world.name}") {
         val result = client.switchWorld(serverId, world.name)
         loadWorlds(serverId)
-        if (rightsFor(serverId)?.running == false) "Активный мир: ${world.name}" else result.message
+        if (rightsFor(serverId)?.running == false) tr("Активный мир: {name}", world.name) else result.message
     }
 
     fun regenerateWorld(serverId: String, backup: Boolean) = perform(serverId, "worlds:regenerate") {
@@ -617,17 +618,17 @@ class HostingToolsModel(
         if (result.detail.isEmpty()) result.message else "${result.message}, ${result.detail}"
     }
 
-    fun uploadWorld(serverId: String, uri: Uri) = startTransfer(serverId, "Загружаем мир") {
+    fun uploadWorld(serverId: String, uri: Uri) = startTransfer(serverId, tr("Загружаем мир")) {
         val picked = withContext(Dispatchers.IO) { describe(uri) }
         val lower = picked.name.lowercase()
         val extension = when {
             lower.endsWith(".zip") -> "zip"
             lower.endsWith(".tar.gz") || lower.endsWith(".tgz") -> "tar.gz"
-            else -> throw HostingError("Нужен архив мира: .zip или .tar.gz")
+            else -> throw HostingError(tr("Нужен архив мира: .zip или .tar.gz"))
         }
         val worldName = worldNameFrom(picked.name)
         if (client.toolAccess(serverId).running) {
-            throw HostingError("Сначала останови сервер — он держит файлы мира открытыми")
+            throw HostingError(tr("Сначала останови сервер — он держит файлы мира открытыми"))
         }
         val temp = "$UPLOAD_TEMP_PREFIX${System.currentTimeMillis()}.$extension"
         var reached = false
@@ -637,21 +638,21 @@ class HostingToolsModel(
                 openInput(uri).use { input ->
                     client.uploadStream(serverId, temp, input, picked.size) { sent, total ->
                         reached = true
-                        report("Загружаем мир", worldName, sent, total)
+                        report(tr("Загружаем мир"), worldName, sent, total)
                     }
                 }
             }
-            report("Распаковываем мир", worldName, 0, 0)
+            report(tr("Распаковываем мир"), worldName, 0, 0)
             val background = client.startWorldImport(serverId, temp, worldName)
             if (background) {
                 unpacking = true
                 try {
                     awaitJob(
                         read = { client.worldImportJob(serverId) },
-                        onTick = { job -> report("Распаковываем мир", worldName, job.bytes, job.total) },
+                        onTick = { job -> report(tr("Распаковываем мир"), worldName, job.bytes, job.total) },
                         silentEndMeansDone = false,
-                        failedText = "Мир не распаковался",
-                        unknownText = "Не удалось узнать, распаковался ли мир — проверь список миров",
+                        failedText = tr("Мир не распаковался"),
+                        unknownText = tr("Не удалось узнать, распаковался ли мир — проверь список миров"),
                     )
                 } catch (failed: HostingJobFailed) {
                     unpacking = false
@@ -662,30 +663,30 @@ class HostingToolsModel(
             val active = !background || outcome { client.switchWorld(serverId, worldName) }.isSuccess
             loadWorlds(serverId)
             if (active) {
-                "Мир «$worldName» загружен и стал активным"
+                tr("Мир «{worldName}» загружен и стал активным", worldName)
             } else {
-                notify("Мир «$worldName» загружен, но не стал активным — включи его в списке миров", true)
+                notify(tr("Мир «{worldName}» загружен, но не стал активным — включи его в списке миров", worldName), true)
                 null
             }
         } finally {
             if (reached && unpacking) {
-                notify("Архив $temp остался в корне файлов сервера — удали его, когда мир появится в списке", true)
+                notify(tr("Архив {temp} остался в корне файлов сервера — удали его, когда мир появится в списке", temp), true)
             } else if (reached) {
                 val cleaned = withContext(NonCancellable) { outcome { client.deleteFile(serverId, temp) } }
-                if (cleaned.isFailure) notify("Временный архив $temp остался в файлах сервера — удали его вручную", true)
+                if (cleaned.isFailure) notify(tr("Временный архив {temp} остался в файлах сервера — удали его вручную", temp), true)
             }
         }
     }
 
-    fun downloadWorld(serverId: String, target: Uri) = startTransfer(serverId, "Скачиваем мир") {
+    fun downloadWorld(serverId: String, target: Uri) = startTransfer(serverId, tr("Скачиваем мир")) {
         writeDocument(target) { sink ->
             client.downloadWorldTo(
                 serverId,
                 sink,
-                onPacking = { report("Собираем архив мира", "", 0, 0) },
-            ) { got, total -> report("Скачиваем мир", "", got, total) }
+                onPacking = { report(tr("Собираем архив мира"), "", 0, 0) },
+            ) { got, total -> report(tr("Скачиваем мир"), "", got, total) }
         }
-        "Мир сохранён на телефон"
+        tr("Мир сохранён на телефон")
     }
 
     fun openNetwork(serverId: String) {
@@ -718,7 +719,7 @@ class HostingToolsModel(
 
     fun changeAddress(serverId: String, slug: String, onDone: () -> Unit = {}) = perform(serverId, "network:slug", onDone = onDone) {
         val clean = slug.trim().lowercase()
-        if (clean.isEmpty()) throw HostingError("Впиши новый адрес")
+        if (clean.isEmpty()) throw HostingError(tr("Впиши новый адрес"))
         val result = client.changeAddress(serverId, clean)
         ensureRights(serverId, force = true)
         loadNetwork(serverId)
@@ -790,16 +791,16 @@ class HostingToolsModel(
     fun addShare(serverId: String, login: String, permissions: Set<String>, onDone: () -> Unit = {}) =
         perform(serverId, "access:share", onDone = onDone) {
             val clean = login.trim()
-            if (clean.isEmpty()) throw HostingError("Впиши ник или почту аккаунта Millida")
-            if (permissions.isEmpty()) throw HostingError("Отметь хотя бы одно право")
+            if (clean.isEmpty()) throw HostingError(tr("Впиши ник или почту аккаунта Millida"))
+            if (permissions.isEmpty()) throw HostingError(tr("Отметь хотя бы одно право"))
             val list = client.addShare(serverId, clean, orderedPermissions(permissions))
             _access.update { if (it.serverId == serverId) it.copy(shares = list) else it }
-            "Доступ выдан: $clean"
+            tr("Доступ выдан: {clean}", clean)
         }
 
     fun updateShare(serverId: String, share: HostingShare, permissions: Set<String>, onDone: () -> Unit = {}) =
         perform(serverId, "access:share:${share.userId}", onDone = onDone) {
-            if (permissions.isEmpty()) throw HostingError("Оставь хотя бы одно право или забери доступ целиком")
+            if (permissions.isEmpty()) throw HostingError(tr("Оставь хотя бы одно право или забери доступ целиком"))
             val list = client.updateShare(serverId, share.userId, orderedPermissions(permissions))
             _access.update { if (it.serverId == serverId) it.copy(shares = list) else it }
             null
@@ -817,10 +818,10 @@ class HostingToolsModel(
     fun createApiKey(serverId: String, name: String, permissions: Set<String>, onDone: () -> Unit = {}) =
         perform(serverId, "access:key", onDone = onDone) {
             val clean = name.trim()
-            if (clean.isEmpty()) throw HostingError("Дай ключу имя, например «бот Discord»")
-            if (permissions.isEmpty()) throw HostingError("Отметь хотя бы одно право")
+            if (clean.isEmpty()) throw HostingError(tr("Дай ключу имя, например «бот Discord»"))
+            if (permissions.isEmpty()) throw HostingError(tr("Отметь хотя бы одно право"))
             val issued = client.createApiKey(serverId, clean, orderedPermissions(permissions))
-            if (issued.token.isBlank()) throw HostingError("Ключ создан, но не пришёл — отзови его и создай заново")
+            if (issued.token.isBlank()) throw HostingError(tr("Ключ создан, но не пришёл — отзови его и создай заново"))
             _access.update { if (it.serverId == serverId) it.copy(freshKey = issued.token) else it }
             val list = outcome { client.apiKeys(serverId) }
             list.onSuccess { keys -> _access.update { if (it.serverId == serverId) it.copy(keys = keys) else it } }
@@ -837,7 +838,7 @@ class HostingToolsModel(
 
     fun issueSftp(serverId: String) = perform(serverId, "access:sftp") {
         val issued = client.issueSftp(serverId)
-        if (issued.password.isBlank()) throw HostingError("Доступ выдан, но пароль не пришёл — нажми «Новый пароль»")
+        if (issued.password.isBlank()) throw HostingError(tr("Доступ выдан, но пароль не пришёл — нажми «Новый пароль»"))
         _access.update { if (it.serverId == serverId) it.copy(sftp = issued.copy(password = ""), sftpPassword = issued.password) else it }
         null
     }
@@ -886,7 +887,7 @@ class HostingToolsModel(
         val current = _schedule.value
         if (current.serverId != serverId || current.items == null) return null
         if (current.items.size >= MAX_SCHEDULES) {
-            notify("Не больше $MAX_SCHEDULES задач на сервер — убери лишнюю", true)
+            notify(tr("Не больше {MAX_SCHEDULES} задач на сервер — убери лишнюю", MAX_SCHEDULES), true)
             return null
         }
         val draft = HostingScheduleDraft(
@@ -924,9 +925,9 @@ class HostingToolsModel(
     fun saveSchedule(serverId: String) = perform(serverId, "schedule:save") {
         val drafts = _schedule.value.takeIf { it.serverId == serverId }?.items ?: return@perform null
         drafts.forEach { draft ->
-            if ((draft.days and ALL_DAYS) == 0) throw HostingError("Выбери хотя бы один день недели")
+            if ((draft.days and ALL_DAYS) == 0) throw HostingError(tr("Выбери хотя бы один день недели"))
             if (draft.kind == "command" && draft.steps == 0 && draft.command.isBlank()) {
-                throw HostingError("Впиши команду для задачи «Команда»")
+                throw HostingError(tr("Впиши команду для задачи «Команда»"))
             }
         }
         val saved = client.replaceScheduleEntries(serverId, drafts.map { entryOf(it) })
@@ -938,7 +939,7 @@ class HostingToolsModel(
                 state
             }
         }
-        "Расписание сохранено"
+        tr("Расписание сохранено")
     }
 
     fun openContent(serverId: String) {
@@ -989,13 +990,13 @@ class HostingToolsModel(
                     state
                 }
             }
-            "«${install.name}» убран — применится после перезапуска"
+            tr("«{name}» убран — применится после перезапуска", install.name)
         }
 
     fun applyUpdate(serverId: String, update: HostingInstallUpdate) {
         val install = _content.value.takeIf { it.serverId == serverId }?.installs?.firstOrNull { it.id == update.installId }
         if (install == null) {
-            notify("Этого больше нет в списке — обнови раздел", true)
+            notify(tr("Этого больше нет в списке — обнови раздел"), true)
             return
         }
         perform(serverId, "content:update:${update.installId}", UiSoundEvent.Install) {
@@ -1006,7 +1007,7 @@ class HostingToolsModel(
                 update.latestVersionId.ifEmpty { null },
             )
             loadContent(serverId)
-            "«${install.name}» обновится при следующем запуске"
+            tr("«{name}» обновится при следующем запуске", install.name)
         }
     }
 
@@ -1014,7 +1015,7 @@ class HostingToolsModel(
         perform(serverId, "content:install:$source:${hit.id}", UiSoundEvent.Install, onDone) {
             client.installFromCatalog(serverId, hit.id, source)
             loadContent(serverId)
-            "«${hit.name}» встанет при следующем запуске"
+            tr("«{name}» встанет при следующем запуске", hit.name)
         }
 
     fun openCatalog(serverId: String, version: String) {
@@ -1093,7 +1094,7 @@ class HostingToolsModel(
         perform(serverId, "content:core", UiSoundEvent.Install, onDone) {
             client.changeCore(serverId, core.id, version)
             loadContent(serverId)
-            "Ядро сервера: ${core.name} $version" + if (running) " — сервер перезапустится" else ""
+            if (running) tr("Ядро сервера: {name} {version} — сервер перезапустится", core.name, version) else tr("Ядро сервера: {name} {version}", core.name, version)
         }
 
     private fun perform(
@@ -1178,14 +1179,14 @@ class HostingToolsModel(
                 }
             }
         }
-        throw HostingError("Задача на сервере идёт слишком долго — проверь результат позже")
+        throw HostingError(tr("Задача на сервере идёт слишком долго — проверь результат позже"))
     }
 
     private suspend fun writeDocument(target: Uri, block: suspend (OutputStream) -> Unit) {
         try {
             withContext(Dispatchers.IO) {
                 val stream = resolver.openOutputStream(target, "w")
-                    ?: throw HostingError("Файл на телефоне не открылся для записи — выбери другое место")
+                    ?: throw HostingError(tr("Файл на телефоне не открылся для записи — выбери другое место"))
                 stream.use { block(it) }
             }
         } catch (error: Throwable) {
@@ -1197,12 +1198,12 @@ class HostingToolsModel(
                 }
             }
             if (error is CancellationException || removed) throw error
-            throw HostingError("${readable(error)}. Неполный файл остался на телефоне — удали его", error)
+            throw HostingError(tr("{0}. Неполный файл остался на телефоне — удали его", readable(error)), error)
         }
     }
 
     private fun openInput(uri: Uri): InputStream =
-        resolver.openInputStream(uri) ?: throw HostingError("Файл не открылся — выбери его заново")
+        resolver.openInputStream(uri) ?: throw HostingError(tr("Файл не открылся — выбери его заново"))
 
     private fun describe(uri: Uri): PickedFile {
         var name = ""
@@ -1218,8 +1219,8 @@ class HostingToolsModel(
         if (size < 0) {
             size = resolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
         }
-        if (size < 0) throw HostingError("Не удалось узнать размер файла — выбери его через «Файлы»")
-        if (size == 0L) throw HostingError("Файл пустой — загружать нечего")
+        if (size < 0) throw HostingError(tr("Не удалось узнать размер файла — выбери его через «Файлы»"))
+        if (size == 0L) throw HostingError(tr("Файл пустой — загружать нечего"))
         return PickedFile(name, size)
     }
 
@@ -1285,16 +1286,16 @@ class HostingToolsModel(
 
         fun readable(error: Throwable): String =
             error.message?.trim()?.takeIf { it.isNotEmpty() }?.replaceFirstChar { it.uppercase() }
-                ?: "Не получилось — повтори"
+                ?: tr("Не получилось — повтори")
 
         // A typed or picked name must stay one path segment so it cannot walk out of the folder.
         fun plainName(raw: String, empty: String): String {
             val clean = raw.trim()
             if (clean.isEmpty()) throw HostingError(empty)
             if (clean == "." || clean == ".." || clean.contains('/') || clean.contains('\\')) {
-                throw HostingError("Имя «$clean» не подходит — без «/» и точек вместо имени")
+                throw HostingError(tr("Имя «{clean}» не подходит — без «/» и точек вместо имени", clean))
             }
-            if (clean.length > NAME_MAX) throw HostingError("Имя длиннее $NAME_MAX знаков — сократи его")
+            if (clean.length > NAME_MAX) throw HostingError(tr("Имя длиннее {NAME_MAX} знаков — сократи его", NAME_MAX))
             return clean
         }
 

@@ -4,6 +4,7 @@ import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.http.RemoteFile
 import net.millida.launcher.core.http.TransferProgress
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.launch.Log4jGuard
 import net.millida.launcher.core.loader.ForgeGameFiles
 import net.millida.launcher.core.mojang.Artifact
@@ -31,7 +32,7 @@ class GameInstaller(
 
     override suspend fun clientJar(gameVersion: String): File {
         val version = resolver.resolve(gameVersion)
-        val clientJar = version.clientJar ?: throw IOException("в описании версии $gameVersion нет клиента")
+        val clientJar = version.clientJar ?: throw IOException(tr("в описании версии {gameVersion} нет клиента", gameVersion))
         val target = layout.versionJar(version.jarVersionId)
         downloader.fetch(RemoteFile(clientJar.url, target, clientJar.sha1, clientJar.size))
         return target
@@ -46,7 +47,7 @@ class GameInstaller(
         onStage(InstallStage.Meta(versionId))
         val version = resolver.resolve(versionId)
 
-        val clientJar = version.clientJar ?: throw IOException("в описании версии нет клиента")
+        val clientJar = version.clientJar ?: throw IOException(tr("в описании версии нет клиента"))
         downloader.fetchAll(
             listOf(
                 RemoteFile(
@@ -58,13 +59,17 @@ class GameInstaller(
             )
         ) { onStage(InstallStage.Client(it)) }
 
-        val libraryFiles = version.libraries.map {
+        val (produced, published) = version.libraries.partition { it.produced }
+        val libraryFiles = published.map {
             RemoteFile(it.url, layout.library(it.path), it.sha1, it.size)
         }
         downloader.fetchAll(libraryFiles) { onStage(InstallStage.Libraries(it)) }
+        // The loader's installer built these on this phone; their checksum is not the published one.
+        val unbuilt = produced.filterNot { layout.library(it.path).let { file -> file.isFile && file.length() > 0 } }
+        if (unbuilt.isNotEmpty()) throw LoaderFilesMissing(versionId, unbuilt.map { it.name })
 
         version.logging?.file?.takeIf { Log4jGuard.needsConfig(version) && it.id.isNotEmpty() && it.url.isNotEmpty() }?.let { config ->
-            val sum = config.sha1 ?: throw IOException("у настройки журнала ${config.id} нет контрольной суммы")
+            val sum = config.sha1 ?: throw IOException(tr("у настройки журнала {id} нет контрольной суммы", config.id))
             downloader.fetch(RemoteFile(config.url, layout.logConfig(config.id), sum, config.size))
         }
 
@@ -90,9 +95,37 @@ class GameInstaller(
         return version
     }
 
+    /**
+     * What [install] would download for [versionId] right now. A file that is
+     * there counts as done without reading its checksum: the estimate is for a
+     * question to the player, not for deciding what to fetch.
+     */
+    suspend fun missingBytes(versionId: String): Long {
+        val version = resolver.resolve(versionId)
+        var total = 0L
+        version.clientJar?.let { jar ->
+            if (!layout.versionJar(version.jarVersionId).isFile) total += jar.size
+        }
+        version.libraries.filterNot { it.produced }.forEach { library ->
+            if (!layout.library(library.path).isFile) total += library.size
+        }
+        version.assetIndex?.let { index ->
+            val indexFile = layout.assetIndex(index.id)
+            val parsed = if (indexFile.isFile) {
+                runCatching { MojangJson.decodeFromString(AssetIndex.serializer(), indexFile.readText()) }.getOrNull()
+            } else {
+                null
+            }
+            total += parsed?.objects?.values?.distinctBy { it.hash }?.sumOf { asset ->
+                if (layout.assetObject(asset.hash).isFile) 0L else asset.size
+            } ?: (index.totalSize + index.size)
+        }
+        return total
+    }
+
     fun verify(version: ResolvedVersion): List<String> {
         val missing = ArrayList<String>()
-        if (!layout.versionJar(version.jarVersionId).isFile) missing += "клиент ${version.jarVersionId}.jar"
+        if (!layout.versionJar(version.jarVersionId).isFile) missing += tr("клиент {jarVersionId}.jar", version.jarVersionId)
         version.libraries.forEach { library ->
             if (!layout.library(library.path).isFile) missing += library.name
         }
@@ -110,3 +143,7 @@ class GameInstaller(
         }
     }
 }
+
+/** Files the loader's installer builds are gone: the loader has to be installed again, not downloaded. */
+class LoaderFilesMissing(val versionId: String, val names: List<String>) :
+    IOException(tr("загрузчик сборки собран не полностью ({0}) — ставим его заново", names.first().substringAfterLast(':')))

@@ -8,12 +8,14 @@ import net.millida.launcher.core.packs.PackLaunch
 import net.millida.launcher.core.packs.PackLaunches
 import net.millida.launcher.core.packs.PhoneBlock
 import net.millida.launcher.core.runtime.InstalledSdl
+import net.millida.launcher.core.runtime.RendererKind
 import net.millida.launcher.core.runtime.RuntimeInstaller
 import net.millida.launcher.core.runtime.RuntimeManifest
 import net.millida.launcher.core.runtime.SdlGraphics
 import net.millida.launcher.core.runtime.SdlLaunch
 import net.millida.launcher.core.runtime.WindowChoice
 import net.millida.launcher.core.runtime.WindowChoices
+import net.millida.launcher.core.telemetry.FailureKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -65,11 +67,10 @@ class SdlLaunchTest {
         assertEquals("классы игры сохраняют свой порядок", game, classpath.drop(2))
 
         val natives = File("/runtime/native")
-        val path = SdlLaunch.libraryPath(sdl, natives).split(':')
         assertEquals(
             "нативы LWJGL компонента находятся раньше LWJGL 3.3 из GLFW-пакета: смесь версий падает на первом вызове",
-            listOf(sdl.dir.absolutePath, natives.absolutePath),
-            path,
+            sdl.dir.absolutePath + ":" + natives.absolutePath,
+            SdlLaunch.libraryPath(sdl, natives),
         )
         assertEquals(
             "игра грузит именно ту libSDL3.so, которую приложение уже связало с Android",
@@ -152,6 +153,34 @@ class SdlLaunchTest {
     }
 
     @Test
+    fun `прослойка Vulkan встаёт между LWJGL и загрузчиком телефона на пути GLFW`() {
+        data class Case(val sdl: Boolean, val shimExists: Boolean, val switch: String?, val used: Boolean, val why: String)
+
+        val cases = listOf(
+            Case(false, true, null, true,
+                "VulkanMod отдаёт поворот экрана обратно как preTransform и рисует прямо: без прослойки картинка лежит на боку и растянута"),
+            Case(false, false, null, false, "файла прослойки нет — LWJGL получает загрузчик телефона, как раньше, а не путь в никуда"),
+            Case(false, true, "0", false, "выключатель в записи рендерера манифеста снимает прослойку без нового приложения"),
+            Case(false, true, "1", true, "любое другое значение выключателя прослойку не трогает"),
+            Case(true, true, null, false, "на пути SDL3 загрузчик Vulkan от игры скрыт, прослойке там нечего подменять"),
+        )
+        cases.forEachIndexed { index, case ->
+            val dir = temp.newFolder("vk-$index")
+            val shim = File(dir, SdlLaunch.VK_SHIM).apply { if (case.shimExists) writeText("so") }
+            val environment = case.switch?.let { mapOf(SdlLaunch.VK_SHIM_SWITCH to it) }.orEmpty()
+            val used = SdlLaunch.vulkanShim(shim, case.sdl, environment)
+            assertEquals(case.why, case.used, used != null)
+            val expected = when {
+                case.sdl -> null
+                case.used -> "-Dorg.lwjgl.vulkan.libname=${shim.absolutePath}"
+                else -> "-Dorg.lwjgl.vulkan.libname=libvulkan.so"
+            }
+            assertEquals("загрузчик Vulkan для LWJGL: ${case.why}", expected, SdlLaunch.vulkanLoader(case.sdl, used))
+        }
+        assertEquals("имя файла совпадает с целью сборки в CMakeLists", "libmillida_vk.so", SdlLaunch.VK_SHIM)
+    }
+
+    @Test
     fun `окружение SDL3 указывает на рендерер`() {
         val renderer = temp.newFile("libgl4es_114.so")
         val environment = SdlLaunch.environment(renderer, SdlGraphics.TRANSLATED)
@@ -174,6 +203,55 @@ class SdlLaunchTest {
             SdlLaunch.SYSTEM_GLES,
             SdlLaunch.openglLibrary(renderer, SdlGraphics.NATIVE_GLES),
         )
+    }
+
+    @Test
+    fun `прослойка функций GL встаёт между LWJGL и слоем перевода`() {
+        data class Case(
+            val graphics: SdlGraphics?,
+            val shimExists: Boolean,
+            val rendererExists: Boolean,
+            val switch: String?,
+            val used: Boolean,
+            val why: String,
+            val kind: RendererKind = RendererKind.KRYPTON,
+        )
+
+        val cases = listOf(
+            Case(SdlGraphics.TRANSLATED, true, true, null, true,
+                "26.3 на Krypton: без прослойки LWJGL оставлял glVertexAttribDivisor пустым, и игра обрывалась чёрным экраном"),
+            Case(SdlGraphics.TRANSLATED, false, true, null, false, "файла прослойки нет — LWJGL получает рендерер, как раньше, а не путь в никуда"),
+            Case(SdlGraphics.TRANSLATED, true, false, null, false, "рендерера нет на диске — прослойке некого спрашивать"),
+            Case(SdlGraphics.TRANSLATED, true, true, "0", false, "выключатель в записи рендерера манифеста снимает прослойку без нового приложения"),
+            Case(SdlGraphics.TRANSLATED, true, true, "1", true, "любое другое значение выключателя прослойку не трогает"),
+            Case(SdlGraphics.NATIVE_GLES, true, true, null, false, "на прямом GLES слоя перевода нет: LWJGL берёт функции у SDL"),
+            Case(null, true, true, null, false, "путь GLFW идёт со своим LWJGL из пакета и прослойку не получает"),
+            Case(SdlGraphics.TRANSLATED, true, true, null, true, "GL4ES — та же семья, тех же функций у него нет", RendererKind.GL4ES),
+            Case(SdlGraphics.TRANSLATED, true, true, null, false,
+                "Zink на 26.3 — самый частый запуск: Mesa отвечает на любое имя сама, его путь не меняется", RendererKind.ZINK),
+            Case(SdlGraphics.TRANSLATED, true, true, null, false, "MobileGlues даёт core-профиль и устаревших функций у него не спрашивают", RendererKind.MOBILEGLUES),
+        )
+        cases.forEachIndexed { index, case ->
+            val dir = temp.newFolder("glx-$index")
+            val shim = File(dir, SdlLaunch.GLX_SHIM).apply { if (case.shimExists) writeText("so") }
+            val renderer = File(dir, "libng_gl4es.so").apply { if (case.rendererExists) writeText("so") }
+            val environment = case.switch?.let { mapOf(SdlLaunch.GLX_SHIM_SWITCH to it) }.orEmpty()
+            val used = SdlLaunch.glxShim(shim, renderer, case.graphics, case.kind, environment)
+            assertEquals(case.why, case.used, used != null)
+            val expected = when {
+                case.graphics == SdlGraphics.NATIVE_GLES -> SdlLaunch.SYSTEM_GLES
+                case.used -> shim.absolutePath
+                else -> renderer.absolutePath
+            }
+            assertEquals("библиотека OpenGL для LWJGL: ${case.why}", expected, SdlLaunch.openglLibrary(renderer, case.graphics, used))
+        }
+        val renderer = File(temp.root, "libng_gl4es.so")
+        assertEquals(
+            "прослойка узнаёт настоящий рендерер из окружения: LWJGL передаёт ей только имя функции",
+            mapOf("MILLIDA_GL_LIBRARY" to renderer.absolutePath),
+            SdlLaunch.glxShimEnvironment(renderer),
+        )
+        assertEquals("имя файла совпадает с целью сборки в CMakeLists", "libmillida_glx.so", SdlLaunch.GLX_SHIM)
     }
 
     @Test
@@ -345,6 +423,27 @@ class SdlLaunchTest {
         )
         assertEquals("libSDL3.so", withSdl.sdl.single().library)
         assertEquals("3.4.2", withSdl.sdl.single().lwjglVersion)
+    }
+
+    @Test
+    fun `на Android 10 и старше игра на Java 25 получает отказ, а не вылет`() {
+        data class Case(val sdk: Int, val java: Int, val refused: Boolean, val why: String)
+
+        val cases = listOf(
+            Case(29, 25, true, "Android 10, Minecraft 26.3: 803 вылета на 837 запусков — система не грузит библиотеки игры"),
+            Case(26, 25, true, "Android 8 — то же"),
+            Case(30, 25, false, "с Android 11 этих вылетов нет"),
+            Case(36, 25, false, "современный телефон"),
+            Case(29, 21, false, "OneBlock на Java 21 через тот же SDL3 на Android 10 работает: 6 вылетов на 268 запусков"),
+        )
+        for (case in cases) {
+            val problem = SdlLaunch.androidProblem(case.sdk, case.java, "26.3")
+            assertEquals("Android API ${case.sdk}, Java ${case.java}: ${case.why}", case.refused, problem != null)
+            if (problem != null) {
+                assertTrue("отказ называет версию игры и что делать: $problem", "26.3" in problem && "Android 11" in problem)
+                assertEquals("в телеметрии это отказ устройства, а не «прочее»", "refused_device", FailureKind.of(problem))
+            }
+        }
     }
 
     @Test

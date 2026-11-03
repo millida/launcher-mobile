@@ -5,14 +5,18 @@ import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.atomicWriteText
 import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.http.HttpError
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.core.mojang.MojangJson
 
-enum class LoaderKind(val id: String, val label: String) {
-    VANILLA("vanilla", "Ваниль"),
+enum class LoaderKind(val id: String, private val labelKey: String) {
+    VANILLA("vanilla", trKey("Ваниль")),
     FABRIC("fabric", "Fabric"),
     QUILT("quilt", "Quilt"),
     FORGE("forge", "Forge"),
-    NEOFORGE("neoforge", "NeoForge"),
+    NEOFORGE("neoforge", "NeoForge"),;
+
+    val label: String get() = tr(labelKey)
 }
 
 @Serializable

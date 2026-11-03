@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.millida.launcher.core.account.MILLIDA_API
 import net.millida.launcher.core.http.Downloader
+import net.millida.launcher.core.i18n.tr
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -14,7 +15,7 @@ import java.io.IOException
 import java.net.InetAddress
 import java.net.UnknownHostException
 
-private const val TOO_BIG = "PNG больше 2 МБ — возьми файл поменьше"
+private val TOO_BIG: String get() = tr("PNG больше 2 МБ — возьми файл поменьше")
 private const val READ_CHUNK = 16 * 1024
 
 /** A texture that passed every check and is ready to be applied or stored. */
@@ -43,14 +44,14 @@ class SkinImport(
     suspend fun byNick(nick: String, kind: TextureKind = TextureKind.SKIN): ImportedTexture {
         val clean = cleanNick(nick)
         val url = SkinCatalog.skinUrlStrict(clean, apiBase)
-        val bytes = download(url, "Ник не найден", untrusted = false)
+        val bytes = download(url, tr("Ник не найден"), untrusted = false)
         val shape = TexturePng.validate(kind, bytes)
         return ImportedTexture(bytes, shape, kind, clean, url)
     }
 
     suspend fun byUrl(raw: String, kind: TextureKind = TextureKind.SKIN): ImportedTexture {
         val url = validateUrl(raw)
-        val bytes = download(url.toString(), "По ссылке ничего нет", untrusted = true)
+        val bytes = download(url.toString(), tr("По ссылке ничего нет"), untrusted = true)
         val shape = TexturePng.validate(kind, bytes)
         val name = url.pathSegments.lastOrNull()
             ?.substringBeforeLast('.')
@@ -64,11 +65,11 @@ class SkinImport(
             val response = try {
                 client.newCall(Request.Builder().url(url).build()).execute()
             } catch (failure: IOException) {
-                throw TextureError("Текстура не скачалась — проверь сеть и повтори", failure)
+                throw TextureError(tr("Текстура не скачалась — проверь сеть и повтори"), failure)
             }
             response.use {
                 if (it.code == 404) throw TextureError(missing)
-                if (!it.isSuccessful) throw TextureError("Ссылка ответила ${it.code} — возьми другую ссылку")
+                if (!it.isSuccessful) throw TextureError(tr("Ссылка ответила {code} — возьми другую ссылку", it.code))
                 // The shared client follows redirects, so the address the bytes
                 // came from is checked again, not only the one that was asked.
                 val finalUrl = it.request.url
@@ -76,10 +77,10 @@ class SkinImport(
                     if (untrusted) {
                         validateUrl(finalUrl.toString())
                     } else if (hostIsLocal(finalUrl.host)) {
-                        throw TextureError("Ссылка увела в локальную сеть")
+                        throw TextureError(tr("Ссылка увела в локальную сеть"))
                     }
                 }
-                val body = it.body ?: throw TextureError("Пустой ответ по ссылке")
+                val body = it.body ?: throw TextureError(tr("Пустой ответ по ссылке"))
                 readCapped(body)
             }
         }
@@ -122,7 +123,7 @@ class SkinImport(
         fun cleanNick(raw: String): String {
             val nick = raw.trim()
             if (!NICK.matches(nick)) {
-                throw TextureError("Ник — от 3 до 16 символов: латиница, цифры и подчёркивание")
+                throw TextureError(tr("Ник — от 3 до 16 символов: латиница, цифры и подчёркивание"))
             }
             return nick
         }
@@ -173,22 +174,22 @@ class SkinImport(
          */
         fun validateUrl(raw: String): HttpUrl {
             val trimmed = raw.trim()
-            if (trimmed.isEmpty()) throw TextureError("Пустая ссылка")
+            if (trimmed.isEmpty()) throw TextureError(tr("Пустая ссылка"))
             if (trimmed.any { it == '\r' || it == '\n' || it == '\u0000' }) {
-                throw TextureError("Некорректная ссылка")
+                throw TextureError(tr("Некорректная ссылка"))
             }
-            val url = trimmed.toHttpUrlOrNull() ?: throw TextureError("Некорректная ссылка")
-            if (url.scheme != "https") throw TextureError("Нужна ссылка https на PNG")
+            val url = trimmed.toHttpUrlOrNull() ?: throw TextureError(tr("Некорректная ссылка"))
+            if (url.scheme != "https") throw TextureError(tr("Нужна ссылка https на PNG"))
             val host = url.host.trimEnd('.').lowercase()
             if (host.isEmpty() || hostIsLocal(host)) {
-                throw TextureError("Скины из локальной сети лаунчер не забирает")
+                throw TextureError(tr("Скины из локальной сети лаунчер не забирает"))
             }
             // Suffix, never substring: "api.millida.net.evil.com" contains an
             // allowed host but is served by evil.com.
             val allowed = TEXTURE_HOSTS.any { it == host } ||
                 TEXTURE_HOST_SUFFIXES.any { host.endsWith(it) }
             if (!allowed) {
-                throw TextureError("Скины берём только с проверенных сайтов: ${TEXTURE_HOSTS.joinToString(", ")}")
+                throw TextureError(tr("Скины берём только с проверенных сайтов: {0}", TEXTURE_HOSTS.joinToString(", ")))
             }
             return url
         }

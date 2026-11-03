@@ -38,8 +38,10 @@ import kotlinx.coroutines.launch
 import net.millida.launcher.core.hud.HudAction
 import net.millida.launcher.core.hud.HudControl
 import net.millida.launcher.core.hud.HudIcons
+import net.millida.launcher.core.input.TouchGestures
 import net.millida.launcher.core.hud.HudKeys
 import net.millida.launcher.core.hud.HudKind
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.runtime.GameInputSink
 
 private const val REPEAT_DELAY_MS = 500L
@@ -60,6 +62,8 @@ internal fun hudIcon(id: String?): MillidaIcon? = when (id) {
     HudIcons.UP -> MIcons.chevronUp
     HudIcons.DOWN -> MIcons.chevronDown
     HudIcons.CLOSE -> MIcons.close
+    HudIcons.DROP -> MIcons.trash
+    HudIcons.USE -> MIcons.box
     else -> null
 }
 
@@ -72,7 +76,7 @@ internal fun HudActionButton(
 ) {
     var held by remember(control.id) { mutableStateOf(false) }
     val label = if (control.action == HudAction.POINTER_MODE) {
-        if (lookMode) "Курсор" else "Обзор"
+        if (lookMode) tr("Курсор") else tr("Обзор")
     } else {
         control.label
     }
@@ -158,7 +162,7 @@ internal fun HudPressable(control: HudControl, opacity: Float, sink: GameInputSi
                             tryAwaitRelease()
                         } else {
                             val now = SystemClock.uptimeMillis()
-                            val second = now - lastPress < DOUBLE_TAP_MS
+                            val second = TouchGestures.isDoubleTap(lastPress.takeIf { it > 0L }, now)
                             lastPress = now
                             held = true
                             send(true)
@@ -237,7 +241,7 @@ internal fun HudJump(control: HudControl, opacity: Float, sink: GameInputSink, o
             detectTapGestures(
                 onPress = {
                     val now = SystemClock.uptimeMillis()
-                    if (now - lastPress < DOUBLE_TAP_MS) {
+                    if (TouchGestures.isDoubleTap(lastPress.takeIf { it > 0L }, now)) {
                         lastPress = 0L
                         fly()
                     } else {

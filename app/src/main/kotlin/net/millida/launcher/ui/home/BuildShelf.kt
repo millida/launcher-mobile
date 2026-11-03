@@ -30,14 +30,18 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.core.profile.Profile
+import net.millida.launcher.core.profile.StartHere
 import net.millida.launcher.ui.MBottomSheet
+import net.millida.launcher.ui.MButtonRow
 import net.millida.launcher.ui.MButtonSize
 import net.millida.launcher.ui.MDangerButton
 import net.millida.launcher.ui.MIcon
 import net.millida.launcher.ui.MIcons
 import net.millida.launcher.ui.MListRow
+import net.millida.launcher.ui.MSecondaryButton
 import net.millida.launcher.ui.MSectionHeader
 import net.millida.launcher.ui.MillidaCut
 import net.millida.launcher.ui.MillidaMotion
@@ -59,6 +63,14 @@ private val BUILD_GLYPH = 44.dp
 private fun shelfGroupOf(profile: Profile, lobby: LobbyState): String =
     lobby.metas[profile.id]?.group?.trim()?.lowercase().orEmpty()
 
+/** The builds before and after [id] on its own shelf, for moving it by hand. */
+internal fun shelfNeighbours(profiles: List<Profile>, lobby: LobbyState, id: String): Pair<Profile?, Profile?> {
+    val profile = profiles.firstOrNull { it.id == id } ?: return null to null
+    val shelf = profiles.filter { shelfGroupOf(it, lobby) == shelfGroupOf(profile, lobby) }
+    val index = shelf.indexOfFirst { it.id == id }
+    return shelf.getOrNull(index - 1) to shelf.getOrNull(index + 1)
+}
+
 /** How many list items [buildShelves] adds: «Мои сборки» plus one per named group. */
 internal fun buildShelfCount(profiles: List<Profile>, lobby: LobbyState): Int {
     if (profiles.isEmpty()) return 0
@@ -75,10 +87,10 @@ internal fun LazyListScope.buildShelves(
 ) {
     if (profiles.isEmpty()) return
     val grouped = profiles.groupBy { shelfGroupOf(it, lobby) }
-    val loose = grouped[""].orEmpty()
+    val loose = StartHere.ordered(grouped[""].orEmpty())
     item(key = "shelf:mine", contentType = "shelf") {
         BuildShelf(
-            title = "Мои сборки",
+            title = tr("Мои сборки"),
             builds = loose,
             lobby = lobby,
             activeId = activeId,
@@ -93,7 +105,7 @@ internal fun LazyListScope.buildShelves(
         .filter { it.isNotEmpty() }
         .sorted()
         .forEach { key ->
-            val builds = grouped[key].orEmpty()
+            val builds = StartHere.ordered(grouped[key].orEmpty())
             val title = builds.firstNotNullOfOrNull { lobby.metas[it.id]?.group?.trim() } ?: key
             item(key = "shelf:group:$key", contentType = "shelf") {
                 BuildShelf(
@@ -174,7 +186,7 @@ private fun BuildCard(
                 interactionSource = interaction,
                 indication = null,
                 role = Role.Button,
-                onLongClickLabel = "Меню сборки",
+                onLongClickLabel = tr("Меню сборки"),
                 onLongClick = onMenu,
                 onClick = onSelect,
             ),
@@ -231,7 +243,7 @@ private fun MoreButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier
             .size(44.dp)
-            .clickable(interaction, indication = null, role = Role.Button, onClickLabel = "Меню сборки", onClick = onClick),
+            .clickable(interaction, indication = null, role = Role.Button, onClickLabel = tr("Меню сборки"), onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Box(
@@ -275,7 +287,7 @@ private fun NewBuildTile(onCreate: () -> Unit, modifier: Modifier = Modifier) {
             }
         }
         Text(
-            "Новая сборка",
+            tr("Новая сборка"),
             modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 9.dp, bottom = 12.dp),
             style = MillidaType.rowTitle.copy(fontSize = 14.5.sp),
             color = colors.fg,
@@ -292,25 +304,34 @@ internal fun BuildMenuSheet(
     onOpen: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit,
+    onEarlier: (() -> Unit)? = null,
+    onLater: (() -> Unit)? = null,
 ) {
     MBottomSheet(onDismiss = onDismiss, title = profile.name) {
         MListRow(
-            title = "Играть",
+            title = tr("Играть"),
             subtitle = loaderLine(profile),
             icon = MIcons.play,
             onClick = onPlay,
             plate = false,
         )
         MListRow(
-            title = "Открыть",
-            subtitle = "Моды, миры, настройки",
+            title = tr("Открыть"),
+            subtitle = tr("Моды, миры, настройки"),
             icon = MIcons.menuGear,
             onClick = onOpen,
             plate = false,
         )
+        if (onEarlier != null || onLater != null) {
+            MButtonRow {
+                MSecondaryButton(tr("Левее"), onClick = { onEarlier?.invoke() }, enabled = onEarlier != null, icon = MIcons.arrowLeft, size = MButtonSize.Small)
+                MSecondaryButton(tr("Правее"), onClick = { onLater?.invoke() }, enabled = onLater != null, icon = MIcons.arrowRight, size = MButtonSize.Small)
+            }
+        }
         Spacer(Modifier.height(14.dp))
+
         MDangerButton(
-            text = "Удалить",
+            text = tr("Удалить"),
             onClick = onDelete,
             modifier = Modifier.fillMaxWidth(),
             icon = MIcons.menuTrash,

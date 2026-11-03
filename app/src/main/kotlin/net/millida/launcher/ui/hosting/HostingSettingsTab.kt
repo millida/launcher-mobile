@@ -29,6 +29,7 @@ import net.millida.launcher.core.hosting.HostingField
 import net.millida.launcher.core.hosting.HostingFieldGroup
 import net.millida.launcher.core.hosting.HostingServerState
 import net.millida.launcher.core.hosting.HostingSettingsSpec
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MBottomSheet
 import net.millida.launcher.ui.MCard
 import net.millida.launcher.ui.MChip
@@ -88,7 +89,7 @@ fun HostingSettingsTab(
         }
         item(key = "settings-advanced-toggle") {
             MSecondaryButton(
-                text = "Для опытных",
+                text = tr("Для опытных"),
                 onClick = { advanced = !advanced },
                 modifier = Modifier.fillMaxWidth(),
                 icon = if (advanced) MIcons.chevronUp else MIcons.chevronDown,
@@ -109,10 +110,10 @@ fun HostingSettingsTab(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         MIcon(MIcons.refresh, size = 18.dp, color = millida.accentText)
                         Spacer(Modifier.width(10.dp))
-                        Text("Нужен перезапуск", modifier = Modifier.weight(1f), style = MillidaType.rowTitle, color = millida.fg)
+                        Text(tr("Нужен перезапуск"), modifier = Modifier.weight(1f), style = MillidaType.rowTitle, color = millida.fg)
                         if (running) {
                             MSecondaryButton(
-                                text = "Перезапустить",
+                                text = tr("Перезапустить"),
                                 onClick = { hosting.power(serverId, HostingModel.RESTART) },
                                 size = MButtonSize.Small,
                             )
@@ -127,7 +128,7 @@ fun HostingSettingsTab(
 @Composable
 private fun NameRow(current: String, busy: Boolean, onSave: (String) -> Unit) {
     var draft by rememberSaveable(current) { mutableStateOf(current) }
-    FieldTitle("Название", null)
+    FieldTitle(tr("Название"), null)
     Row(verticalAlignment = Alignment.CenterVertically) {
         MField(
             value = draft,
@@ -142,7 +143,7 @@ private fun NameRow(current: String, busy: Boolean, onSave: (String) -> Unit) {
             MIcons.check,
             onClick = { onSave(draft.trim()) },
             enabled = draft.isNotBlank() && draft.trim() != current,
-            label = "Сохранить",
+            label = tr("Сохранить"),
         )
     }
     Spacer(Modifier.height(8.dp))
@@ -262,7 +263,7 @@ private fun TextRow(
             onImeAction = commit,
         )
         Spacer(Modifier.width(8.dp))
-        MIconButton(MIcons.check, onClick = commit, enabled = changed && !busy, label = "Сохранить")
+        MIconButton(MIcons.check, onClick = commit, enabled = changed && !busy, label = tr("Сохранить"))
     }
     Spacer(Modifier.height(4.dp))
 }

@@ -24,9 +24,12 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import net.millida.launcher.core.account.MillidaAuth
 import net.millida.launcher.core.profile.ProfileStore
+import net.millida.launcher.core.telemetry.AnrTrace
 import net.millida.launcher.core.telemetry.BeatState
+import net.millida.launcher.core.telemetry.BlackScreenClue
 import net.millida.launcher.core.telemetry.DeviceFacts
 import net.millida.launcher.core.telemetry.EventData
+import net.millida.launcher.core.telemetry.AbortClue
 import net.millida.launcher.core.telemetry.FailureKind
 import net.millida.launcher.core.telemetry.LaunchFacts
 import net.millida.launcher.core.telemetry.OpenGame
@@ -111,6 +114,54 @@ class AppTelemetry(
         }
     }
 
+    /** The game drew its first frame: the open game keeps it, so a later crash says whether it was a black screen. */
+    fun gameFrameReached(facts: LaunchFacts) {
+        scope.launch { runCatching { store.updateGameFacts(facts) }.onFailure(::logFailure) }
+    }
+
+    /** The frame statistics at the game's end, written before the exit is reported (in order, unlike [gameFrameReached]). */
+    suspend fun gameFpsSeen(facts: LaunchFacts) {
+        withContext(serial) { runCatching { store.updateGameFacts(facts) }.onFailure(::logFailure) }
+    }
+
+    /**
+     * Black screen: the game runs, its first minute passed, it drew nothing and its log went quiet
+     * (or the far limit came). No crash follows, so this event is the only trace: the renderer, how
+     * long the start waited and how long the log has been silent, and the lines of the game log that
+     * name the cause. The server keeps 300 characters only under `detail`, hence the key.
+     */
+    fun gameBlackScreen(facts: LaunchFacts, log: String?, waitedMs: Long, quietMs: Long, code: String = BLACK_NO_FRAME) {
+        val data = EventData()
+            .put("where", "black_screen")
+            .put("kind", "graphics")
+            .put("code", code)
+            .put("detail", BlackScreenClue.of(log))
+            .put("waitS", waitedMs / 1000)
+            .put("quietS", quietMs / 1000)
+            .putAll(facts.data())
+            .build()
+        track(TelemetryType.ERROR, data, ok = false)
+        flushSoon()
+    }
+
+    /**
+     * The screen thread of the game process did not answer for [stuckMs]: the call it stood in and
+     * the stack under it. Sent at once — the system's «не отвечает» dialog and a kill may follow.
+     */
+    fun mainThreadStuck(facts: LaunchFacts?, phase: String, stuckMs: Long, trace: Array<StackTraceElement>) {
+        val data = EventData()
+            .put("where", "main_stuck")
+            .put("kind", "anr")
+            .put("code", AnrTrace.culprit(trace))
+            .put("detail", AnrTrace.ofThread(trace))
+            .put("phase", phase)
+            .put("ms", stuckMs)
+            .putAll(facts?.data().orEmpty())
+            .build()
+        track(TelemetryType.ERROR, data, ok = false)
+        flushSoon()
+    }
+
     /** As the desktop: a failed `game_launch` with the stage it stopped at, and the failure itself as `error`. */
     fun gameLaunchFailed(facts: LaunchFacts?, stage: String, error: Throwable, tookMs: Long?) {
         if (error is CancellationException) return
@@ -168,7 +219,12 @@ class AppTelemetry(
      * reports its end. The launcher finds its record still open with no game
      * process alive and reports it as a crash, timed to its last sign of life.
      */
-    fun settleLostGame(gameAlive: Boolean, nativeCrashAt: Long?, sessionLog: (since: Long) -> String?) {
+    fun settleLostGame(
+        gameAlive: Boolean,
+        nativeCrashAt: Long?,
+        onCleaned: () -> Unit = {},
+        sessionLog: (since: Long) -> String?,
+    ) {
         scope.launch {
             runCatching {
                 if (gameAlive || store.peekGame() == null) return@runCatching
@@ -184,8 +240,25 @@ class AppTelemetry(
                 // report; Android's exit record and the session log tell that apart from a kill.
                 val exit = lastGameExit(game.startedAt)
                 val log = runCatching { sessionLog(game.startedAt) }.getOrNull()
-                val (reason, kind) = lostGameVerdict(native, exit?.first, exit?.second, FailureKind.cause(log) != null)
-                recordEnd(game, game.aliveAt, ok = false, reason = reason, log = log, kind = kind)
+                if (!native && quitFromGame(exit?.reason, exit?.status, log)) {
+                    recordEnd(game, game.aliveAt, ok = true, reason = "quit", log = null)
+                    core.flush()
+                    return@runCatching
+                }
+                if (!native && closedByPlayer(exit?.reason, exit?.description)) {
+                    recordEnd(game, game.aliveAt, ok = true, reason = "swiped", log = null)
+                    core.flush()
+                    return@runCatching
+                }
+                if (!native && killedByCleaner(exit?.reason, exit?.description)) {
+                    recordEnd(game, game.aliveAt, ok = true, reason = "cleaned", log = null)
+                    core.flush()
+                    onCleaned()
+                    return@runCatching
+                }
+                val (reason, kind) = lostGameVerdict(native, exit?.reason, exit?.status, FailureKind.cause(log) != null)
+                val clue = EventData().put("abort", exit?.abort).put("bg", exit?.background).build()
+                recordEnd(game, game.aliveAt, ok = false, reason = reason, log = log, kind = kind, extra = clue)
                 core.flush()
             }.onFailure(::logFailure)
         }
@@ -214,14 +287,16 @@ class AppTelemetry(
         }
     }
 
-    /** The newest exit of the game process since [since], as Android's reason and status. */
-    private fun lastGameExit(since: Long): Pair<Int, Int>? {
+    private class GameExit(val reason: Int, val status: Int, val description: String?, val abort: String?, val background: Boolean)
+
+    /** The newest exit of the game process since [since], as Android's reason, status and wording. */
+    private fun lastGameExit(since: Long): GameExit? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         val manager = context.getSystemService(ActivityManager::class.java)
         return manager.getHistoricalProcessExitReasons(context.packageName, 0, 0)
             .filter { it.processName.endsWith(GAME_PROCESS) && it.timestamp >= since }
             .maxByOrNull { it.timestamp }
-            ?.let { it.reason to it.status }
+            ?.let { GameExit(it.reason, it.status, it.description, abortClue(it), inBackground(it.importance)) }
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
@@ -242,7 +317,48 @@ class AppTelemetry(
         .put("pssMb", exit.pss / KB_PER_MB)
         .put("rssMb", exit.rss / KB_PER_MB)
         .put("exitAt", exit.timestamp)
+        .put("stack", anrStack(exit))
+        .put("abort", abortClue(exit))
+        .put("bg", inBackground(exit.importance))
         .build()
+
+    /**
+     * The game process was out of the player's sight when it ended (a cached or service process;
+     * 100 is the foreground, 200 visible). Aborts on a lost window surface happen right after
+     * the launcher goes to the background, and the log of the game never says so.
+     */
+    private fun inBackground(importance: Int): Boolean = importance >= IMPORTANCE_BACKGROUND
+
+    /** The abort message and top frames of a native crash, from the tombstone Android keeps, see [AbortClue]. */
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun abortClue(exit: ApplicationExitInfo): String? {
+        val native = exit.reason == ApplicationExitInfo.REASON_CRASH_NATIVE ||
+            (exit.reason == ApplicationExitInfo.REASON_SIGNALED && exit.status == SIGABRT)
+        if (!native) return null
+        return runCatching {
+            exit.traceInputStream?.use { stream -> AbortClue.summary(readHead(stream, ANR_DUMP_HEAD)) }
+        }.getOrNull()
+    }
+
+    private fun readHead(stream: java.io.InputStream, limit: Int): ByteArray {
+        val head = ByteArray(limit)
+        var read = 0
+        while (read < head.size) {
+            val n = stream.read(head, read, head.size - read)
+            if (n <= 0) break
+            read += n
+        }
+        return head.copyOf(read)
+    }
+
+    /** Where the main thread stood in an ANR: the system keeps the thread dump, see [AnrTrace]. */
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun anrStack(exit: ApplicationExitInfo): String? {
+        if (exit.reason != ApplicationExitInfo.REASON_ANR) return null
+        return runCatching {
+            exit.traceInputStream?.use { stream -> AnrTrace.mainStack(String(readHead(stream, ANR_DUMP_HEAD), Charsets.UTF_8)) }
+        }.getOrNull()
+    }
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun exitReason(reason: Int): String = when (reason) {
@@ -262,16 +378,17 @@ class AppTelemetry(
         else -> "reason_$reason"
     }
 
-    private fun recordEnd(game: OpenGame, endedAt: Long, ok: Boolean, reason: String, log: String?, kind: String? = null) {
+    private fun recordEnd(game: OpenGame, endedAt: Long, ok: Boolean, reason: String, log: String?, kind: String? = null, extra: Map<String, JsonPrimitive> = emptyMap()) {
         val played = (endedAt - game.startedAt).coerceAtLeast(0)
-        core.track(TelemetryType.GAME_EXIT, durationMs = played)
+        core.track(TelemetryType.GAME_EXIT, game.facts.exitData(), played)
         if (ok) return
         val cause = FailureKind.cause(log)
         val data = EventData()
             .put("code", reason)
-            .put("kind", kind ?: FailureKind.of(listOfNotNull(cause, log).joinToString("\n")))
+            .put("kind", kind ?: FailureKind.of(FailureKind.kindSource(log, cause)))
             .put("cause", cause)
             .putAll(game.facts.data())
+            .putAll(extra)
             .build()
         core.track(TelemetryType.GAME_CRASH, data, ok = false)
     }
@@ -354,6 +471,8 @@ class AppTelemetry(
     }
 
     private companion object {
+        /** The "main" thread stands near the top of an ANR dump: its first part is enough. */
+        const val ANR_DUMP_HEAD = 256 * 1024
         const val TAG = "millida-telemetry"
         const val FOLDER = "telemetry"
         const val GPU_KEY = "gpu"
@@ -361,6 +480,8 @@ class AppTelemetry(
         const val GAME_PROCESS = ":game"
         const val KB_PER_MB = 1024
         const val SIGKILL = 9
+        const val SIGABRT = 6
+        const val IMPORTANCE_BACKGROUND = 230
         const val CPU_POSSIBLE = "/sys/devices/system/cpu/possible"
         const val TIMEZONE_MAX = 64
     }
@@ -414,6 +535,12 @@ private object GlProbe {
  * same way as a kill by the system. The mark written just before tells the two
  * apart, so a player quitting the game is not counted as a crash.
  */
+/** `code` of a black screen event: the game handed over no frame at all. */
+internal const val BLACK_NO_FRAME = "no_frame"
+
+/** `code` of a black screen event: frames keep coming and every one of them is black. */
+internal const val BLACK_PICTURE = "black_picture"
+
 object GameExitMark {
     const val WINDOW_MS = 5_000L
     private const val FILE = "telemetry/game-leaving"
@@ -432,6 +559,49 @@ object GameExitMark {
         File(context.filesDir, FILE).readLines().mapNotNull { it.trim().toLongOrNull() }
     }.getOrDefault(emptyList())
 }
+
+/**
+ * «Quit Game» in the game's own menu ends the process with code 0 before the launcher
+ * hears of it. That is the player leaving, not a crash, unless the game wrote a crash
+ * report first: some versions exit with 0 after one.
+ */
+internal fun quitFromGame(reason: Int?, status: Int?, log: String?): Boolean =
+    reason == EXIT_REASON_SELF && status == 0 && CRASH_REPORT_MARK !in log.orEmpty()
+
+private const val CRASH_REPORT_MARK = "---- Minecraft Crash Report ----"
+
+/**
+ * The player closing the game through the system instead of its menu: a swipe out of the
+ * recent apps, a phone's «Очистить всё», a force stop in settings. On 13.10.2026 these were
+ * two thirds of the starts counted as «killed» (22 of 29 installs on 1.9.22–1.9.24 in six
+ * hours: SwipeUpClean, OneKeyClean, [REMOVE TASK], [STOP APP]) and put some nine points on
+ * the crash share. A kill the player chose in the «не отвечает» dialog has the ANR reason
+ * and stays a crash.
+ */
+internal fun closedByPlayer(reason: Int?, description: String?): Boolean = when (reason) {
+    EXIT_REASON_USER_REQUESTED, EXIT_REASON_USER_STOPPED, EXIT_REASON_PACKAGE_UPDATED -> true
+    EXIT_REASON_OTHER -> PLAYER_CLEANERS.any { description.orEmpty().contains(it, ignoreCase = true) }
+    else -> false
+}
+
+/** How the phone makers' task cleaners sign the kill of a swiped-away app. */
+private val PLAYER_CLEANERS = listOf("SwipeUpClean", "Swipe-up clean", "swipUpClean", "OneKeyClean", "remove task")
+
+/**
+ * The phone makers' memory cleaners ending the game in the background. 2 373 «process_died» of the week
+ * 19-26.10.2026 were mostly these, on OnePlus 16%, Lenovo 17%, OPPO 13% of starts (others 2-4%): the
+ * system took the game away from a player who had looked at another app, which is not a crash of the
+ * game. The player is told how to stop it, see [onCleaned].
+ */
+internal fun killedByCleaner(reason: Int?, description: String?): Boolean =
+    reason == EXIT_REASON_OTHER && OEM_CLEANERS.any { description.orEmpty().contains(it, ignoreCase = true) }
+
+private val OEM_CLEANERS = listOf(
+    "o-kill", "o-stop", // OPPO, realme, OnePlus (ColorOS/OxygenOS)
+    "ZuiMemoryCleaner", "single-cleaner", // Lenovo ZUI
+    "GarbageClean", "OptimizationClean", // Xiaomi
+    "background restricted", "too many empty", // the system's own limit on cached processes
+)
 
 /**
  * What a game that ended without reporting is counted as. Android's reasons
@@ -454,4 +624,8 @@ private const val EXIT_REASON_LOW_MEMORY = 3
 private const val EXIT_REASON_CRASH = 4
 private const val EXIT_REASON_CRASH_NATIVE = 5
 private const val EXIT_REASON_ANR = 6
+private const val EXIT_REASON_USER_REQUESTED = 10
+private const val EXIT_REASON_USER_STOPPED = 11
+private const val EXIT_REASON_OTHER = 13
+private const val EXIT_REASON_PACKAGE_UPDATED = 16
 

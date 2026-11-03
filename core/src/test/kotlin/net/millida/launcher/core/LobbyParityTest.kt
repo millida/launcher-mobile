@@ -119,7 +119,7 @@ class LobbyParityTest {
             TileCase("в магазине новое без бонуса — «Есть новое»", HubTileCopy.Kind.SHOP, false, true, true, 0, HubTileCopy.Copy("Магазин", "Есть новое", null, true)),
             TileCase("скин ещё не открывали — зовём загрузить свой", HubTileCopy.Kind.WARDROBE, false, false, false, 0, HubTileCopy.Copy("Мой скин", "Загрузи свой", null, true)),
             TileCase("скин открывали — плитка тихая", HubTileCopy.Kind.WARDROBE, true, true, true, 0, HubTileCopy.Copy("Мой скин", null, null, false)),
-            TileCase("своего сервера нет — лента «Бесплатно»", HubTileCopy.Kind.SERVER, false, false, true, 0, HubTileCopy.Copy("Играть с друзьями", null, "Бесплатно", false)),
+            TileCase("своего сервера нет — ленты «Бесплатно» нет: владелец снял её с плитки", HubTileCopy.Kind.SERVER, false, false, true, 0, HubTileCopy.Copy("Играть с друзьями", null, null, false)),
             TileCase("сервер уже есть — ленты нет", HubTileCopy.Kind.SERVER, false, false, true, 2, HubTileCopy.Copy("Играть с друзьями", null, null, false)),
         )
         cases.forEach { assertEquals(it.why, it.want, HubTileCopy.of(it.kind, it.bonus, it.shopNew, it.skinSeen, it.hosted)) }

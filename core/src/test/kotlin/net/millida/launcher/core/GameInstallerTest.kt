@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.install.GameInstaller
 import net.millida.launcher.core.install.InstallStage
+import net.millida.launcher.core.install.LoaderFilesMissing
 import net.millida.launcher.core.mojang.VersionResolver
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
@@ -191,5 +192,43 @@ class GameInstallerTest {
         val mappings = runBlocking { installer().clientMappings("1.6.4") }
         assertEquals("карта имён нужна процессорам Forge", url("/mappings.txt"), mappings?.url)
         assertEquals("без карты имён — null, а не ошибка", null, runBlocking { installer().clientMappings("bare") })
+    }
+
+    /** A Forge build: the vanilla base plus the patched client its installer built on the phone. */
+    private fun forgeVersion(): String {
+        writeVersion("1.6.4", versionJson())
+        val forgeClient = "net/minecraftforge/forge/1.21.1-52.1.20/forge-1.21.1-52.1.20-client.jar"
+        return """
+            {"id":"1.21.1-forge-52.1.20","inheritsFrom":"1.6.4","mainClass":"cpw.mods.bootstraplauncher.BootstrapLauncher",
+             "libraries":[
+               {"name":"net.minecraftforge:forge:1.21.1-52.1.20:client",
+                "downloads":{"artifact":{"path":"$forgeClient","url":"","sha1":"${"2".repeat(40)}","size":28056385}}}
+             ]}
+        """.trimIndent()
+    }
+
+    @Test
+    fun `клиент, собранный установщиком Forge на телефоне, не качается и принимается со своей суммой`() {
+        writeVersion("1.21.1-forge-52.1.20", forgeVersion())
+        val built = layout.library("net/minecraftforge/forge/1.21.1-52.1.20/forge-1.21.1-52.1.20-client.jar")
+        built.parentFile.mkdirs()
+        built.writeText("сборка телефона — сумма не та, что в описании")
+
+        val version = runBlocking { installer().install("1.21.1-forge-52.1.20") }
+
+        assertTrue("собранный файл остался на месте", built.isFile)
+        assertTrue(
+            "ни одного запроса к мавену Forge: этого файла там нет (прод: 404 на forge-*-client.jar)",
+            (0 until server.requestCount).map { server.takeRequest().path.orEmpty() }.none { it.contains("minecraftforge") },
+        )
+        assertTrue("клиент Forge — в пути классов", version.libraries.any { it.name.endsWith(":client") && it.produced })
+    }
+
+    @Test
+    fun `пропавший клиент Forge просит переустановить загрузчик, а не 404`() {
+        writeVersion("1.21.1-forge-52.1.20", forgeVersion())
+        val error = expectIo("собранного файла нет") { runBlocking { installer().install("1.21.1-forge-52.1.20") } }
+        assertTrue("ошибка особого вида — по ней лаунчер ставит загрузчик заново: $error", error is LoaderFilesMissing)
+        assertEquals(listOf("net.minecraftforge:forge:1.21.1-52.1.20:client"), (error as LoaderFilesMissing).names)
     }
 }

@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 
+import net.millida.launcher.core.i18n.tr
 class HostingTransferService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -25,7 +26,7 @@ class HostingTransferService : Service() {
             return START_NOT_STICKY
         }
         prepareChannel(this)
-        val title = intent?.getStringExtra(EXTRA_TITLE).orEmpty().ifEmpty { "Передача файлов" }
+        val title = intent?.getStringExtra(EXTRA_TITLE).orEmpty().ifEmpty { tr("Передача файлов") }
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
         try {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(this, title, 0L, 0L), type)
@@ -87,7 +88,7 @@ class HostingTransferService : Service() {
         private fun prepareChannel(context: Context) {
             val manager = context.getSystemService(NotificationManager::class.java) ?: return
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Передача файлов", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(CHANNEL_ID, tr("Передача файлов"), NotificationManager.IMPORTANCE_LOW)
                     .also { it.setShowBadge(false) },
             )
         }
@@ -99,7 +100,7 @@ class HostingTransferService : Service() {
             val percent = if (total > 0L) ((done * 100) / total).toInt().coerceIn(0, 100) else 0
             return NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(title)
-                .setContentText(if (total > 0L) "$percent%" else "Не закрывай приложение до конца передачи")
+                .setContentText(if (total > 0L) "$percent%" else tr("Не закрывай приложение до конца передачи"))
                 .setSmallIcon(net.millida.launcher.runtime.R.drawable.ic_stat_millida)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)

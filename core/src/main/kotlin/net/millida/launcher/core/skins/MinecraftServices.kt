@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import net.millida.launcher.core.http.Downloader
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
@@ -69,7 +70,7 @@ class MinecraftServicesClient(
             // Mojang answers with the whole profile: without this check
             // "applied" turns into a quiet lie when nothing changed.
             if (profile.skinUrl.isEmpty()) {
-                throw TextureError("Mojang принял запрос, но скин на аккаунте не сменился — попробуй ещё раз")
+                throw TextureError(tr("Mojang принял запрос, но скин на аккаунте не сменился — попробуй ещё раз"))
             }
             profile
         }
@@ -124,7 +125,7 @@ class MinecraftServicesClient(
         val response = try {
             client.newCall(request).execute()
         } catch (failure: IOException) {
-            throw TextureError("Minecraft не отвечает — проверь сеть и повтори", failure)
+            throw TextureError(tr("Minecraft не отвечает — проверь сеть и повтори"), failure)
         }
         response.use {
             val text = it.body?.string().orEmpty()
@@ -136,10 +137,10 @@ class MinecraftServicesClient(
 
     /** Mojang's own errorMessage is English and names no next step, so the status decides the text. */
     private fun errorText(code: Int, path: String): String = when {
-        code == 401 -> "Сессия Microsoft истекла — перезайди в аккаунт"
-        code == 404 && path.trimEnd('/') == profilePath -> "На аккаунте нет Minecraft Java"
-        code == 429 -> "Mojang просит подождать — повтори через минуту"
-        else -> "Mojang ответил $code — повтори позже"
+        code == 401 -> tr("Сессия Microsoft истекла — перезайди в аккаунт")
+        code == 404 && path.trimEnd('/') == profilePath -> tr("На аккаунте нет Minecraft Java")
+        code == 429 -> tr("Mojang просит подождать — повтори через минуту")
+        else -> tr("Mojang ответил {code} — повтори позже", code)
     }
 
     private val profilePath: String get() = base.toHttpUrlOrNull()?.encodedPath?.trimEnd('/').orEmpty()

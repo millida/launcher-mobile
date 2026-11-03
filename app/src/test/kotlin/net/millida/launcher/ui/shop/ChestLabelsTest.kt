@@ -3,6 +3,7 @@ package net.millida.launcher.ui.shop
 import net.millida.launcher.ui.Rarity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import net.millida.launcher.ui.shop.chest.chestEaseOutBack
 import org.junit.Test
 
 class ChestLabelsTest {
@@ -20,6 +21,7 @@ class ChestLabelsTest {
             Case("MYTHIC_NEW", "Обычный", Rarity.COMMON, "незнакомый тир не роняет витрину"),
         ).forEach { case ->
             assertEquals("${case.tier}: ${case.why}", case.name, chestName(case.tier))
+            assertEquals("${case.tier}: the chest title is one phrase per tier, not the adjective glued to a word", case.name + " сундук", chestTitle(case.tier))
             assertEquals("${case.tier}: ${case.why}", case.rarity, chestRarity(case.tier))
         }
     }

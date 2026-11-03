@@ -67,6 +67,22 @@ class LobbyLabelsTest {
     }
 
     @Test
+    fun `этап загрузки на узкой кнопке «Играть»`() {
+        data class Case(val note: String, val expected: String, val why: String)
+        listOf(
+            Case("Ресурсы: 31 из 3350", "Ресурсы", "счётчик файлов не влезает рядом с процентом"),
+            Case("Библиотеки: forge-47.3.0.jar", "Библиотеки", "имя файла длиннее кнопки"),
+            Case("Рантайм: 12 МБ", "Рантайм", "объём уже виден в проценте"),
+            Case("Клиент игры", "Клиент игры", "заметка без двоеточия показывается целиком"),
+            Case("Готовим игру…", "Готовим игру…", "этап без счётчика не меняется"),
+            Case(": 5 из 9", ": 5 из 9", "без названия этапа строка не пустеет"),
+            Case("Версия 1.20.1:fabric", "Версия 1.20.1:fabric", "двоеточие без пробела — часть имени, а не разделитель"),
+        ).forEach { case ->
+            assertEquals("«${case.note}»: ${case.why}", case.expected, stageHeadline(case.note))
+        }
+    }
+
+    @Test
     fun `тон карточки сборки стабилен`() {
         assertEquals("цвет сборки не должен прыгать между запусками", buildTone("my-build"), buildTone("my-build"))
         assertEquals("служебная строка с hashCode Int.MIN_VALUE", Int.MIN_VALUE, "polygenelubricants".hashCode())

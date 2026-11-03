@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.Screen
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MBusyCard
 import net.millida.launcher.ui.screenPadding
 
@@ -34,7 +35,7 @@ fun InstallProgressHost(screen: Screen, model: LauncherViewModel) {
             .padding(horizontal = screenPadding, vertical = 8.dp),
     ) {
         MBusyCard(
-            label = "Ставим «${job.title}»",
+            label = tr("Ставим «{title}»", job.title),
             progress = job.progress,
             note = job.stage,
             modifier = Modifier.align(Alignment.TopCenter).widthIn(max = 520.dp),

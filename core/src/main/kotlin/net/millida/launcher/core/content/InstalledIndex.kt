@@ -3,6 +3,7 @@ package net.millida.launcher.core.content
 import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.catalog.ContentKind
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.profile.ContentFile
 import net.millida.launcher.core.profile.DISABLED_SUFFIX
 import java.io.File
@@ -57,7 +58,7 @@ class InstalledIndex private constructor(
 @Throws(IOException::class)
 internal fun contentFolder(layout: GameLayout, profileDir: File, kind: ContentKind): File {
     if (!SafePath.isInside(layout.profiles, profileDir)) {
-        throw IOException("папка сборки лежит вне хранилища профилей: ${profileDir.name}")
+        throw IOException(tr("папка сборки лежит вне хранилища профилей: {name}", profileDir.name))
     }
     return File(profileDir, kind.folder)
 }

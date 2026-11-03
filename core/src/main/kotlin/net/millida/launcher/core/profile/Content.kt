@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.catalog.ContentKind
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
 import java.io.IOException
@@ -32,7 +33,7 @@ data class ContentFile(
  */
 internal fun profileFolder(layout: GameLayout, profileDir: File, folder: String): File {
     if (!SafePath.isInside(layout.profiles, profileDir)) {
-        throw IOException("папка сборки лежит вне хранилища профилей: ${profileDir.name}")
+        throw IOException(tr("папка сборки лежит вне хранилища профилей: {name}", profileDir.name))
     }
     return File(profileDir, folder)
 }
@@ -53,13 +54,13 @@ class ProfileContent(private val layout: GameLayout) {
     fun setEnabled(profileDir: File, file: ContentFile, enabled: Boolean): ContentFile {
         val folder = profileFolder(layout, profileDir, file.kind.folder)
         val source = SafePath.join(folder, file.name)
-        if (!source.isFile) throw IOException("файл ${file.name} не найден в папке ${file.kind.folder}")
+        if (!source.isFile) throw IOException(tr("файл {name} не найден в папке {folder}", file.name, file.kind.folder))
 
         val targetName = if (enabled) file.name.removeSuffix(DISABLED_SUFFIX) else disabledName(file.name)
         if (targetName == file.name) return file
 
         val target = SafePath.join(folder, targetName)
-        if (target.exists()) throw IOException("в папке ${file.kind.folder} уже лежит файл $targetName")
+        if (target.exists()) throw IOException(tr("в папке {folder} уже лежит файл {targetName}", file.kind.folder, targetName))
 
         // Move without REPLACE_EXISTING: a failure leaves the original name in place
         // instead of erasing the only copy of the mod.

@@ -10,13 +10,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.skins.MinecraftServicesClient
 import net.millida.launcher.core.skins.MsProfile
 import net.millida.launcher.core.skins.SkinImport
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 
-private const val FALLBACK_FAILURE = "Mojang не ответил — проверь сеть и повтори"
+private val FALLBACK_FAILURE: String get() = tr("Mojang не ответил — проверь сеть и повтори")
 
 data class LicenceState(
     val accountId: String = "",
@@ -59,13 +60,13 @@ class LicenceModel(
     }
 
     fun wearBytes(png: ByteArray, slim: Boolean, onDone: () -> Unit = {}): Job =
-        change("Скин на лицензии сменился", onDone) { key -> services.uploadSkin(key, png, slim) }
+        change(tr("Скин на лицензии сменился"), onDone) { key -> services.uploadSkin(key, png, slim) }
 
     fun wearFile(file: File, slim: Boolean, onDone: () -> Unit = {}): Job =
-        change("Скин на лицензии сменился", onDone) { key -> services.uploadSkin(key, file.readBytes(), slim) }
+        change(tr("Скин на лицензии сменился"), onDone) { key -> services.uploadSkin(key, file.readBytes(), slim) }
 
     fun wearUrl(url: String, slim: Boolean?, onDone: () -> Unit = {}): Job =
-        change("Скин на лицензии сменился", onDone) { key ->
+        change(tr("Скин на лицензии сменился"), onDone) { key ->
             val imported = skinImport.byUrl(url)
             services.uploadSkin(key, imported.bytes, slim ?: slimArms(imported.bytes) ?: false)
         }
@@ -74,7 +75,7 @@ class LicenceModel(
     fun setModel(slim: Boolean): Job {
         val current = mutable.value.profile
         if (current == null || current.skinUrl.isEmpty()) {
-            return scope.launch { notice("Сначала поставь скин на лицензию", true) }
+            return scope.launch { notice(tr("Сначала поставь скин на лицензию"), true) }
         }
         if (current.slim == slim) return scope.launch { }
         return wearUrl(current.skinUrl, slim)
@@ -82,13 +83,13 @@ class LicenceModel(
 
     /** An empty id takes the cape off. */
     fun setCape(capeId: String, onDone: () -> Unit = {}): Job =
-        change(if (capeId.isEmpty()) "Плащ лицензии снят" else "Плащ на лицензии сменился", onDone) { key ->
+        change(if (capeId.isEmpty()) tr("Плащ лицензии снят") else tr("Плащ на лицензии сменился"), onDone) { key ->
             services.setCape(key, capeId)
             services.profile(key)
         }
 
     fun resetSkin(onDone: () -> Unit = {}): Job =
-        change("Скин лицензии сброшен", onDone) { key ->
+        change(tr("Скин лицензии сброшен"), onDone) { key ->
             services.resetSkin(key)
             services.profile(key)
         }
@@ -96,7 +97,7 @@ class LicenceModel(
     private fun change(success: String, onDone: () -> Unit, block: suspend (String) -> MsProfile): Job =
         scope.launch {
             if (mutable.value.working) {
-                notice("Подожди, прошлое изменение ещё идёт", true)
+                notice(tr("Подожди, прошлое изменение ещё идёт"), true)
                 return@launch
             }
             val owner = mutable.value.accountId

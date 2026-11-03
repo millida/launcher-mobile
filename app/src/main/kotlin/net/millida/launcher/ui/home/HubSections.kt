@@ -32,6 +32,8 @@ import net.millida.launcher.core.hub.HubMode
 import net.millida.launcher.core.hub.PopularVersion
 import net.millida.launcher.core.hub.PresetLoader
 import net.millida.launcher.core.hub.Rotation
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trPlural
 import net.millida.launcher.core.premium.Premium
 import net.millida.launcher.core.premium.PremiumPack
 import net.millida.launcher.core.premium.PremiumTier
@@ -145,7 +147,7 @@ private fun RecommendCard(feed: HubFeed, actions: HubActions) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    if (own) "Эксклюзивный ивент" else "Попробуй сегодня",
+                    if (own) tr("Эксклюзивный ивент") else tr("Попробуй сегодня"),
                     style = MillidaType.caption,
                     color = if (own) colors.warning else colors.accentText,
                     maxLines = 1,
@@ -160,7 +162,7 @@ private fun RecommendCard(feed: HubFeed, actions: HubActions) {
                 )
             }
             Spacer(Modifier.width(8.dp))
-            MTextButton(if (own) "Играть" else "Открыть", onClick = open, trailingIcon = MIcons.chevronRight)
+            MTextButton(if (own) tr("Играть") else tr("Открыть"), onClick = open, trailingIcon = MIcons.chevronRight)
         }
     }
 }
@@ -203,7 +205,7 @@ private fun HeroPremium(pack: PremiumPack, plan: PremiumTier?, onOpen: () -> Uni
                 .background(colors.surface2),
         ) {
             MRemoteImage(pack.coverUrl, MIcons.crown, Modifier.fillMaxSize(), shape = MillidaShape.control)
-            Box(Modifier.padding(8.dp)) { HubTagBadge(HubTag.PREMIUM, "Премиум") }
+            Box(Modifier.padding(8.dp)) { HubTagBadge(HubTag.PREMIUM, tr("Премиум")) }
         }
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -212,7 +214,7 @@ private fun HeroPremium(pack: PremiumPack, plan: PremiumTier?, onOpen: () -> Uni
                 if (price.isNotEmpty()) Text(price, style = MillidaType.pixel, color = colors.accentText, maxLines = 1)
             }
             Spacer(Modifier.width(8.dp))
-            MPrimaryButton(text = "Открыть", onClick = onOpen, icon = MIcons.chevronRight, size = MButtonSize.Medium)
+            MPrimaryButton(text = tr("Открыть"), onClick = onOpen, icon = MIcons.chevronRight, size = MButtonSize.Medium)
         }
     }
 }
@@ -222,7 +224,7 @@ private fun HeroPremium(pack: PremiumPack, plan: PremiumTier?, onOpen: () -> Uni
 private fun HeroWeek(packs: List<PremiumPack>, onOpen: (PremiumPack) -> Unit) {
     val colors = millida
     Column(Modifier.fillMaxWidth()) {
-        MSectionHeader("Подборка недели")
+        MSectionHeader(tr("Подборка недели"))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             packs.forEach { pack ->
                 MCard(modifier = Modifier.weight(1f), onClick = { onOpen(pack) }, contentPadding = 8.dp) {
@@ -261,15 +263,15 @@ private fun ForYouShelf(feed: HubFeed, actions: HubActions) {
     ).take(FEED_LIMIT)
     val loading = feed.hub.catalog == null && !feed.hub.catalogFailed
     Column(Modifier.fillMaxWidth()) {
-        MSectionHeader("Рекомендуем", action = "Все", onAction = actions.openCatalog)
+        MSectionHeader(tr("Рекомендуем"), action = tr("Все"), onAction = actions.openCatalog)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             if (feed.ownPlayable) {
                 item(key = "own") {
                     HubCoverCard(
                         title = "OneBlock",
-                        meta = Hub.onlineLabel(feed.hub.ownOnline) ?: "Выживи на одном блоке",
+                        meta = Hub.onlineLabel(feed.hub.ownOnline) ?: tr("Выживи на одном блоке"),
                         tag = HubTag.OWN,
-                        tagText = "Наш сервер",
+                        tagText = tr("Наш сервер"),
                         onClick = actions.playOwn,
                         art = { OneBlockArt() },
                     )
@@ -281,7 +283,7 @@ private fun ForYouShelf(feed: HubFeed, actions: HubActions) {
             items(head, key = { "excl:${it.id}" }) { pack ->
                 HubCoverCard(
                     title = pack.title,
-                    meta = Premium.priceLabel(pack, feed.plan).ifEmpty { "Премиум" },
+                    meta = Premium.priceLabel(pack, feed.plan).ifEmpty { tr("Премиум") },
                     tag = HubTag.EXCLUSIVE,
                     tagText = "Arcania Labs",
                     cover = pack.coverUrl,
@@ -296,16 +298,16 @@ private fun ForYouShelf(feed: HubFeed, actions: HubActions) {
                     title = pack.title,
                     meta = listOfNotNull(pack.loader, pack.mcVersion).joinToString(" · ").ifEmpty { pack.tagline },
                     tag = HubTag.PACK,
-                    tagText = "Сборка",
+                    tagText = tr("Сборка"),
                     cover = pack.coverUrl,
                     onClick = { actions.openPack(pack) },
                 )
             }
-            item(key = "more") { HubMoreCard("Ещё", "Весь каталог", MIcons.chevronRight, actions.openCatalog) }
+            item(key = "more") { HubMoreCard(tr("Ещё"), tr("Весь каталог"), MIcons.chevronRight, actions.openCatalog) }
         }
         if (feed.hub.catalogFailed && feed.hub.catalog == null) {
             Spacer(Modifier.height(10.dp))
-            MErrorCard("Сборки не загрузились", onRetry = actions.retry)
+            MErrorCard(tr("Сборки не загрузились"), onRetry = actions.retry)
         }
     }
 }
@@ -316,14 +318,14 @@ private fun ModesSection(hub: HubState, ownPlayable: Boolean, actions: HubAction
     var all by rememberSaveable { mutableStateOf(false) }
     val modes = hub.modes
     Column(Modifier.fillMaxWidth()) {
-        MSectionHeader("Режимы")
+        MSectionHeader(tr("Режимы"))
         when {
-            modes == null && hub.modesFailed -> MErrorCard("Режимы не загрузились", onRetry = actions.retry)
+            modes == null && hub.modesFailed -> MErrorCard(tr("Режимы не загрузились"), onRetry = actions.retry)
             modes == null -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MSkeleton(height = 150.dp, modifier = Modifier.weight(1f))
                 MSkeleton(height = 150.dp, modifier = Modifier.weight(1f))
             }
-            modes.isEmpty() -> MErrorCard("Режимов пока нет", onRetry = actions.retry)
+            modes.isEmpty() -> MErrorCard(tr("Режимов пока нет"), onRetry = actions.retry)
             else -> {
                 val own = modes.firstOrNull { it.code == Hub.OWN_MODE }?.takeIf { ownPlayable }
                 val rest = modes.filter { it.code != Hub.OWN_MODE }
@@ -336,7 +338,7 @@ private fun ModesSection(hub: HubState, ownPlayable: Boolean, actions: HubAction
                     val hidden = rest.size - (MODES_SHOWN - 1)
                     if (hidden > 0) {
                         MTextButton(
-                            text = if (all) "Свернуть" else "Остальные · ${modesCount(hidden)}",
+                            text = if (all) tr("Свернуть") else tr("Остальные · {0}", modesCount(hidden)),
                             onClick = { all = !all },
                             modifier = Modifier.fillMaxWidth(),
                             icon = if (all) MIcons.chevronUp else MIcons.grid,
@@ -348,22 +350,13 @@ private fun ModesSection(hub: HubState, ownPlayable: Boolean, actions: HubAction
     }
 }
 
-private fun modesCount(count: Int): String {
-    val tail = count % 100
-    val word = when {
-        tail in 11..14 -> "режимов"
-        count % 10 == 1 -> "режим"
-        count % 10 in 2..4 -> "режима"
-        else -> "режимов"
-    }
-    return "$count $word"
-}
+private fun modesCount(count: Int): String = "$count " + trPlural(count, tr("режим"), tr("режима"), tr("режимов"))
 
 /** For a player without builds: the versions played most in the launcher, one tap to a new build. */
 @Composable
 private fun PopularVersions(versions: List<PopularVersion>, onCreate: (String) -> Unit) {
     Column(Modifier.fillMaxWidth()) {
-        MSectionHeader("Популярные версии")
+        MSectionHeader(tr("Популярные версии"))
         MButtonRow {
             versions.forEach { version ->
                 MChip(

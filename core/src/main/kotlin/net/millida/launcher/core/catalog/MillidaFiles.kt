@@ -11,6 +11,8 @@ import net.millida.launcher.core.account.MillidaAuth
 import net.millida.launcher.core.game.Worlds
 import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.http.RemoteFile
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.packs.PackOriginFile
 import net.millida.launcher.core.packs.PackOriginStore
@@ -23,12 +25,14 @@ import java.time.Instant
  * What of the Millida catalogue goes into a build as a file, by the site's
  * section. A modpack is not here: it becomes a build of its own.
  */
-enum class MillidaKind(val id: String, val section: String, val content: ContentKind?, val noun: String) {
-    MOD("mod", "mods", ContentKind.MOD, "Мод"),
-    RESOURCE_PACK("resourcepack", "texture-packs", ContentKind.RESOURCE_PACK, "Ресурс-пак"),
-    SHADER("shader", "shaders", ContentKind.SHADER, "Шейдер"),
-    DATA_PACK("datapack", "data-packs", ContentKind.DATA_PACK, "Дата-пак"),
-    WORLD("world", "maps", null, "Карта");
+enum class MillidaKind(val id: String, val section: String, val content: ContentKind?, private val nounKey: String) {
+    MOD("mod", "mods", ContentKind.MOD, trKey("Мод")),
+    RESOURCE_PACK("resourcepack", "texture-packs", ContentKind.RESOURCE_PACK, trKey("Ресурс-пак")),
+    SHADER("shader", "shaders", ContentKind.SHADER, trKey("Шейдер")),
+    DATA_PACK("datapack", "data-packs", ContentKind.DATA_PACK, trKey("Дата-пак")),
+    WORLD("world", "maps", null, trKey("Карта"));
+
+    val noun: String get() = tr(nounKey)
 
     /** Only mods are bound to a loader; a map, a shader or a resource pack fits any build of its version. */
     val loaderBound: Boolean get() = this == MOD
@@ -74,15 +78,15 @@ class MillidaFiles(
         scratch: File,
         onProgress: (Float) -> Unit = {},
     ): String {
-        if (!MillidaCatalog.catalogSlug(slug) || !fileIdValid(file.id)) throw IOException("некорректный материал каталога")
+        if (!MillidaCatalog.catalogSlug(slug) || !fileIdValid(file.id)) throw IOException(tr("некорректный материал каталога"))
         val link = link(file)
-        if (!fileUrlAllowed(link.url)) throw IOException("сервер вернул ссылку на чужой адрес — установка остановлена")
+        if (!fileUrlAllowed(link.url)) throw IOException(tr("сервер вернул ссылку на чужой адрес — установка остановлена"))
         val digest = digest(link.sha512, file.sha1)
-            ?: throw IOException("у файла нет контрольной суммы — такой файл ставить нельзя, напиши в поддержку")
+            ?: throw IOException(tr("у файла нет контрольной суммы — такой файл ставить нельзя, напиши в поддержку"))
         val fallback = "$slug.${if (kind == MillidaKind.MOD) "jar" else "zip"}"
         val fileName = SafePath.fileName(link.fileName.ifBlank { file.fileName.ifBlank { fallback } })
         if (fileName.substringAfterLast('.', "").lowercase() !in kind.extensions) {
-            throw IOException("файл такого типа в сборку не добавить")
+            throw IOException(tr("файл такого типа в сборку не добавить"))
         }
         val size = if (link.size > 0) link.size else file.size
         val report: (Long) -> Unit = progress(size, onProgress)

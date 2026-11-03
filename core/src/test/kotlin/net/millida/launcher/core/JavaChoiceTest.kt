@@ -2,6 +2,7 @@ package net.millida.launcher.core
 
 import net.millida.launcher.core.runtime.JavaHomeLayout
 import net.millida.launcher.core.runtime.JavaRequirement
+import net.millida.launcher.core.runtime.ModJava
 import net.millida.launcher.core.runtime.RuntimeImport
 import net.millida.launcher.core.runtime.RuntimeManifest
 import org.junit.Assert.assertEquals
@@ -36,10 +37,20 @@ class JavaChoiceTest {
             Case(8, vanilla, JavaRequirement(8, null), "ванильная 1.7.10 идёт и на новой Java, потолка нет"),
             Case(17, vanilla, JavaRequirement(17, null), "обычная современная версия"),
             Case(17, wrapper, JavaRequirement(17, null), "сборка сама просит 17 — потолок 8 сделал бы её незапускаемой"),
+            Case(8, JavaRequirement.MODLAUNCHER_MAIN, JavaRequirement(8, 8, strict = false),
+                "Forge 1.13–1.16.5: ядро модов идёт на Nashorn, которого нет с Java 15; потолок нестрогий — " +
+                    "без сети игра стартует на Java из пакета, как раньше, а не отказывает"),
+            Case(17, "cpw.mods.bootstraplauncher.BootstrapLauncher", JavaRequirement(17, null), "Forge с 1.17 запускается иначе и просит 17: потолка нет"),
+            Case(21, JavaRequirement.MODLAUNCHER_MAIN, JavaRequirement(21, null), "сборка на ModLauncher, сама просящая новую Java, не ограничивается"),
         )
         for (case in cases) {
             assertEquals(case.why, case.expected, JavaRequirement.of(case.major, case.main))
         }
+        assertEquals(
+            "LaunchWrapper на Java 9+ не запускается вовсе: его потолок строгий, замены нет",
+            true,
+            JavaRequirement.of(8, wrapper).strict,
+        )
     }
 
     @Test
@@ -92,6 +103,24 @@ class JavaChoiceTest {
             File(legacy, "lib/aarch64").absolutePath,
             JavaHomeLayout.nativeDir(legacy).absolutePath,
         )
+        assertEquals("машина Java 8 под arm64 — в server", File(legacy, "lib/aarch64/server"), JavaHomeLayout.jvmDir(legacy))
+        assertEquals("у Java 9+ — в lib/server", File(modern, "lib/server"), JavaHomeLayout.jvmDir(modern))
+    }
+
+    @Test
+    fun `у 32-битной Java 8 машина лежит в client`() {
+        val narrow = temp.newFolder("jre-8-arm")
+        File(narrow, "lib/aarch32/client").mkdirs()
+        File(narrow, "lib/aarch32/client/libjvm.so").writeText("elf")
+        val empty = temp.newFolder("jre-empty")
+
+        assertEquals("сборки Java 8 под 32-битный ARM идут без серверного компилятора", "lib/aarch32", JavaHomeLayout.nativeDirName(narrow))
+        assertEquals(
+            "путь библиотек должен вести в client, иначе libjvm.so не находится",
+            File(narrow, "lib/aarch32/client"),
+            JavaHomeLayout.jvmDir(narrow),
+        )
+        assertEquals("без машины ответ прежний — lib/server", File(empty, "lib/server"), JavaHomeLayout.jvmDir(empty))
     }
 
     @Test
@@ -177,5 +206,52 @@ class JavaChoiceTest {
             }
         }
         return out.toByteArray()
+    }
+
+    private fun classBytes(major: Int): ByteArray =
+        byteArrayOf(0xCA.toByte(), 0xFE.toByte(), 0xBA.toByte(), 0xBE.toByte(), 0, 0, (major shr 8).toByte(), major.toByte(), 0, 0)
+
+    private fun jar(dir: File, name: String, vararg entries: Pair<String, ByteArray>): File {
+        val file = File(dir, name)
+        ZipOutputStream(file.outputStream()).use { zip ->
+            for ((path, bytes) in entries) {
+                zip.putNextEntry(ZipEntry(path))
+                zip.write(bytes)
+                zip.closeEntry()
+            }
+        }
+        return file
+    }
+
+    // Версии файлов классов: 52 — Java 8, 61 — 17, 65 — 21, 69 — 25.
+    @Test
+    fun `Java для модов читается из заголовков классов`() {
+        val mods = temp.newFolder("mods")
+        assertEquals("пустая папка — ответа нет", null, ModJava.required(mods))
+        jar(mods, "old.jar", "a/A.class" to classBytes(52))
+        jar(mods, "new.jar", "META-INF/MANIFEST.MF" to ByteArray(1), "b/B.class" to classBytes(65), "META-INF/versions/25/b/B.class" to classBytes(69))
+        jar(mods, "broken.jar", "c/C.class" to ByteArray(3))
+        File(mods, "notes.txt").writeText("x")
+        assertEquals("самый новый мод, классы META-INF/versions не считаются", 21, ModJava.required(mods))
+        assertEquals(8, ModJava.of(File(mods, "old.jar")))
+        assertEquals("битый класс не ломает чтение", null, ModJava.of(File(mods, "broken.jar")))
+    }
+
+    @Test
+    fun `требование растёт под моды, но не выше потолка старого Forge`() {
+        data class Case(val base: JavaRequirement, val mods: Int?, val expected: JavaRequirement, val why: String)
+
+        val cases = listOf(
+            Case(JavaRequirement(17), 21, JavaRequirement(21), "игра на 17, моды под 21 — берём 21"),
+            Case(JavaRequirement(17), 17, JavaRequirement(17), "моды под ту же Java — без изменений"),
+            Case(JavaRequirement(21), 8, JavaRequirement(21), "старые моды на новой игре не понижают Java"),
+            Case(JavaRequirement(17), null, JavaRequirement(17), "классов не прочитали — как было"),
+            Case(JavaRequirement(8, 8), 17, JavaRequirement(8, 8), "потолок LaunchWrapper держится: на Java 9+ он не запускается вовсе"),
+            Case(JavaRequirement(8), 17, JavaRequirement(17), "1.7.10 без потолка поднимается под моды"),
+        )
+        for (case in cases) {
+            assertEquals(case.why, case.expected, case.base.withMods(case.mods))
+        }
+        assertEquals("из пакета 8/21/25 моды под 17 получают 21", 21, JavaRequirement(8).withMods(17).pick(listOf(8, 21, 25)))
     }
 }

@@ -9,10 +9,14 @@ import net.millida.launcher.core.account.MILLIDA_API
 import net.millida.launcher.core.account.MillidaAuth
 import java.net.URLEncoder
 
-enum class ShowcaseKind(val wire: String, val title: String) {
-    TOP("top", "Популярные"),
-    NEW("new", "Новые"),
-    RANDOM("random", "Случайные"),
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
+enum class ShowcaseKind(val wire: String, private val titleKey: String) {
+    TOP("top", trKey("Популярные")),
+    NEW("new", trKey("Новые")),
+    RANDOM("random", trKey("Случайные")),;
+
+    val title: String get() = tr(titleKey)
 }
 
 data class ShowcaseCard(val name: String, val textureId: String, val model: String, val views: Long)

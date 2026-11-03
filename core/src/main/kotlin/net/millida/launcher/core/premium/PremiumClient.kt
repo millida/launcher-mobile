@@ -10,6 +10,7 @@ import net.millida.launcher.core.catalog.MillidaCatalog
 import java.io.IOException
 import java.net.URLEncoder
 
+import net.millida.launcher.core.i18n.tr
 /** The addresses of the desktop `lib/premium.ts`, one to one. */
 class PremiumClient(private val auth: MillidaAuth, private val catalog: MillidaCatalog) {
 
@@ -62,7 +63,7 @@ class PremiumClient(private val auth: MillidaAuth, private val catalog: MillidaC
 
     @Throws(IOException::class)
     private fun requireId(id: String) {
-        if (!MillidaCatalog.catalogSlug(id)) throw IOException("некорректный адрес сборки: $id")
+        if (!MillidaCatalog.catalogSlug(id)) throw IOException(tr("некорректный адрес сборки: {id}", id))
     }
 
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")

@@ -18,6 +18,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import net.millida.launcher.core.catalog.AiBuilder
 import net.millida.launcher.core.catalog.AiMod
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MBadge
 import net.millida.launcher.ui.MBottomSheet
 import net.millida.launcher.ui.MBusyCard
@@ -59,20 +60,20 @@ internal fun AiBuilderSheet(
 ) {
     val colors = millida
     val plan = ai.plan
-    MBottomSheet(onDismiss = onDismiss, title = "Собрать с ИИ") {
+    MBottomSheet(onDismiss = onDismiss, title = tr("Собрать с ИИ")) {
         if (!signedIn) {
-            MSignInGate(onSignIn = onSignIn, title = "ИИ-сборщик — в аккаунте Millida")
+            MSignInGate(onSignIn = onSignIn, title = tr("ИИ-сборщик — в аккаунте Millida"))
             return@MBottomSheet
         }
         if (job != null) {
-            MBusyCard(label = "Ставим «${job.title}»", progress = job.progress, note = job.stage)
+            MBusyCard(label = tr("Ставим «{title}»", job.title), progress = job.progress, note = job.stage)
             return@MBottomSheet
         }
         if (plan == null) {
             MField(
                 value = ai.prompt,
                 onValueChange = onPrompt,
-                placeholder = "Хоррор с зомби на 1.20.1",
+                placeholder = tr("Хоррор с зомби на 1.20.1"),
                 leadingIcon = MIcons.sparkle,
                 singleLine = false,
                 maxLines = 3,
@@ -90,8 +91,8 @@ internal fun AiBuilderSheet(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     when {
-                        ai.soon -> "Скоро"
-                        ai.quota != null -> "${ai.quota.remaining} из ${ai.quota.limit} сегодня"
+                        ai.soon -> tr("Скоро")
+                        ai.quota != null -> tr("{remaining} из {limit} сегодня", ai.quota.remaining, ai.quota.limit)
                         else -> ""
                     },
                     style = MillidaType.small,
@@ -99,7 +100,7 @@ internal fun AiBuilderSheet(
                     modifier = Modifier.weight(1f),
                 )
                 MPrimaryButton(
-                    text = if (ai.building) "Собираем" else "Собрать",
+                    text = if (ai.building) tr("Собираем") else tr("Собрать"),
                     onClick = onBuild,
                     enabled = ai.ready && !ai.soon && !ai.building,
                     loading = ai.building,
@@ -113,7 +114,7 @@ internal fun AiBuilderSheet(
                     Spacer(Modifier.width(8.dp))
                     Text(error, style = MillidaType.small, color = colors.danger, modifier = Modifier.weight(1f))
                     if (AiBuilder.retryable(error)) {
-                        MTextButton(text = "Повторить", onClick = onBuild)
+                        MTextButton(text = tr("Повторить"), onClick = onBuild)
                     }
                 }
             }
@@ -128,7 +129,7 @@ internal fun AiBuilderSheet(
         }
         val chosen = ai.chosen
         val chosenCount = chosen?.let { it.mods.size + it.resourcepacks.size + it.shaders.size } ?: 0
-        MField(value = ai.title, onValueChange = onTitle, placeholder = "Название сборки", leadingIcon = MIcons.edit)
+        MField(value = ai.title, onValueChange = onTitle, placeholder = tr("Название сборки"), leadingIcon = MIcons.edit)
         Spacer(Modifier.height(8.dp))
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
@@ -137,7 +138,7 @@ internal fun AiBuilderSheet(
         ) {
             MBadge(plan.mcVersion, colors.fgMuted, colors.surface2)
             MBadge(plan.loader.label, colors.fgMuted, colors.surface2)
-            MBadge("$chosenCount из ${plan.all.size}", colors.accentText, colors.accentSoft)
+            MBadge(tr("{chosenCount} из {size}", chosenCount, plan.all.size), colors.accentText, colors.accentSoft)
         }
         if (plan.notes.isNotBlank()) {
             Spacer(Modifier.height(10.dp))
@@ -146,12 +147,12 @@ internal fun AiBuilderSheet(
         val excluded = AiBuilder.excludedLines(plan.excluded)
         if (excluded.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
-            Text("Не вошли: ${excluded.joinToString("; ")}", style = MillidaType.small, color = colors.fgFaint)
+            Text(tr("Не вошли: {0}", excluded.joinToString("; ")), style = MillidaType.small, color = colors.fgFaint)
         }
         Spacer(Modifier.height(10.dp))
-        val rows = plan.mods.map { it to (if (it.base) "база" else null) } +
-            plan.resourcepacks.map { it to "ресурспак" } +
-            plan.shaders.map { it to "шейдер" }
+        val rows = plan.mods.map { it to (if (it.base) tr("база") else null) } +
+            plan.resourcepacks.map { it to tr("ресурспак") } +
+            plan.shaders.map { it to tr("шейдер") }
         rows.forEachIndexed { index, (mod, tag) ->
             if (index > 0) MDivider()
             val locked = mod.slug in AiBuilder.LOCKED_SLUGS
@@ -171,7 +172,7 @@ internal fun AiBuilderSheet(
         }
         Spacer(Modifier.height(16.dp))
         MPrimaryButton(
-            text = "Создать сборку",
+            text = tr("Создать сборку"),
             onClick = onCreate,
             modifier = Modifier.fillMaxWidth(),
             enabled = chosenCount > 0 && !busy,
@@ -179,6 +180,6 @@ internal fun AiBuilderSheet(
             size = MButtonSize.Large,
         )
         Spacer(Modifier.height(8.dp))
-        MSecondaryButton(text = "Заново", onClick = onReset, modifier = Modifier.fillMaxWidth(), enabled = !busy)
+        MSecondaryButton(text = tr("Заново"), onClick = onReset, modifier = Modifier.fillMaxWidth(), enabled = !busy)
     }
 }

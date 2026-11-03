@@ -1,6 +1,7 @@
 package net.millida.launcher.core.servers
 
 import net.millida.launcher.core.GameLayout
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.profile.profileFolder
 import java.io.File
 import java.io.IOException
@@ -37,7 +38,7 @@ class ServerList(private val layout: GameLayout) {
         val entry = ServerEntry(name = cleanName(name, address), address = cleanAddress(address))
         val current = list(profileDir)
         if (current.size >= MAX_SERVERS) {
-            throw IOException("в списке уже $MAX_SERVERS серверов, удалите лишние")
+            throw IOException(tr("в списке уже {MAX_SERVERS} серверов, удалите лишние", MAX_SERVERS))
         }
         val next = if (onTop) listOf(entry) + current else current + entry
         return save(profileDir, next)
@@ -94,8 +95,8 @@ class ServerList(private val layout: GameLayout) {
 
     private fun cleanAddress(raw: String): String {
         val value = raw.trim().filterNot { it.isWhitespace() || it.code < 0x20 }
-        if (value.isEmpty()) throw IOException("укажите адрес сервера")
-        if (value.length > MAX_ADDRESS_CHARS) throw IOException("адрес сервера слишком длинный")
+        if (value.isEmpty()) throw IOException(tr("укажите адрес сервера"))
+        if (value.length > MAX_ADDRESS_CHARS) throw IOException(tr("адрес сервера слишком длинный"))
         return value
     }
 

@@ -29,6 +29,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import net.millida.launcher.core.hud.HudControl
 import net.millida.launcher.core.hud.HudKeys
+import net.millida.launcher.core.input.TouchGestures
 import net.millida.launcher.runtime.GameInputSink
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -227,7 +228,7 @@ internal fun HudFloatStick(
                                 down.consume()
                                 finger = down.id
                                 locked = false
-                                sprintTap = down.uptimeMillis - lastDown < DOUBLE_TAP_MS
+                                sprintTap = TouchGestures.isDoubleTap(lastDown.takeIf { it > 0L }, down.uptimeMillis)
                                 lastDown = down.uptimeMillis
                                 origin = down.position
                                 knob = Offset.Zero

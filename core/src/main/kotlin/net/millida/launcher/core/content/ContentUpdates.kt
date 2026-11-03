@@ -8,6 +8,7 @@ import net.millida.launcher.core.catalog.CatalogItem
 import net.millida.launcher.core.catalog.CatalogSource
 import net.millida.launcher.core.catalog.CatalogVersion
 import net.millida.launcher.core.catalog.ContentKind
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.profile.ContentFile
 import net.millida.launcher.core.profile.Profile
 import net.millida.launcher.core.packs.PackOriginStore
@@ -105,10 +106,10 @@ class ContentUpdates(
         val installed = try {
             catalog.install(candidate.target, kind, profileDir)
         } catch (error: IOException) {
-            return UpdateOutcome(candidate, "", error.message ?: "не удалось скачать обновление")
+            return UpdateOutcome(candidate, "", error.message ?: tr("не удалось скачать обновление"))
         }
         if (!installed.isFile || installed.length() == 0L) {
-            return UpdateOutcome(candidate, "", "новый файл не записался на диск")
+            return UpdateOutcome(candidate, "", tr("новый файл не записался на диск"))
         }
 
         if (installed.name != candidate.file.name) {
@@ -122,7 +123,7 @@ class ContentUpdates(
                 return UpdateOutcome(
                     candidate,
                     installed.name,
-                    "новая версия скачана, но старый файл ${candidate.file.name} не удалось убрать",
+                    tr("новая версия скачана, но старый файл {name} не удалось убрать", candidate.file.name),
                 )
             }
         }
@@ -140,7 +141,7 @@ class ContentUpdates(
                 version = candidate.toVersion,
             )
             runCatching { content.setEnabled(profileDir, fresh, false) }
-                .onFailure { return UpdateOutcome(candidate, installed.name, "обновление поставлено, но осталось включённым") }
+                .onFailure { return UpdateOutcome(candidate, installed.name, tr("обновление поставлено, но осталось включённым")) }
         }
 
         return UpdateOutcome(candidate, installed.name, "")
@@ -152,7 +153,7 @@ class ContentUpdates(
             try {
                 apply(profileDir, plan.kind, candidate)
             } catch (error: IOException) {
-                UpdateOutcome(candidate, "", error.message ?: "обновление не прошло")
+                UpdateOutcome(candidate, "", error.message ?: tr("обновление не прошло"))
             }
         }
 

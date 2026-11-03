@@ -36,6 +36,8 @@ class PhoneBlockedModsTest {
             Case("Flashback-0.40.0-for-MC26.1.jar", "flashback", true, "Flashback грузит ImGui только под x86 и роняет игру до меню"),
             Case("Axiom-5.4.2-for-MC26.1.jar", "axiom", true, "Axiom грузит тот же ImGui"),
             Case("sodium-0.8.12.jar", "sodium", false, "обычный мод не трогается"),
+            Case("DistantHorizons-2.4.5-b-1.21.11.jar", "distanthorizons", true, "Distant Horizons роняет игру: его библиотек для телефона нет"),
+            Case("sable-fabric-1.21.1-1.1.3.jar", "sable", true, "Sable линкуется с библиотекой Rapier, которой нет для телефона"),
             Case("FLASHBACK-upper.jar", "Flashback", true, "регистр id не важен"),
         )
         val mods = temp.newFolder("mods")
@@ -51,7 +53,7 @@ class PhoneBlockedModsTest {
             )
             assertEquals("«${case.file}» остался включённым: ${case.why}", !case.disabled, File(mods, case.file).isFile)
         }
-        assertEquals("игроку называется каждый отключённый мод", 3, reasons.size)
+        assertEquals("игроку называется каждый отключённый мод", cases.count { it.disabled }, reasons.size)
         assertTrue("повторный запуск ничего не меняет", PhoneBlockedMods.disableIn(mods).isEmpty())
     }
 }

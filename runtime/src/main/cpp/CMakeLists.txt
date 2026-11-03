@@ -55,3 +55,39 @@ target_compile_options(millida_gles PRIVATE -Wall -Wextra -Wno-unused-parameter)
 # SDL dlsyms every EGL and GL name on this library; the ones it does not define
 # bionic finds only in its direct DT_NEEDED entries, so those must stay there.
 target_link_options(millida_gles PRIVATE "-Wl,--no-as-needed" "-Wl,-z,max-page-size=16384")
+
+# Plain C for the same reason: LWJGL of the SDL3 path dlopens it as the game's OpenGL library.
+add_library(millida_glx SHARED glx_shim.c)
+
+set_target_properties(millida_glx PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_VISIBILITY_PRESET hidden
+)
+
+target_link_libraries(millida_glx
+        ${log-lib}
+        dl
+)
+
+target_compile_options(millida_glx PRIVATE -Wall -Wextra -Wno-unused-parameter)
+
+target_link_options(millida_glx PRIVATE "-Wl,-z,max-page-size=16384")
+
+# Plain C again: LWJGL dlopens it as the game's Vulkan loader on the GLFW path.
+add_library(millida_vk SHARED vk_shim.c)
+
+set_target_properties(millida_vk PROPERTIES
+        C_STANDARD 11
+        C_STANDARD_REQUIRED ON
+        C_VISIBILITY_PRESET hidden
+)
+
+target_link_libraries(millida_vk
+        ${log-lib}
+        dl
+)
+
+target_compile_options(millida_vk PRIVATE -Wall -Wextra -Wno-unused-parameter)
+
+target_link_options(millida_vk PRIVATE "-Wl,-z,max-page-size=16384")

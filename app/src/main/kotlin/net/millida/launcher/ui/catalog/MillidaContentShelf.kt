@@ -22,6 +22,7 @@ import net.millida.launcher.core.catalog.MillidaFilters
 import net.millida.launcher.core.catalog.NewBuild
 import net.millida.launcher.core.catalog.MillidaKind
 import net.millida.launcher.core.catalog.MillidaPaid
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MBadge
 import net.millida.launcher.ui.MButton
 import net.millida.launcher.ui.MButtonSize
@@ -56,7 +57,7 @@ internal fun LazyListScope.millidaContentShelf(
 ) {
     val kind = content.kind ?: return
     item(key = "millida-content-head") {
-        MSectionHeader(title = "Каталог Millida", action = "Мои покупки", onAction = onPurchases)
+        MSectionHeader(title = tr("Каталог Millida"), action = tr("Мои покупки"), onAction = onPurchases)
     }
     item(key = "millida-content-filters") {
         MillidaFilterBar(
@@ -93,10 +94,10 @@ internal fun LazyListScope.millidaContentShelf(
     when {
         content.loadingMore -> item(key = "millida-content-more-loading") { MSkeletonRow() }
         content.more -> item(key = "millida-content-more") {
-            MTextButton(text = "Показать ещё", onClick = onMore, modifier = Modifier.fillMaxWidth(), color = millida.accentText)
+            MTextButton(text = tr("Показать ещё"), onClick = onMore, modifier = Modifier.fillMaxWidth(), color = millida.accentText)
         }
     }
-    if (foreignBelow) item(key = "millida-content-foreign-head") { MSectionHeader(title = "Modrinth и CurseForge") }
+    if (foreignBelow) item(key = "millida-content-foreign-head") { MSectionHeader(title = tr("Modrinth и CurseForge")) }
 }
 
 @Composable
@@ -121,7 +122,7 @@ private fun MillidaContentCard(
             Column(Modifier.weight(1f)) {
                 Text(card.title, style = MillidaType.rowTitle, color = colors.fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (card.author.isNotBlank()) {
-                    Text("от ${card.author}", style = MillidaType.small, color = colors.fgFaint, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(tr("от {author}", card.author), style = MillidaType.small, color = colors.fgFaint, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (card.summary.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
@@ -140,31 +141,31 @@ private fun MillidaContentCard(
             ) {
                 if (card.downloads > 0) DownloadsFact(card.downloads)
                 when {
-                    installed -> MBadge("Установлено", colors.accentText, colors.accentSoft, icon = MIcons.check)
-                    card.paid && bought -> MBadge("Куплено", colors.accentText, colors.accentSoft, icon = MIcons.check)
+                    installed -> MBadge(tr("Установлено"), colors.accentText, colors.accentSoft, icon = MIcons.check)
+                    card.paid && bought -> MBadge(tr("Куплено"), colors.accentText, colors.accentSoft, icon = MIcons.check)
                     card.paid -> MBadge(MillidaPaid.priceTag(card.pricing, card.priceKopecks), colors.info, colors.infoSoft)
                 }
                 card.versions.firstOrNull()?.let { MBadge(it, colors.fgMuted, colors.surface2) }
             }
             Spacer(Modifier.width(8.dp))
             when {
-                running -> MButton(text = job?.let { "${(it * 100).toInt()}%" } ?: "Ставим", onClick = {}, size = MButtonSize.Small, loading = true)
+                running -> MButton(text = job?.let { "${(it * 100).toInt()}%" } ?: tr("Ставим"), onClick = {}, size = MButtonSize.Small, loading = true)
                 installed -> Unit
                 locked -> MPrimaryButton(
-                    text = if (waiting) "Ждём оплату" else MillidaPaid.buyLabel(card.pricing),
+                    text = if (waiting) tr("Ждём оплату") else MillidaPaid.buyLabel(card.pricing),
                     onClick = onInstall,
                     enabled = !waiting,
                     icon = MIcons.wallet,
                     size = MButtonSize.Small,
                 )
                 kind == MillidaKind.WORLD -> MPrimaryButton(
-                    text = "Установить",
+                    text = tr("Установить"),
                     onClick = onInstall,
                     icon = MIcons.download,
                     size = MButtonSize.Small,
                 )
                 else -> MPrimaryButton(
-                    text = "В сборку",
+                    text = tr("В сборку"),
                     onClick = onInstall,
                     icon = MIcons.plus,
                     size = MButtonSize.Small,
@@ -173,7 +174,7 @@ private fun MillidaContentCard(
         }
         if (onNewBuild != null && !running && !installed && !locked) {
             Spacer(Modifier.height(8.dp))
-            MSecondaryButton(text = "Новая сборка", onClick = onNewBuild, modifier = Modifier.fillMaxWidth(), size = MButtonSize.Small)
+            MSecondaryButton(text = tr("Новая сборка"), onClick = onNewBuild, modifier = Modifier.fillMaxWidth(), size = MButtonSize.Small)
         }
         if (running) {
             Spacer(Modifier.height(10.dp))
@@ -187,13 +188,17 @@ private fun MillidaContentCard(
 internal fun ContentAskDialog(ask: ContentAsk, owned: Boolean, onConfirm: () -> Unit, onDismiss: () -> Unit) {
     val versions = ask.pick?.versions.orEmpty().joinToString(", ")
     MConfirmDialog(
-        title = if (ask.mismatch) "Версия не совпадает" else "Поставить «${ask.title}»?",
+        title = if (ask.mismatch) tr("Версия не совпадает") else tr("Поставить «{title}»?", ask.title),
         text = if (ask.mismatch) {
-            "«${ask.title}» нет под сборку «${ask.targetName}»" + (if (versions.isNotEmpty()) " — есть под $versions" else "") + ". Поставить всё равно?"
+            if (versions.isNotEmpty()) {
+                tr("«{title}» нет под сборку «{targetName}» — есть под {versions}. Поставить всё равно?", ask.title, ask.targetName, versions)
+            } else {
+                tr("«{title}» нет под сборку «{targetName}». Поставить всё равно?", ask.title, ask.targetName)
+            }
         } else {
-            "В сборку «${ask.targetName}»"
+            tr("В сборку «{targetName}»", ask.targetName)
         },
-        confirm = if (ask.paid && !owned && !ask.mismatch) MillidaPaid.buyLabel(ask.pricing) else "Поставить",
+        confirm = if (ask.paid && !owned && !ask.mismatch) MillidaPaid.buyLabel(ask.pricing) else tr("Поставить"),
         onConfirm = onConfirm,
         onDismiss = onDismiss,
         danger = ask.mismatch,

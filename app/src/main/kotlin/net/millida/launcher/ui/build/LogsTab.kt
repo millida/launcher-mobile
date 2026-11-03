@@ -44,9 +44,9 @@ import net.millida.launcher.ui.pixelSurface
 import net.millida.launcher.ui.settings.BugSheet
 import java.io.File
 
-private val LOG_STYLE = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 15.sp)
+internal val LOG_STYLE = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 15.sp)
 
-private fun logTone(line: String, colors: MillidaColors): Color {
+internal fun logTone(line: String, colors: MillidaColors): Color {
     val trimmed = line.trimStart()
     return when {
         line.contains("ERROR") || line.contains("FATAL") || line.contains("Exception") ||

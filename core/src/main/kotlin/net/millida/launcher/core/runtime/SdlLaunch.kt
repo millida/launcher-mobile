@@ -1,5 +1,6 @@
 package net.millida.launcher.core.runtime
 
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.packs.PhoneBlock
 import java.io.File
 
@@ -62,6 +63,18 @@ object SdlLaunch {
         return if (mods.any(::angelicaWithGles)) SdlGraphics.NATIVE_GLES else SdlGraphics.TRANSLATED
     }
 
+    /**
+     * On Android 10 and older a game on Java 25 cannot load its own libraries through
+     * SDL3's LWJGL: the system linker refuses them («not accessible for the namespace»),
+     * and 96 of 100 such starts ended in a crash. The same libraries load under Java 21,
+     * so packs on it are let through.
+     */
+    fun androidProblem(sdkInt: Int, javaMajor: Int, gameVersion: String): String? {
+        if (sdkInt >= FIRST_ANDROID_FOR_JAVA_25 || javaMajor < JAVA_25) return null
+        return tr("Minecraft {gameVersion} на Android 10 и старше не запускается: система не даёт игре загрузить её библиотеки. ", gameVersion) +
+            tr("Нужен Android 11 или новее. На этом телефоне идут версии игры до 1.21.11")
+    }
+
     /** The GLES profile and the core-profile check arrived together in Angelica 2.2.0. */
     fun angelicaWithGles(fileName: String): Boolean {
         val match = ANGELICA_JAR.matchEntire(fileName) ?: return false
@@ -101,14 +114,55 @@ object SdlLaunch {
      * for libvulkan.so.1, which Android does not have, so the game takes its own
      * path for a PC without Vulkan and renders on OpenGL through the renderer.
      */
-    fun vulkanLoader(sdl: Boolean): String? = if (sdl) null else "-Dorg.lwjgl.vulkan.libname=$SYSTEM_VULKAN"
+    fun vulkanLoader(sdl: Boolean, shim: File? = null): String? =
+        if (sdl) null else "-Dorg.lwjgl.vulkan.libname=${shim?.absolutePath ?: SYSTEM_VULKAN}"
+
+    /**
+     * A mod that draws through Vulkan itself (VulkanMod) is a desktop renderer: it hands
+     * the surface's current transform back as the swapchain's pre-transform and draws
+     * upright. Android reports the screen rotation there, so the picture came out on its
+     * side and stretched. The shim sits between LWJGL and the phone's loader and reports
+     * an upright surface, which leaves the turn to the compositor. A renderer whose
+     * manifest entry sets [VK_SHIM_SWITCH] to 0 goes without it.
+     */
+    fun vulkanShim(shim: File, sdl: Boolean, rendererEnvironment: Map<String, String> = emptyMap()): File? =
+        shim.takeIf { !sdl && rendererEnvironment[VK_SHIM_SWITCH] != "0" && it.isFile }
 
     /**
      * Never the translation layer on the GLES path: it is not loaded there, and
      * LWJGL opening it on its own would put a second GL beside SDL's context.
+     * With [glxShim] LWJGL asks the shim, which asks the layer.
      */
-    fun openglLibrary(renderer: File, graphics: SdlGraphics?): String =
-        if (graphics == SdlGraphics.NATIVE_GLES) SYSTEM_GLES else renderer.absolutePath
+    fun openglLibrary(renderer: File, graphics: SdlGraphics?, glxShim: File? = null): String = when {
+        graphics == SdlGraphics.NATIVE_GLES -> SYSTEM_GLES
+        glxShim != null -> glxShim.absolutePath
+        else -> renderer.absolutePath
+    }
+
+    /**
+     * LWJGL 3.4 of the SDL3 path fills its GL function table itself. For a context that
+     * is not forward compatible it asks for the deprecated entry points of a GL version
+     * first and, when one is missing, leaves the core ones of that version empty. The
+     * translation layers lack the packed vertex attributes of GL 3.3, so the game aborted
+     * on the first glVertexAttribDivisor. The shim hands those names a call that does
+     * nothing and passes every other name to the layer. Only the GL4ES family gets it:
+     * Mesa and MobileGlues answer for every name themselves, and their starts stay exactly
+     * as they were. A renderer whose manifest entry sets [GLX_SHIM_SWITCH] to 0 goes without
+     * it: the switch needs no new application.
+     */
+    fun glxShim(
+        shim: File,
+        renderer: File?,
+        graphics: SdlGraphics?,
+        kind: RendererKind,
+        rendererEnvironment: Map<String, String> = emptyMap(),
+    ): File? = shim.takeIf {
+        graphics == SdlGraphics.TRANSLATED && (kind == RendererKind.KRYPTON || kind == RendererKind.GL4ES) &&
+            rendererEnvironment[GLX_SHIM_SWITCH] != "0" && it.isFile && renderer != null && renderer.isFile
+    }
+
+    /** The shim is told which library to ask through the environment: LWJGL passes it nothing but a name. */
+    fun glxShimEnvironment(renderer: File): Map<String, String> = mapOf(GLX_REAL_LIBRARY to renderer.absolutePath)
 
     /**
      * SDL reads hints from the environment. The renderer library becomes the
@@ -138,9 +192,17 @@ object SdlLaunch {
         return mapOf(HINT_EGL_LIBRARY to shim.absolutePath)
     }
 
+    private const val FIRST_ANDROID_FOR_JAVA_25 = 30
+    private const val JAVA_25 = 25
+
     const val HINT_OPENGL_LIBRARY = "SDL_OPENGL_LIBRARY"
     const val HINT_EGL_LIBRARY = "SDL_EGL_LIBRARY"
     const val GLES_SHIM = "libmillida_gles.so"
+    const val GLX_SHIM = "libmillida_glx.so"
+    const val GLX_REAL_LIBRARY = "MILLIDA_GL_LIBRARY"
+    const val GLX_SHIM_SWITCH = "MILLIDA_GLX_SHIM"
+    const val VK_SHIM = "libmillida_vk.so"
+    const val VK_SHIM_SWITCH = "MILLIDA_VK_SHIM"
     const val HINT_JOYSTICK_HIDAPI = "SDL_JOYSTICK_HIDAPI"
     const val ANGELICA_PROFILE = "angelica.glProfile"
     const val SYSTEM_GLES = "libGLESv2.so"

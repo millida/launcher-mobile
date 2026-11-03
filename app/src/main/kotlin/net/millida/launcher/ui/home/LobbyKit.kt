@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -37,9 +38,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import net.millida.launcher.UiState
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.core.profile.BuildMeta
@@ -95,18 +98,25 @@ internal fun buildIcon(profile: Profile, meta: BuildMeta?): MillidaIcon {
 
 internal fun loaderLine(profile: Profile): String = "${profile.loader.label} · ${profile.gameVersion}"
 
+/**
+ * The stage alone out of a progress note such as «Ресурсы: 31 из 3350» or
+ * «Библиотеки: forge.jar»: the landscape «Играть» is a few words wide and
+ * already shows the percent, so the counter after the colon only gets cut.
+ */
+internal fun stageHeadline(note: String): String = note.substringBefore(": ").trim().ifEmpty { note.trim() }
+
 internal fun hoursLabel(seconds: Long): String? {
     if (seconds < 3600) return null
-    return "${seconds / 3600} ч"
+    return tr("{0} ч", seconds / 3600)
 }
 
 internal fun playedLabel(seconds: Long): String {
     val hours = seconds / 3600
     val minutes = seconds % 3600 / 60
     return when {
-        hours > 0 -> "$hours ч $minutes мин"
-        minutes > 0 -> "$minutes мин"
-        else -> "меньше минуты"
+        hours > 0 -> tr("{hours} ч {minutes} мин", hours, minutes)
+        minutes > 0 -> tr("{minutes} мин", minutes)
+        else -> tr("меньше минуты")
     }
 }
 
@@ -160,7 +170,7 @@ internal fun PlayBlock(
     Column(modifier.fillMaxWidth()) {
         if (busy == null) {
             MPrimaryButton(
-                text = "Играть",
+                text = tr("Играть"),
                 onClick = onPlay,
                 modifier = Modifier.fillMaxWidth(),
                 icon = MIcons.play,
@@ -189,7 +199,7 @@ internal fun PlayBlock(
             }
             if (state.preparingGame && onCancel != null) {
                 Spacer(Modifier.height(6.dp))
-                MTextButton("Отменить запуск", onClick = onCancel)
+                MTextButton(tr("Отменить запуск"), onClick = onCancel)
             }
         }
     }
@@ -197,6 +207,12 @@ internal fun PlayBlock(
 
 private const val FILL_ALPHA = 0.35f
 private const val HOURS_ALPHA = 0.5f
+
+// The landscape dock gives «Играть» 200-240 dp: with the phone's padding and
+// cross the percent «100%» would not fit next to the loader there.
+private val DOCK_PROGRESS_START = 14.dp
+private val DOCK_PROGRESS_CANCEL = 32.dp
+private val DOCK_PROGRESS_CANCEL_ROOM = 48.dp
 
 /**
  * The lobby «Играть», the desktop's #playBtn: the hours played sit under the
@@ -215,10 +231,10 @@ internal fun LobbyPlayButton(
 ) {
     val busy = state.busy
     if (busy == null) {
-        PlayIdleButton(PlayTime.inGame(playedSeconds), onPlay, modifier)
+        PlayIdleButton(PlayTime.inGame(playedSeconds) ?: tr("{hours} ч", 0L), onPlay, modifier)
     } else {
         PlayProgressButton(
-            stage = state.progressNote.ifBlank { busy },
+            stage = state.progressNote.ifBlank { busy }.let { note -> if (fillHeight) stageHeadline(note) else note },
             fraction = state.progress.coerceIn(0f, 1f),
             onCancel = if (state.preparingGame) onCancel else null,
             modifier = modifier,
@@ -250,7 +266,7 @@ private fun PlayIdleButton(hoursLine: String?, onPlay: () -> Unit, modifier: Mod
         Spacer(Modifier.width(8.dp))
         Column {
             Text(
-                "Играть",
+                tr("Играть"),
                 style = MillidaType.button.copy(fontSize = size.fontSize),
                 color = colors.onAccent,
                 maxLines = 1,
@@ -262,6 +278,8 @@ private fun PlayIdleButton(hoursLine: String?, onPlay: () -> Unit, modifier: Mod
                     style = MillidaType.small.copy(fontSize = 11.sp, lineHeight = 12.sp, fontWeight = FontWeight.SemiBold),
                     color = colors.onAccent.copy(alpha = HOURS_ALPHA),
                     maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -278,6 +296,13 @@ private fun PlayProgressButton(stage: String, fraction: Float, onCancel: (() -> 
         label = "play-fill",
     )
     val fillColor = colors.accent.copy(alpha = FILL_ALPHA)
+    // Time left for the stage on show, from its own pace; a stage that restarts the bar restarts the clock.
+    val stageKey = stageHeadline(stage)
+    val startedAt = remember(stageKey) { android.os.SystemClock.elapsedRealtime() }
+    val etaMin = fraction.takeIf { it in 0.03f..0.97f }?.let {
+        val elapsed = (android.os.SystemClock.elapsedRealtime() - startedAt) / 1000f
+        if (elapsed < 20f) null else (elapsed * (1f - it) / it / 60f).roundToInt().coerceAtLeast(1)
+    }
     Box(modifier.fillMaxWidth()) {
         Row(
             Modifier
@@ -285,15 +310,28 @@ private fun PlayProgressButton(stage: String, fraction: Float, onCancel: (() -> 
                 .then(if (fillHeight) Modifier.fillMaxHeight() else Modifier)
                 .heightIn(min = MButtonSize.Large.height)
                 .pixelSurface(colors.surface2, MillidaCut.control, PixelFrame.Button)
-                .drawBehind { drawRect(fillColor, size = Size(size.width * shown, size.height)) }
+                .drawBehind {
+                    val filled = size.width * shown
+                    val from = if (layoutDirection == LayoutDirection.Rtl) size.width - filled else 0f
+                    drawRect(fillColor, topLeft = Offset(from, 0f), size = Size(filled, size.height))
+                }
                 .then(
                     if (onCancel != null) {
-                        Modifier.clickable(role = Role.Button, onClickLabel = "Отменить запуск", onClick = onCancel)
+                        Modifier.clickable(role = Role.Button, onClickLabel = tr("Отменить запуск"), onClick = onCancel)
                     } else {
                         Modifier
                     },
                 )
-                .padding(start = 18.dp, end = if (onCancel != null) 56.dp else 18.dp, top = 6.dp, bottom = 9.dp),
+                .padding(
+                    start = if (fillHeight) DOCK_PROGRESS_START else 18.dp,
+                    end = when {
+                        onCancel == null -> 18.dp
+                        fillHeight -> DOCK_PROGRESS_CANCEL_ROOM
+                        else -> 56.dp
+                    },
+                    top = 6.dp,
+                    bottom = 9.dp,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -301,7 +339,7 @@ private fun PlayProgressButton(stage: String, fraction: Float, onCancel: (() -> 
                     stage,
                     style = MillidaType.small.copy(fontSize = 12.sp, lineHeight = 14.sp, fontWeight = FontWeight.SemiBold),
                     color = colors.fgMuted,
-                    maxLines = 1,
+                    maxLines = if (fillHeight) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(2.dp))
@@ -314,6 +352,15 @@ private fun PlayProgressButton(stage: String, fraction: Float, onCancel: (() -> 
                         color = colors.fg,
                         maxLines = 1,
                     )
+                    if (etaMin != null) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            tr("≈ {0} мин", etaMin),
+                            style = MillidaType.small,
+                            color = colors.fgMuted,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
         }
@@ -322,10 +369,10 @@ private fun PlayProgressButton(stage: String, fraction: Float, onCancel: (() -> 
                 Modifier
                     .align(Alignment.CenterEnd)
                     .padding(end = 10.dp, bottom = 3.dp)
-                    .size(36.dp)
+                    .size(if (fillHeight) DOCK_PROGRESS_CANCEL else 36.dp)
                     .pixelSurface(colors.surface, MillidaCut.badge, colors.plateFrame())
-                    .clickable(role = Role.Button, onClickLabel = "Отменить запуск", onClick = onCancel)
-                    .semantics { contentDescription = "Отменить запуск" },
+                    .clickable(role = Role.Button, onClickLabel = tr("Отменить запуск"), onClick = onCancel)
+                    .semantics { contentDescription = tr("Отменить запуск") },
                 contentAlignment = Alignment.Center,
             ) {
                 MIcon(MIcons.close, size = 14.dp, color = colors.fgMuted)
@@ -346,7 +393,7 @@ internal fun LoaderChip(kind: LoaderKind, selected: Boolean, unsupported: Boolea
         )
         if (unsupported) {
             Text(
-                "Нет",
+                tr("Нет"),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset(y = (-1).dp)

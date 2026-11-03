@@ -3,6 +3,7 @@ package net.millida.launcher.core.packs
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import net.millida.launcher.core.atomicWriteText
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
 import java.io.IOException
@@ -70,14 +71,14 @@ object PackEdits {
     @Throws(IOException::class)
     fun choose(profileDir: File, profileId: String, on: Boolean): PackAutoUpdate {
         val origin = PackOriginStore.read(profileDir)
-            ?: throw IOException("эта сборка поставлена не из каталога Millida — обновлять её неоткуда")
+            ?: throw IOException(tr("эта сборка поставлена не из каталога Millida — обновлять её неоткуда"))
         if (origin.source != PackSource.MILLIDA_CATALOG.id) {
-            throw IOException("эта сборка поставлена не из каталога Millida — обновлять её неоткуда")
+            throw IOException(tr("эта сборка поставлена не из каталога Millida — обновлять её неоткуда"))
         }
         PackOriginStore.write(profileDir, origin.copy(autoUpdate = on, buildId = profileId))
         val saved = state(profileDir, profileId, PackOriginStore.read(profileDir))
         if (saved.chosen != on) {
-            throw IOException("настройка не сохранилась — проверь, что на телефоне есть место")
+            throw IOException(tr("настройка не сохранилась — проверь, что на телефоне есть место"))
         }
         return saved
     }
@@ -137,9 +138,9 @@ data class PackAutoUpdate(
     /** Desktop wording: the switch explains itself only when its state is not what the player would guess. */
     val note: String?
         get() = when {
-            on && modified -> "Твои изменения модов заменятся версией автора"
-            !on && copied && chosen == null -> "Выключено: это копия сборки"
-            !on && modified && chosen == null -> "Выключено: ты менял моды"
+            on && modified -> tr("Твои изменения модов заменятся версией автора")
+            !on && copied && chosen == null -> tr("Выключено: это копия сборки")
+            !on && modified && chosen == null -> tr("Выключено: ты менял моды")
             else -> null
         }
 }

@@ -1,5 +1,7 @@
 package net.millida.launcher.core.mojang
 
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.loader.FORGE_MAVEN_ROOT
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -25,6 +27,11 @@ data class ResolvedLibrary(
     val url: String,
     val sha1: String?,
     val size: Long,
+    /**
+     * Built on the phone by the loader's installer (Forge's patched client): it is on no
+     * server, and the phone's build of it differs from the published checksum.
+     */
+    val produced: Boolean = false,
 )
 
 data class ResolvedVersion(
@@ -45,6 +52,35 @@ data class ResolvedVersion(
     /** The version opens its window through SDL3 and not GLFW. */
     val sdlWindow: Boolean = false,
 )
+
+/**
+ * Forge and NeoForge libraries are not on libraries.minecraft.net (telemetry 10.2026:
+ * 1 223 404s on forge/1.21.11-61.2.1). With no url, or the Mojang host, they come
+ * from the loader's own maven; an explicit url on another host is kept.
+ */
+/**
+ * Forge and NeoForge list the files their installer builds (the patched client) with an
+ * empty url: they are on no server. Fetching them anyway was the top failed start on
+ * phones (telemetry 14–19.10: 404 on forge-<version>-client.jar, 576 starts on 1.9.28),
+ * because the phone's build of the file never matches the published checksum.
+ */
+internal fun installerProduced(library: Library): Boolean {
+    val artifact = library.downloads?.artifact ?: return false
+    if (artifact.url.isNotEmpty() || !library.url.isNullOrEmpty()) return false
+    val group = library.name.substringBefore(':')
+    return group == "net.minecraftforge" || group == "net.neoforged"
+}
+
+internal fun loaderMavenFor(name: String, declared: String, path: String): String {
+    if (declared.isNotEmpty() && !declared.startsWith(MOJANG_LIBRARIES_URL)) return declared
+    val group = name.substringBefore(':')
+    return when {
+        group == "net.minecraftforge" -> FORGE_MAVEN_ROOT + path
+        group == "net.neoforged" -> "https://maven.neoforged.net/releases/" + path
+        else -> declared
+    }
+}
+
 
 class VersionResolver(
     private val layout: GameLayout,
@@ -67,12 +103,12 @@ class VersionResolver(
             cached.atomicWriteText(body)
             parsed
         } catch (error: Exception) {
-            if (!cached.isFile) throw asIo(error, "не удалось получить список версий")
+            if (!cached.isFile) throw asIo(error, tr("не удалось получить список версий"))
             try {
                 MojangJson.decodeFromString(VersionManifest.serializer(), cached.readText())
             } catch (broken: Exception) {
                 cached.delete()
-                throw asIo(broken, "сохранённый список версий повреждён — нужен интернет")
+                throw asIo(broken, tr("сохранённый список версий повреждён — нужен интернет"))
             }
         }
         return fresh.also { manifestCache = it }
@@ -87,19 +123,19 @@ class VersionResolver(
             target.delete()
         }
         val resolved = entry ?: manifest(refresh = true).byId(id)
-            ?: throw IOException("версия $id не найдена в манифесте")
+            ?: throw IOException(tr("версия {id} не найдена в манифесте", id))
         downloader.fetch(RemoteFile(resolved.url, target, resolved.sha1))
         return target
     }
 
     fun readLocal(id: String): VersionMeta {
         val file = layout.versionJson(id)
-        if (!file.isFile) throw IOException("нет описания версии $id")
+        if (!file.isFile) throw IOException(tr("нет описания версии {id}", id))
         return try {
             MojangJson.decodeFromString(VersionMeta.serializer(), file.readText())
         } catch (error: Exception) {
             file.delete()
-            throw asIo(error, "описание версии $id повреждено — оно скачается заново")
+            throw asIo(error, tr("описание версии {id} повреждено — оно скачается заново", id))
         }
     }
 
@@ -108,7 +144,7 @@ class VersionResolver(
         var current: String? = id
         val seen = HashSet<String>()
         while (current != null) {
-            if (!seen.add(current)) throw IOException("цикл наследования версий на $current")
+            if (!seen.add(current)) throw IOException(tr("цикл наследования версий на {current}", current))
             ensureVersionJson(current)
             val meta = readLocal(current)
             chain.add(meta)
@@ -197,11 +233,15 @@ class VersionResolver(
     private fun resolveLibrary(library: Library): ResolvedLibrary? {
         val artifact = library.downloads?.artifact
         val path = artifact?.path ?: runCatching { Maven.pathOf(library.name) }.getOrNull() ?: return null
-        val url = when {
+        if (installerProduced(library)) {
+            return ResolvedLibrary(library.name, path, url = "", sha1 = artifact?.sha1, size = artifact?.size ?: 0, produced = true)
+        }
+        val declared = when {
             !artifact?.url.isNullOrEmpty() -> artifact.url
             !library.url.isNullOrEmpty() -> library.url.trimEnd('/') + "/" + path
             else -> MOJANG_LIBRARIES_URL + path
         }
+        val url = loaderMavenFor(library.name, declared, path)
         if (url.isEmpty()) return null
         return ResolvedLibrary(library.name, path, url, artifact?.sha1, artifact?.size ?: 0)
     }

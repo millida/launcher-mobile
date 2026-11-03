@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Job
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.update.ReleaseNotes
 import net.millida.launcher.core.update.ReleaseNotesParser
 import net.millida.launcher.core.update.UpdateRelease
@@ -29,7 +30,7 @@ import kotlin.math.roundToInt
 @Composable
 fun WhatsNewDialog(version: String, notes: ReleaseNotes, onClose: () -> Unit) {
     val colors = millida
-    MBottomSheet(onDismiss = onClose, title = "Что нового") {
+    MBottomSheet(onDismiss = onClose, title = tr("Что нового")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier
@@ -39,7 +40,7 @@ fun WhatsNewDialog(version: String, notes: ReleaseNotes, onClose: () -> Unit) {
                 Text(version, style = MillidaType.pixel, color = colors.accentText, maxLines = 1)
             }
             Spacer(Modifier.width(10.dp))
-            Text("Millida Mobile", style = MillidaType.small, color = colors.fgSubtle, maxLines = 1)
+            BrandLockup(signSize = 18.dp, color = colors.fgSubtle)
         }
         if (notes.intro.isNotBlank()) {
             Spacer(Modifier.height(12.dp))
@@ -54,7 +55,7 @@ fun WhatsNewDialog(version: String, notes: ReleaseNotes, onClose: () -> Unit) {
             }
         }
         Spacer(Modifier.height(20.dp))
-        MPrimaryButton("Понятно", onClick = onClose, modifier = Modifier.fillMaxWidth(), size = MButtonSize.Large)
+        MPrimaryButton(tr("Понятно"), onClick = onClose, modifier = Modifier.fillMaxWidth(), size = MButtonSize.Large)
     }
 }
 
@@ -83,7 +84,7 @@ fun UpdateOfferSheet(
     val colors = millida
     val download = rememberTrackedAction()
     val notes = ReleaseNotesParser.parse(release.notes)
-    MBottomSheet(onDismiss = onLater, title = "Вышло обновление") {
+    MBottomSheet(onDismiss = onLater, title = tr("Вышло обновление")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier
@@ -111,10 +112,10 @@ fun UpdateOfferSheet(
         if (progress > 0f) {
             MProgressBar(progress)
             Spacer(Modifier.height(6.dp))
-            Text("Качаем: ${(progress * 100).roundToInt()}%", style = MillidaType.small, color = colors.fgMuted)
+            Text(tr("Качаем: {0}%", (progress * 100).roundToInt()), style = MillidaType.small, color = colors.fgMuted)
         } else {
             MPrimaryButton(
-                "Обновить",
+                tr("Обновить"),
                 onClick = { download.start(onUpdate) },
                 modifier = Modifier.fillMaxWidth(),
                 icon = MIcons.download,
@@ -122,7 +123,7 @@ fun UpdateOfferSheet(
                 loading = download.running,
             )
             Spacer(Modifier.height(8.dp))
-            MSecondaryButton("Позже", onClick = onLater, modifier = Modifier.fillMaxWidth(), size = MButtonSize.Large)
+            MSecondaryButton(tr("Позже"), onClick = onLater, modifier = Modifier.fillMaxWidth(), size = MButtonSize.Large)
         }
     }
 }

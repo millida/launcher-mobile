@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import net.millida.launcher.core.catalog.ContentKind
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
@@ -58,7 +59,7 @@ data class ContentFacts(
         return loader == LoaderKind.QUILT && LoaderKind.FABRIC in loaders
     }
 
-    fun loaderLabel(): String = loaders.joinToString(", ") { it.label }.ifBlank { "неизвестный загрузчик" }
+    fun loaderLabel(): String = loaders.joinToString(", ") { it.label }.ifBlank { tr("неизвестный загрузчик") }
 
     fun fitsGameVersion(gameVersion: String): Boolean? =
         GameVersionRange.satisfies(gameVersionRange, gameVersion)
@@ -89,16 +90,16 @@ object ContentInspector {
 
     private data class Marker(val needle: String, val reason: String, val strong: Boolean)
 
-    private val MARKERS = listOf(
-        Marker("defineClass", "грузит классы в обход загрузчика модов", true),
-        Marker("pastebin.com", "тянет код с pastebin", true),
-        Marker("discord.com/api/webhooks", "шлёт данные в Discord-вебхук", true),
-        Marker("launcher_profiles.json", "читает файл сессии лаунчера", true),
-        Marker("java/lang/Runtime", "запускает сторонние процессы", false),
-        Marker("ProcessBuilder", "запускает сторонние процессы", false),
-        Marker("raw.githubusercontent.com", "тянет файлы напрямую с GitHub", false),
-        Marker("javax/crypto/Cipher", "расшифровывает вложенные данные", false),
-        Marker("java/awt/Robot", "управляет мышью и клавиатурой", false),
+    private val MARKERS get() = listOf(
+        Marker("defineClass", tr("грузит классы в обход загрузчика модов"), true),
+        Marker("pastebin.com", tr("тянет код с pastebin"), true),
+        Marker("discord.com/api/webhooks", tr("шлёт данные в Discord-вебхук"), true),
+        Marker("launcher_profiles.json", tr("читает файл сессии лаунчера"), true),
+        Marker("java/lang/Runtime", tr("запускает сторонние процессы"), false),
+        Marker("ProcessBuilder", tr("запускает сторонние процессы"), false),
+        Marker("raw.githubusercontent.com", tr("тянет файлы напрямую с GitHub"), false),
+        Marker("javax/crypto/Cipher", tr("расшифровывает вложенные данные"), false),
+        Marker("java/awt/Robot", tr("управляет мышью и клавиатурой"), false),
     )
 
     private val HARMLESS_EXTENSIONS = listOf(".png", ".txt", ".json", ".lang", ".dat", ".bin")
@@ -106,12 +107,12 @@ object ContentInspector {
 
     fun inspect(file: File): ContentFacts {
         val name = file.name
-        if (!file.isFile) return ContentFacts(name, ArchiveShape.NOT_AN_ARCHIVE, unreadable = "файла нет на месте")
+        if (!file.isFile) return ContentFacts(name, ArchiveShape.NOT_AN_ARCHIVE, unreadable = tr("файла нет на месте"))
         if (!hasArchiveExtension(name)) {
-            return ContentFacts(name, ArchiveShape.NOT_AN_ARCHIVE, unreadable = "это не jar и не zip")
+            return ContentFacts(name, ArchiveShape.NOT_AN_ARCHIVE, unreadable = tr("это не jar и не zip"))
         }
         if (file.length() > MAX_SCAN_BYTES) {
-            return ContentFacts(name, ArchiveShape.UNKNOWN, unreadable = "файл слишком большой для проверки")
+            return ContentFacts(name, ArchiveShape.UNKNOWN, unreadable = tr("файл слишком большой для проверки"))
         }
         return try {
             ZipFile(file).use { read(name, it) }
@@ -119,8 +120,8 @@ object ContentInspector {
             ContentFacts(
                 fileName = name,
                 shape = ArchiveShape.NOT_AN_ARCHIVE,
-                findings = listOf(ContentFinding("Файл не открывается как архив", true)),
-                unreadable = "файл не открывается как архив",
+                findings = listOf(ContentFinding(tr("Файл не открывается как архив"), true)),
+                unreadable = tr("файл не открывается как архив"),
             )
         }
     }
@@ -161,12 +162,12 @@ object ContentInspector {
                 }
 
                 disguisedClass(path, head) -> findings.putIfAbsent(
-                    "класс под видом ресурса",
-                    ContentFinding("В архиве лежит класс под видом ресурса", true),
+                    tr("класс под видом ресурса"),
+                    ContentFinding(tr("В архиве лежит класс под видом ресурса"), true),
                 )
 
                 path.endsWith(".jar") && head.size >= 2 && head[0] == 'P'.code.toByte() && head[1] == 'K'.code.toByte() ->
-                    findings.putIfAbsent("вложенный jar", ContentFinding("Внутри лежит ещё один jar", false))
+                    findings.putIfAbsent(tr("вложенный jar"), ContentFinding(tr("Внутри лежит ещё один jar"), false))
             }
         }
 
@@ -174,8 +175,8 @@ object ContentInspector {
         val hasModMetadata = names.any { it in MOD_DESCRIPTORS }
         if (hasCode && !hasModMetadata) {
             findings.putIfAbsent(
-                "код без описания",
-                ContentFinding("Код есть, а описания мода нет — загрузчик такой файл не признаёт", true),
+                tr("код без описания"),
+                ContentFinding(tr("Код есть, а описания мода нет — загрузчик такой файл не признаёт"), true),
             )
         }
 

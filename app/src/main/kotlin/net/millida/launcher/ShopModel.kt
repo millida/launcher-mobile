@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import net.millida.launcher.core.account.Unauthorized
 import net.millida.launcher.core.cabinet.SignInRequired
 import net.millida.launcher.core.friends.FriendsErrors
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.rubies.ChestDrop
 import net.millida.launcher.core.rubies.ChestGone
 import net.millida.launcher.core.rubies.ChestList
@@ -46,13 +47,29 @@ import net.millida.launcher.core.rubies.WeeklyPath
 import net.millida.launcher.core.rubies.WelcomeGift
 import net.millida.launcher.core.rubies.Workshop
 import net.millida.launcher.core.rubies.WorkshopOffer
-import net.millida.launcher.core.rubies.XrayOffer
+import net.millida.launcher.core.rubies.CaseContents
+import net.millida.launcher.core.rubies.CaseMode
+import net.millida.launcher.core.rubies.CaseOpened
+import net.millida.launcher.core.rubies.CaseReward
+import net.millida.launcher.core.rubies.CasesDay
+import net.millida.launcher.core.rubies.DiscordReward
+import net.millida.launcher.core.rubies.LauncherStats
+import net.millida.launcher.core.rubies.MilliLimits
+import net.millida.launcher.core.rubies.PlayChests
+import net.millida.launcher.core.rubies.SetColorway
+import net.millida.launcher.core.rubies.SetsDay
+import net.millida.launcher.core.rubies.ShopCase
+import net.millida.launcher.core.rubies.ShopSet
+import net.millida.launcher.core.rubies.TelegramReward
+import net.millida.launcher.core.rubies.freshRequestId
+import net.millida.launcher.ui.PlusTier
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 data class ShopLoad<T>(val data: T? = null, val loading: Boolean = false, val error: String? = null)
 
-enum class ShopSection { DAILY, CHESTS, STORE, WORKSHOP, WEEKLY, PROGRESS, PLUS, QUESTS, CREATOR }
+enum class ShopSection { DAILY, CHESTS, STORE, WORKSHOP, WEEKLY, PROGRESS, PLUS, QUESTS, CREATOR, SETS, CASES, PLAY }
 
 sealed interface DailyTarget {
     data class Cell(val day: Int, val row: TrackRow) : DailyTarget
@@ -90,6 +107,7 @@ data class ChestOpening(
     val error: String? = null,
     val opened: Int = 0,
     val fresh: Boolean = false,
+    val attempt: Int = 0,
 ) {
     val chest: PendingChest get() = queue.first()
     val left: Int get() = queue.size - 1
@@ -99,11 +117,29 @@ data class ChestOpening(
 
 data class ShopLink(val serial: Long, val url: String)
 
+/**
+ * One case opening. [key] is the service's replay key: a retry resends it, so
+ * a lost answer never charges twice; "again" is a new run with a new key.
+ */
+data class CaseRun(
+    val serial: Long,
+    val case: ShopCase,
+    val mode: CaseMode,
+    val key: String,
+    val attempt: Int = 0,
+    val result: CaseOpened? = null,
+    val error: String? = null,
+) {
+    val waiting: Boolean get() = result == null && error == null
+    val cards: List<RevealCard> get() = result?.openList.orEmpty().flatMap { open -> open.rewards.map(::caseCard) }
+    val fresh: List<RubyItem>
+        get() = result?.openList.orEmpty().flatMap { it.rewards }
+            .filter { (it.kind == CaseOpened.KIND_ITEM || it.kind == CaseOpened.KIND_CHEAP) && !it.dup }
+            .mapNotNull { it.item }
+}
+
 /** Busy key of the wardrobe's purchase, so the try-on bar shows it running. */
 const val WARDROBE_PURCHASE = "wardrobe-purchase"
-
-/** The case shakes until the purchase answers: the item arrives only with the server's confirmation. */
-data class XrayRun(val serial: Long, val tier: String, val item: RubyItem? = null)
 
 data class ShopState(
     val signedIn: Boolean = false,
@@ -121,13 +157,21 @@ data class ShopState(
     val plus: ShopLoad<PlusStatus> = ShopLoad(),
     val quests: ShopLoad<List<PackQuest>> = ShopLoad(),
     val creator: ShopLoad<CreatorStatus> = ShopLoad(),
+    val sets: ShopLoad<SetsDay> = ShopLoad(),
+    val cases: ShopLoad<CasesDay> = ShopLoad(),
+    val play: ShopLoad<PlayChests> = ShopLoad(),
+    val playAt: Long = 0,
+    val telegram: TelegramReward? = null,
+    val discord: DiscordReward? = null,
+    val caseRun: CaseRun? = null,
+    val milli: MilliLimits? = null,
+    val stats: LauncherStats? = null,
     val busy: Set<String> = emptySet(),
     val reveal: RewardReveal? = null,
     val opening: ChestOpening? = null,
     val link: ShopLink? = null,
     val walletShort: Boolean = false,
     val rulesFailed: Boolean = false,
-    val xray: XrayRun? = null,
     val completedFragments: Set<String> = emptySet(),
     val welcome: RewardReveal? = null,
 ) {
@@ -148,6 +192,12 @@ data class ShopState(
 
     val badge: Int get() = dailyReady + pendingChests.size
 
+    /** The subscription level the whole app shows: the shop's own word first, then the PLUS status, then the old flag. */
+    val tier: PlusTier?
+        get() = PlusTier.of(store.data?.plusTier)
+            ?: PlusTier.of(plus.data?.paidTier)
+            ?: if (store.data?.plus == true || daily.data?.plus == true) PlusTier.PLUS else null
+
     fun isBusy(key: String): Boolean = key in busy
 }
 
@@ -164,6 +214,7 @@ class ShopModel(
     val state: StateFlow<ShopState> = mutable.asStateFlow()
 
     private val tickets = ConcurrentHashMap<String, Long>()
+    private val contents = ConcurrentHashMap<String, CaseContents>()
     private val ticketSeq = AtomicLong()
     private val serials = AtomicLong()
 
@@ -172,6 +223,9 @@ class ShopModel(
 
     @Volatile
     private var payLinkAt = 0L
+
+    @Volatile
+    private var payTier: PlusTier = PlusTier.PLUS
 
     @Volatile
     private var awaitingPayment = false
@@ -196,6 +250,7 @@ class ShopModel(
         mutable.update { it.copy(signedIn = true) }
         loadDaily()
         loadChests()
+        loadPlus()
         claimWelcomeOnce()
     }
 
@@ -210,6 +265,22 @@ class ShopModel(
         if (!current.signedIn || current.loadedAt == 0L || stale) refresh()
     }
 
+    /**
+     * The PLUS page: the status for the button, the rules for the whole-item
+     * chance and the pack prices, Milli's limits and the launcher's reach. Each
+     * line the page cannot get is simply not drawn.
+     */
+    fun openPlus(signedIn: Boolean) {
+        if (signedIn) {
+            mutable.update { it.copy(signedIn = true) }
+            loadPlus()
+            if (mutable.value.daily.data == null) loadDaily()
+        }
+        if (mutable.value.rules == null) loadRules()
+        quiet("milli", { client.milliLimits() }) { s, v -> s.copy(milli = v.takeIf { it.known }) }
+        quiet("stats", { client.launcherStats() }) { s, v -> s.copy(stats = v.takeIf { it.downloads >= 0 }) }
+    }
+
     fun refresh() {
         mutable.update { it.copy(signedIn = true, loadedAt = SystemClock.elapsedRealtime()) }
         loadBalance()
@@ -219,10 +290,13 @@ class ShopModel(
         loadStore()
         loadWorkshop()
         loadWeekly()
-        loadProgress()
         loadPlus()
         loadQuests()
         loadCreator()
+        loadSets()
+        loadCases()
+        loadPlay()
+        loadSocial()
         if (mutable.value.rules == null) loadRules()
     }
 
@@ -236,9 +310,10 @@ class ShopModel(
             loadDaily()
             loadBalance()
             loadWallet()
+            loadSocial()
             return
         }
-        if (SystemClock.elapsedRealtime() - current.loadedAt > STALE_MS) refresh()
+        if (SystemClock.elapsedRealtime() - current.loadedAt > STALE_MS) refresh() else loadSocial()
     }
 
     fun retry(section: ShopSection) {
@@ -259,11 +334,14 @@ class ShopModel(
             ShopSection.PLUS -> loadPlus()
             ShopSection.QUESTS -> loadQuests()
             ShopSection.CREATOR -> loadCreator()
+            ShopSection.SETS -> loadSets()
+            ShopSection.CASES -> loadCases()
+            ShopSection.PLAY -> loadPlay()
         }
     }
 
     fun claimDaily(target: DailyTarget) {
-        perform("daily", "Награда не забралась — повтори") {
+        perform("daily", tr("Награда не забралась — повтори")) {
             val claim = io {
                 when (target) {
                     is DailyTarget.Cell -> client.claimDaily(target.day, target.row)
@@ -280,7 +358,7 @@ class ShopModel(
                     reveal = reveal(KICKER_DAILY, cards, claim.status.chests.filter { it.id in chestIds }),
                 )
             }
-            if (cards.isEmpty()) notice("Здесь уже всё забрано — новая клетка откроется завтра", false)
+            if (cards.isEmpty()) notice(tr("Здесь уже всё забрано — новая клетка откроется завтра"), false)
             if (claim.granted.any { it.kind == RewardKind.SHARDS || it.kind == RewardKind.FRAGMENTS }) loadWorkshop()
             if (claim.granted.any { it.kind == RewardKind.ITEM }) onInventoryChanged()
         }
@@ -304,7 +382,30 @@ class ShopModel(
                 s.copy(opening = next)
             }
         }
-        val opening = target ?: return
+        sendChest(target ?: return)
+    }
+
+    /**
+     * The service did not answer in time: the same chest is asked again. Whichever
+     * answer comes first is shown; a late failure of an older attempt is ignored.
+     */
+    fun retryOpening() {
+        var target: ChestOpening? = null
+        mutable.update { s ->
+            val current = s.opening
+            if (current == null || !current.started || current.result != null) {
+                target = null
+                s
+            } else {
+                val next = current.copy(attempt = current.attempt + 1, error = null)
+                target = next
+                s.copy(opening = next)
+            }
+        }
+        sendChest(target ?: return)
+    }
+
+    private fun sendChest(opening: ChestOpening) {
         val chest = opening.chest
         scope.launch {
             try {
@@ -317,9 +418,12 @@ class ShopModel(
                     if (current == null || current.serial != opening.serial) {
                         detached = true
                         trimmed
+                    } else if (current.result != null) {
+                        detached = false
+                        trimmed
                     } else {
                         detached = false
-                        trimmed.copy(opening = current.copy(result = result, opened = current.opened + 1, fresh = current.fresh || fresh))
+                        trimmed.copy(opening = current.copy(result = result, error = null, opened = current.opened + 1, fresh = current.fresh || fresh))
                     }
                 }
                 if (detached) settleDetached(result.drops.map(::dropCard), fresh)
@@ -329,13 +433,16 @@ class ShopModel(
                 Log.w(TAG, "сундук ${chest.id} не открылся: ${error.message}")
                 val lost = error.isSessionLost()
                 if (lost) onSessionLost()
-                val text = textOf(error, "Сундук не открылся — попробуй ещё раз")
+                val text = textOf(error, tr("Сундук не открылся — попробуй ещё раз"))
                 var detached = false
                 mutable.update { s ->
                     val base = if (error is ChestGone) s.withoutChest(chest.id) else s
                     val current = base.opening
                     if (current == null || current.serial != opening.serial) {
                         detached = true
+                        base
+                    } else if (current.result != null || current.attempt != opening.attempt) {
+                        detached = false
                         base
                     } else {
                         detached = false
@@ -358,7 +465,7 @@ class ShopModel(
             placed = s.reveal == null
             if (placed) s.copy(reveal = shown) else s
         }
-        if (!placed) notice("Сундук открылся — награда уже у тебя", false)
+        if (!placed) notice(tr("Сундук открылся — награда уже у тебя"), false)
         loadBalance()
         loadWorkshop()
         loadStore()
@@ -403,7 +510,7 @@ class ShopModel(
 
     fun buy(card: ShopCard, source: ShopSource) {
         val code = card.item.code
-        perform("buy:$code", "Покупка не прошла — повтори") {
+        perform("buy:$code", tr("Покупка не прошла — повтори")) {
             val result = purchase(code, source)
             val granted = result.granted.ifEmpty { listOf(card.item) }
             mutable.update { s -> s.copy(reveal = reveal(KICKER_BOUGHT, granted.map { itemCard(it) })) }
@@ -420,7 +527,7 @@ class ShopModel(
      */
     fun buyFromWardrobe(items: List<RubyItem>, onBought: (List<String>) -> Unit) {
         if (items.isEmpty()) return
-        perform(WARDROBE_PURCHASE, "Покупка не прошла — повтори") {
+        perform(WARDROBE_PURCHASE, tr("Покупка не прошла — повтори")) {
             val bought = ArrayList<String>()
             val refused = ArrayList<String>()
             for (item in items) {
@@ -436,7 +543,7 @@ class ShopModel(
                         refused.add(textOf(error, ""))
                         break
                     }
-                    refused.add("${item.name} (${textOf(error, "отказ").replaceFirstChar { it.lowercase() }})")
+                    refused.add("${item.name} (${textOf(error, tr("отказ")).replaceFirstChar { it.lowercase() }})")
                 }
             }
             if (bought.isNotEmpty()) {
@@ -444,7 +551,7 @@ class ShopModel(
                 onInventoryChanged()
                 onBought(bought)
             }
-            if (refused.isNotEmpty()) notice("Не удалось купить: " + refused.joinToString(", "), true)
+            if (refused.isNotEmpty()) notice(tr("Не удалось купить: {0}", refused.joinToString(", ")), true)
         }
     }
 
@@ -463,17 +570,17 @@ class ShopModel(
         val key = "wish:$code"
         if (!take(key)) return
         mutable.update { s -> s.copy(store = s.store.copy(data = s.store.data?.withWish(code, on))) }
-        launchTaken(key, "«Хочу» не сохранилось — повтори", rollback = {
+        launchTaken(key, tr("«Хочу» не сохранилось — повтори"), rollback = {
             mutable.update { s -> s.copy(store = s.store.copy(data = s.store.data?.withWish(code, !on))) }
         }) {
             val list = io { client.wish(code, on) }
             mutable.update { s -> s.copy(store = s.store.copy(data = s.store.data?.copy(wishlist = list))) }
-            if (on) notice("Добавлено в «Хочу»", false)
+            if (on) notice(tr("Добавлено в «Хочу»"), false)
         }
     }
 
     fun claimGift() {
-        perform("gift", "Подарок не забрался — повтори") {
+        perform("gift", tr("Подарок не забрался — повтори")) {
             val claim = io { client.claimGift() }
             mutable.update { s ->
                 s.copy(
@@ -483,7 +590,7 @@ class ShopModel(
                     reveal = reveal(KICKER_GIFT, claim.granted.map(::rewardCard)),
                 )
             }
-            if (claim.granted.isEmpty()) notice("Подарок уже забран — новый завтра", false)
+            if (claim.granted.isEmpty()) notice(tr("Подарок уже забран — новый завтра"), false)
             loadStore()
             if (claim.granted.any { it.kind == RewardKind.SHARDS }) loadWorkshop()
             if (claim.granted.any { it.kind == RewardKind.ITEM }) onInventoryChanged()
@@ -491,7 +598,7 @@ class ShopModel(
     }
 
     fun buyPack(pack: RubyPack) {
-        perform("pack:${pack.code}", "Пакет не оплатился — повтори") {
+        perform("pack:${pack.code}", tr("Пакет не оплатился — повтори")) {
             val bought = io { client.buyPack(pack.code) }
             mutable.update { s ->
                 s.copy(balance = bought.balance, reveal = reveal(KICKER_CREDITED, listOf(RevealCard(RewardKind.RUBIES, amount = bought.rubies))))
@@ -501,7 +608,7 @@ class ShopModel(
     }
 
     fun topUp(rubies: Int) {
-        perform("topup", "Рубины не докупились — повтори") {
+        perform("topup", tr("Рубины не докупились — повтори")) {
             val bought = io { client.topUp(rubies.coerceAtLeast(RubiesClient.EXACT_MIN_RUBIES)) }
             mutable.update { s ->
                 s.copy(balance = bought.balance, reveal = reveal(KICKER_CREDITED, listOf(RevealCard(RewardKind.RUBIES, amount = bought.rubies))))
@@ -512,7 +619,7 @@ class ShopModel(
 
     fun craft(offer: WorkshopOffer) {
         val code = offer.item.code
-        perform("craft:$code", "Осколки не обменялись — повтори") {
+        perform("craft:$code", tr("Осколки не обменялись — повтори")) {
             val made = io { client.craft(code) }
             mutable.update { s ->
                 s.copy(
@@ -527,7 +634,7 @@ class ShopModel(
     }
 
     fun claimWeekly(item: RubyItem) {
-        perform("weekly", "Посылка не забралась — повтори") {
+        perform("weekly", tr("Посылка не забралась — повтори")) {
             val granted = io { client.claimWeekly(item.code) }
             mutable.update { s -> s.copy(reveal = reveal(KICKER_WEEKLY, listOf(itemCard(granted.takeIf { it.code.isNotBlank() } ?: item)))) }
             loadWeekly()
@@ -536,7 +643,7 @@ class ShopModel(
     }
 
     fun claimWeeklyStep(at: Int) {
-        perform("weekly", "Награда недели не забралась — повтори") {
+        perform("weekly", tr("Награда недели не забралась — повтори")) {
             val claim = io { client.claimWeeklyStep(at) }
             val granted = claim.granted
             val prize = granted.item
@@ -562,7 +669,7 @@ class ShopModel(
     fun boostWeekly(path: WeeklyPath) {
         val boost = path.boost ?: return
         if (!boost.available || boost.missing <= 0) return
-        perform("weekly-boost", "Звёзды не докупились — повтори") {
+        perform("weekly-boost", tr("Звёзды не докупились — повтори")) {
             val result = io { client.boostWeekly(boost.missing) }
             mutable.update { s ->
                 s.copy(
@@ -574,55 +681,8 @@ class ShopModel(
         }
     }
 
-    fun buyXray(offer: XrayOffer) {
-        val key = "xray:${offer.id}"
-        if (!take(key)) return
-        val run = XrayRun(serials.incrementAndGet(), offer.tier)
-        mutable.update { it.copy(xray = run) }
-        launchTaken(key, "Кейс не купился — повтори", rollback = {
-            mutable.update { s -> if (s.xray?.serial == run.serial) s.copy(xray = null) else s }
-        }) {
-            val bought = io { client.buyXray(offer.id) }
-            val item = bought.item.takeIf { it.code.isNotBlank() } ?: offer.item
-            var attached = false
-            mutable.update { s ->
-                val current = s.xray
-                attached = current?.serial == run.serial
-                s.copy(balance = bought.balance, xray = if (attached && current != null) current.copy(item = item) else current)
-            }
-            if (!attached) settleXray(item)
-        }
-    }
-
-    /** Called once the lid is up: only then the item takes the screen. */
-    fun finishXray(serial: Long) {
-        var item: RubyItem? = null
-        mutable.update { s ->
-            val current = s.xray
-            if (current == null || current.serial != serial) {
-                s
-            } else {
-                item = current.item
-                s.copy(xray = null)
-            }
-        }
-        settleXray(item ?: return)
-    }
-
-    private fun settleXray(item: RubyItem) {
-        val shown = reveal(KICKER_XRAY, listOf(itemCard(item)))
-        var placed = false
-        mutable.update { s ->
-            placed = s.reveal == null
-            if (placed) s.copy(reveal = shown) else s
-        }
-        if (!placed) notice("Кейс открыт: ${item.name}", false)
-        loadStore()
-        onInventoryChanged()
-    }
-
     fun claimQuest(quest: PackQuest) {
-        perform("quest:${quest.code}", "Награда не забралась — повтори") {
+        perform("quest:${quest.code}", tr("Награда не забралась — повтори")) {
             val claim = io { client.claimQuest(quest.code) }
             val updated = claim.quest.takeIf { it.code.isNotBlank() }
             if (updated != null) {
@@ -633,7 +693,7 @@ class ShopModel(
                 loadQuests()
             }
             val got = claim.item
-            notice(if (got != null) "Получено: ${got.name}" else "Задание выполнено", false)
+            notice(if (got != null) tr("Получено: {name}", got.name) else tr("Задание выполнено"), false)
             loadWorkshop()
             onInventoryChanged()
         }
@@ -645,7 +705,7 @@ class ShopModel(
      */
     fun completeFragments(item: RubyItem, celebrate: Boolean) {
         val code = item.code
-        perform("fragments:$code", "Фрагменты не докупились — повтори") {
+        perform("fragments:$code", tr("Фрагменты не докупились — повтори")) {
             val result = io { client.completeFragments(code) }
             val got = result.granted.firstOrNull() ?: item
             mutable.update { s ->
@@ -672,7 +732,7 @@ class ShopModel(
                 onDone()
                 val bonus = answer.bonus?.takeIf { it.tier.isNotBlank() }
                 val shown = if (bonus != null) {
-                    reveal("Ты поддерживаешь ${answer.name}", listOf(RevealCard(RewardKind.CHEST, tier = bonus.tier)))
+                    reveal(tr("Ты поддерживаешь {name}", answer.name), listOf(RevealCard(RewardKind.CHEST, tier = bonus.tier)))
                 } else {
                     reveal(KICKER_CREATOR, listOf(RevealCard(RewardKind.CREATOR, item = RubyItem(name = answer.name, previewUrl = answer.avatarUrl))))
                 }
@@ -720,7 +780,7 @@ class ShopModel(
             try {
                 val gift = io { client.claimWelcome() }
                 container.vault.write(WELCOME_KEY, "1")
-                val card = welcomeCard(gift) ?: return@launch
+                val card = welcomeCard(withCatalogArt(gift)) ?: return@launch
                 mutable.update { s -> s.copy(welcome = reveal(KICKER_WELCOME, listOf(card))) }
                 loadWorkshop()
                 onInventoryChanged()
@@ -733,8 +793,22 @@ class ShopModel(
         }
     }
 
+    /** The welcome answer names the item but may not carry its picture: the catalogue knows it by code. */
+    private suspend fun withCatalogArt(gift: WelcomeGift): WelcomeGift {
+        val item = gift.item ?: return gift
+        if (item.image != null) return gift
+        return try {
+            val catalog = io { net.millida.launcher.core.cosmetics.CosmeticsClient(container.millidaAuth).catalog() }
+            gift.copy(item = itemWithCatalogArt(item, catalog))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Throwable) {
+            gift
+        }
+    }
+
     fun claimProgress(reward: PlaytimeReward) {
-        perform("progress:${reward.code}", "Награда не забралась — повтори") {
+        perform("progress:${reward.code}", tr("Награда не забралась — повтори")) {
             val updated = io { client.claimProgress(reward.code) }
             val granted = updated.granted != false
             val cards: List<RevealCard> = if (!granted) {
@@ -745,7 +819,7 @@ class ShopModel(
                     if (updated.rubies > 0) add(RevealCard(RewardKind.RUBIES, amount = updated.rubies))
                 }
             }
-            if (!granted) notice("Эта награда уже получена", false)
+            if (!granted) notice(tr("Эта награда уже получена"), false)
             mutable.update { s ->
                 s.copy(
                     progress = s.progress.copy(
@@ -760,22 +834,222 @@ class ShopModel(
         }
     }
 
-    /** A fresh unpaid link is reused for a while: a new subscription per tap left a trail of "awaiting payment". */
-    fun subscribePlus() {
+    /** A fresh unpaid link of the same tier is reused for a while: a new subscription per tap left a trail of "awaiting payment". */
+    fun subscribePlus(tier: PlusTier = PlusTier.PLUS) {
         val cached = payLink
-        if (cached != null && SystemClock.elapsedRealtime() - payLinkAt < PAY_LINK_TTL_MS) {
+        if (cached != null && payTier == tier && SystemClock.elapsedRealtime() - payLinkAt < PAY_LINK_TTL_MS) {
             awaitingPayment = true
             mutable.update { it.copy(link = ShopLink(serials.incrementAndGet(), cached.url)) }
             return
         }
-        perform("plus", "Подписка не оформилась — повтори") {
-            val url = io { client.subscribePlus() }
+        perform("plus", tr("Подписка не оформилась — повтори")) {
+            val url = io { client.subscribePlus(tier.name) }
             val link = ShopLink(serials.incrementAndGet(), url)
             payLink = link
+            payTier = tier
             payLinkAt = SystemClock.elapsedRealtime()
             awaitingPayment = true
             mutable.update { it.copy(link = link) }
         }
+    }
+
+    /** A payment link is waiting in the browser: the button says "open the payment" instead of starting another. */
+    fun paymentWaiting(tier: PlusTier): Boolean =
+        payLink != null && payTier == tier && SystemClock.elapsedRealtime() - payLinkAt < PAY_LINK_TTL_MS
+
+    fun buySet(set: ShopSet, way: SetColorway) {
+        perform("set:${set.id}", tr("Набор не купился — повтори")) {
+            try {
+                val bought = io { client.buySet(set.id, way.name, way.price) }
+                val granted = bought.granted.ifEmpty { way.items.filterNot { it.owned }.map { it.item } }
+                mutable.update { s -> s.copy(balance = bought.balance, reveal = reveal(KICKER_BOUGHT, granted.map { itemCard(it) })) }
+                onInventoryChanged()
+            } finally {
+                loadSets()
+                loadStore()
+            }
+        }
+    }
+
+    fun openCase(case: ShopCase, mode: CaseMode) {
+        var run: CaseRun? = null
+        mutable.update { s ->
+            if (s.caseRun != null) {
+                run = null
+                s
+            } else {
+                val next = CaseRun(serials.incrementAndGet(), case, mode, freshRequestId())
+                run = next
+                s.copy(caseRun = next)
+            }
+        }
+        sendCase(run ?: return)
+    }
+
+    fun retryCase() {
+        var run: CaseRun? = null
+        mutable.update { s ->
+            val current = s.caseRun
+            if (current == null || current.result != null) {
+                run = null
+                s
+            } else {
+                val next = current.copy(attempt = current.attempt + 1, error = null)
+                run = next
+                s.copy(caseRun = next)
+            }
+        }
+        sendCase(run ?: return)
+    }
+
+    /** "Ещё раз": the same case the same way, except a free first case is followed by a paid one. */
+    fun againCase() {
+        var run: CaseRun? = null
+        mutable.update { s ->
+            val current = s.caseRun
+            if (current?.result == null) {
+                run = null
+                s
+            } else {
+                val mode = if (current.mode == CaseMode.FREE) CaseMode.ONE else current.mode
+                val case = s.cases.data?.cases?.firstOrNull { it.id == current.case.id } ?: current.case
+                val next = CaseRun(serials.incrementAndGet(), case, mode, freshRequestId())
+                run = next
+                s.copy(caseRun = next)
+            }
+        }
+        sendCase(run ?: return)
+        loadCases()
+    }
+
+    fun closeCase() {
+        var closed: CaseRun? = null
+        mutable.update { s ->
+            closed = s.caseRun
+            s.copy(caseRun = null)
+        }
+        val run = closed ?: return
+        if (run.result != null) settleCase(run.case.paidInShards, run.fresh.isNotEmpty())
+    }
+
+    private fun sendCase(run: CaseRun) {
+        scope.launch {
+            try {
+                val opened = io { client.openCase(run.case.id, run.key, run.mode) }
+                var attached = false
+                mutable.update { s ->
+                    val current = s.caseRun
+                    attached = current != null && current.serial == run.serial
+                    val counted = s.copy(balance = opened.balance, shards = opened.shards ?: s.shards)
+                    if (attached && current != null && current.result == null) counted.copy(caseRun = current.copy(result = opened, error = null)) else counted
+                }
+                if (!attached) {
+                    notice(tr("Ящик открыт — награда уже у тебя"), false)
+                    settleCase(run.case.paidInShards, true)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                Log.w(TAG, "ящик ${run.case.id} не открылся: ${error.message}")
+                if (error.isSessionLost()) onSessionLost()
+                val text = textOf(error, tr("Ящик не открылся — повтори"))
+                var attached = false
+                mutable.update { s ->
+                    val current = s.caseRun
+                    attached = current != null && current.serial == run.serial
+                    if (attached && current != null && current.result == null && current.attempt == run.attempt) {
+                        s.copy(caseRun = current.copy(error = text))
+                    } else {
+                        s
+                    }
+                }
+                if (!attached && mutable.value.signedIn) {
+                    notice(text, true)
+                    loadCases()
+                }
+            }
+        }
+    }
+
+    private fun settleCase(shards: Boolean, inventory: Boolean) {
+        loadCases()
+        loadSets()
+        loadBalance()
+        if (shards) loadWorkshop()
+        if (inventory) onInventoryChanged()
+    }
+
+    /** A play chest is claimed first, then opened like any other: the service hands back its id. */
+    fun claimPlayChest() {
+        perform("play", tr("Сундук не забрался, попробуй позже")) {
+            try {
+                val claim = io { client.claimPlayChest() }
+                mutable.update { s -> s.copy(play = ShopLoad(claim.view), playAt = SystemClock.elapsedRealtime()) }
+                if (claim.chestId.isNotBlank()) {
+                    val chest = PendingChest(id = claim.chestId, tier = "COMMON", source = "play", title = claim.chest, createdAt = Instant.now().toString())
+                    openChests(listOf(chest))
+                }
+            } catch (failed: Throwable) {
+                if (failed !is CancellationException) loadPlay()
+                throw failed
+            }
+        }
+    }
+
+    fun claimTelegram() {
+        perform("telegram", tr("Подписка не проверилась — повтори")) {
+            try {
+                val answer = io { client.claimTelegram() }
+                mutable.update { s -> s.copy(telegram = answer, balance = answer.balance ?: s.balance) }
+                creditSocial(answer.granted, answer.amount, tr("Награда за подписку уже забрана"))
+            } catch (failed: Throwable) {
+                if (failed !is CancellationException) loadSocial()
+                throw failed
+            }
+        }
+    }
+
+    fun claimDiscord() {
+        perform("discord", tr("Сервер Discord не проверился — повтори")) {
+            try {
+                val answer = io { client.claimDiscord() }
+                mutable.update { s -> s.copy(discord = answer, balance = answer.balance ?: s.balance) }
+                creditSocial(answer.granted, answer.amount, tr("Награда за Discord уже забрана"))
+            } catch (failed: Throwable) {
+                if (failed !is CancellationException) loadSocial()
+                throw failed
+            }
+        }
+    }
+
+    private fun creditSocial(granted: Boolean, amount: Long, already: String) {
+        if (!granted) {
+            notice(already, false)
+            return
+        }
+        val shown = reveal(KICKER_CREDITED, listOf(RevealCard(RewardKind.RUBIES, amount = amount)))
+        mutable.update { s -> if (s.reveal == null) s.copy(reveal = shown) else s }
+    }
+
+    /** The Discord account link is the site's OAuth page; the reward is checked when the player comes back. */
+    fun linkDiscord() {
+        perform("discord-link", tr("Не получилось открыть привязку Discord, попробуй ещё раз")) {
+            val url = io { client.discordLinkUrl() }
+            mutable.update { it.copy(link = ShopLink(serials.incrementAndGet(), url)) }
+        }
+    }
+
+    /** One request per case a session; a failure is not remembered, so «Повторить» asks again. */
+    suspend fun caseContents(id: String): CaseContents {
+        contents[id]?.let { return it }
+        val loaded = io { client.caseContents(id) }
+        contents[id] = loaded
+        return loaded
+    }
+
+    /** Opens a link the caller has already checked against its own hosts. */
+    fun openChecked(url: String) {
+        mutable.update { it.copy(link = ShopLink(serials.incrementAndGet(), url)) }
     }
 
     fun managePlus() {
@@ -796,8 +1070,10 @@ class ShopModel(
 
     private fun signOut() {
         tickets.clear()
+        contents.clear()
         welcomeTried = false
         payLink = null
+        payTier = PlusTier.PLUS
         awaitingPayment = false
         primedAt = 0L
         if (mutable.value != ShopState()) mutable.value = ShopState()
@@ -805,7 +1081,33 @@ class ShopModel(
 
     private fun loadBalance() = quiet("balance", { client.balance() }) { s, v -> s.copy(balance = v.balance) }
 
-    private fun loadWallet() = quiet("wallet", { container.wallet.balance() }) { s, v -> s.copy(walletKopecks = v.availableKopecks) }
+    /** The money view is what purchases are checked with; the cabinet wallet stays as the fallback for an older service. */
+    private fun loadWallet() = quiet("wallet", {
+        try {
+            client.money().balance.kopecks
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (older: RubiesError) {
+            container.wallet.balance().availableKopecks
+        }
+    }) { s, v -> s.copy(walletKopecks = v) }
+
+    private fun loadSets() = load("sets", { client.sets() }, { it.sets }, { s, v -> s.copy(sets = v) })
+
+    private fun loadCases() = load("cases", { client.cases() }, { it.cases }, { s, v -> s.copy(cases = v) })
+
+    private fun loadPlay() = load(
+        "play",
+        { client.playChests() },
+        { it.play },
+        { s, v -> s.copy(play = v) },
+        also = { s, _ -> s.copy(playAt = SystemClock.elapsedRealtime()) },
+    )
+
+    private fun loadSocial() {
+        quiet("telegram", { client.telegram() }, onError = { it.copy(telegram = null) }) { s, v -> s.copy(telegram = v) }
+        quiet("discord", { client.discord() }, onError = { it.copy(discord = null) }) { s, v -> s.copy(discord = v) }
+    }
 
     private fun loadRules() {
         mutable.update { it.copy(rulesFailed = false) }
@@ -846,7 +1148,7 @@ class ShopModel(
             placed = s.reveal == null
             if (placed) s.copy(reveal = shown) else s
         }
-        if (!placed) notice("PLUS подключён — забирай награды золотой строки", false)
+        if (!placed) notice(tr("PLUS подключён — забирай награды золотой строки"), false)
     }
 
     private fun loadProgress() = load("progress", { client.progress() }, { it.progress }, { s, v -> s.copy(progress = v) })
@@ -971,23 +1273,22 @@ class ShopModel(
         const val STALE_MS = 60_000L
         const val PAY_LINK_TTL_MS = 15 * 60_000L
         const val PLUS_MANAGE_URL = "https://millida.net/profile#plus"
-        const val LOAD_FALLBACK = "Не загрузилось — нажми «Повторить»"
-        const val KICKER_DAILY = "Бонус за вход"
-        const val KICKER_BOUGHT = "Куплено"
-        const val KICKER_GIFT = "Подарок дня"
-        const val KICKER_CREDITED = "Начислено"
-        const val KICKER_WORKSHOP = "Мастерская"
-        const val KICKER_WEEKLY = "Посылка недели"
-        const val KICKER_PLAYTIME = "Награда за игру"
-        const val KICKER_CHEST = "Сундук"
-        const val KICKER_XRAY = "Рентген-кейс"
-        const val KICKER_FRAGMENTS = "Фрагменты докуплены"
-        const val KICKER_WEEKLY_PATH = "Недельный путь"
-        const val KICKER_WELCOME = "Подарок"
-        const val KICKER_PLUS = "Подписка"
-        const val KICKER_CREATOR = "Код автора"
+        val LOAD_FALLBACK: String get() = tr("Не загрузилось — нажми «Повторить»")
+        val KICKER_DAILY: String get() = tr("Бонус за вход")
+        val KICKER_BOUGHT: String get() = tr("Куплено")
+        val KICKER_GIFT: String get() = tr("Подарок дня")
+        val KICKER_CREDITED: String get() = tr("Начислено")
+        val KICKER_WORKSHOP: String get() = tr("Мастерская")
+        val KICKER_WEEKLY: String get() = tr("Посылка недели")
+        val KICKER_PLAYTIME: String get() = tr("Награда за игру")
+        val KICKER_CHEST: String get() = tr("Сундук")
+        val KICKER_FRAGMENTS: String get() = tr("Фрагменты докуплены")
+        val KICKER_WEEKLY_PATH: String get() = tr("Недельный путь")
+        val KICKER_WELCOME: String get() = tr("Подарок")
+        val KICKER_PLUS: String get() = tr("Подписка")
+        val KICKER_CREATOR: String get() = tr("Код автора")
         const val KEY_CREATOR = "creator"
-        const val CREATOR_FALLBACK = "Не получилось, попробуй позже"
+        val CREATOR_FALLBACK: String get() = tr("Не получилось, попробуй позже")
         const val WELCOME_KEY = "shop-welcome-claimed"
     }
 }
@@ -1001,6 +1302,19 @@ object RewardKind {
     const val STARS = "STARS"
     const val PLUS = "PLUS"
     const val CREATOR = "CREATOR"
+}
+
+/** An item without a picture takes the catalogue's one (and its slot and colours); unknown codes stay as they are. */
+internal fun itemWithCatalogArt(item: RubyItem, catalog: net.millida.launcher.core.cosmetics.CosmeticCatalog): RubyItem {
+    val known = catalog.byId(item.code) ?: return item
+    return item.copy(
+        name = item.name.ifBlank { known.name },
+        slot = item.slot.ifBlank { known.slot },
+        rarity = item.rarity.ifBlank { known.rarity },
+        preview = known.preview.ifEmpty { null },
+        color = item.color.ifBlank { known.tint },
+        tintFrom = item.tintFrom.ifBlank { known.tintFrom },
+    )
 }
 
 /** The newcomer card: fragments with their bar, or the whole item when the service gave it outright. */
@@ -1070,6 +1384,36 @@ private fun rewardCard(reward: RubyReward): RevealCard {
 
 private fun itemCard(item: RubyItem): RevealCard = RevealCard(RewardKind.ITEM, rarity = item.rarity, item = item)
 
+/** A case reward on the shared reveal card: a duplicate says what it turned into, fragments show their bar. */
+internal fun caseCard(reward: CaseReward): RevealCard {
+    val item = reward.item
+    return when (reward.kind) {
+        CaseOpened.KIND_RUBIES -> RevealCard(RewardKind.RUBIES, amount = reward.amount)
+        CaseOpened.KIND_SHARDS -> RevealCard(RewardKind.SHARDS, amount = reward.amount)
+        CaseOpened.KIND_FRAGMENTS -> if (item == null) {
+            RevealCard(RewardKind.SHARDS, amount = reward.amount)
+        } else {
+            val have = reward.frag?.have ?: 0
+            val need = reward.frag?.need ?: 0
+            RevealCard(
+                kind = RewardKind.FRAGMENTS,
+                amount = reward.amount,
+                rarity = item.rarity,
+                item = item,
+                have = have,
+                need = need,
+                gain = reward.amount.toInt(),
+                completed = need in 1..have,
+            )
+        }
+        else -> if (item == null) {
+            RevealCard(RewardKind.SHARDS, amount = reward.amount)
+        } else {
+            RevealCard(RewardKind.ITEM, rarity = item.rarity, item = item, duplicate = reward.dup, shards = if (reward.dup) reward.amount else 0L)
+        }
+    }
+}
+
 /** The workshop trades shards for fragments, never the whole item: the card shows the bar and the top-up price. */
 internal fun craftCard(made: CraftResult, offer: WorkshopOffer): RevealCard {
     val item = made.item.takeIf { it.code.isNotBlank() } ?: offer.item
@@ -1128,7 +1472,7 @@ private fun Throwable.isSessionLost(): Boolean =
         .any { it is Unauthorized || it is SignInRequired }
 
 private fun textOf(error: Throwable, fallback: String): String = when {
-    error.isSessionLost() -> "Вход Millida истёк — войди заново"
+    error.isSessionLost() -> tr("Вход Millida истёк — войди заново")
     error is RubiesError -> error.message?.takeIf { it.isNotBlank() } ?: fallback
     else -> FriendsErrors.text(error, fallback)
 }

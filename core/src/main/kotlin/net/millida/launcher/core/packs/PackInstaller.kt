@@ -4,10 +4,13 @@ import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.http.RemoteFile
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.profile.Profile
 import net.millida.launcher.core.profile.ProfileStore
 import java.io.File
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withPermit
 import java.io.IOException
 
 /**
@@ -40,6 +43,7 @@ class PackInstaller(
     private val downloader: Downloader,
     private val versions: PackVersionResolver = PackVersionResolver.plain(),
     private val hosts: PackHostPolicy = PackHostPolicy(),
+    private val gate: PackDownloadGate = PackDownloadGate.OPEN,
 ) {
 
     @Throws(IOException::class)
@@ -48,9 +52,10 @@ class PackInstaller(
         target: Profile? = null,
         onProgress: (PackProgress) -> Unit = {},
     ): Profile {
-        val stage = newStage()
+        val stage = newStage(content.plan)
+        var keepStage = false
         try {
-            onProgress(PackProgress("Готовим файлы сборки"))
+            onProgress(PackProgress(tr("Готовим файлы сборки")))
             content.trees.forEach { PackArchive.copyTree(it, stage) }
             File(stage, PackOriginStore.FILE_NAME).delete()
             File(stage, "millida.pack.json").delete()
@@ -60,10 +65,19 @@ class PackInstaller(
             if (!ownLaunch) File(stage, PhoneFit.PACK_LAUNCH_FILE).delete()
             val catalogue = content.plan.source == PackSource.MILLIDA_CATALOG && catalogSlugValid(content.plan.sourceId)
 
-            val landed = download(content.plan.files, stage, onProgress)
+            val bytes = content.plan.files.sumOf { it.size.coerceAtLeast(0) }
+            if (bytes > 0 && !gate.allow(bytes, content.plan.name)) throw PackDownloadDeclined()
+            val landed = try {
+                download(content.plan.files, stage, onProgress)
+            } catch (error: IOException) {
+                // Files already on disk stay: the next try goes on from where the network broke.
+                keepStage = true
+                throw error
+            }
+
             val shipped = PackKeep.shipped(stage)
 
-            onProgress(PackProgress("Определяем версию игры"))
+            onProgress(PackProgress(tr("Определяем версию игры")))
             val choice = if (ownLaunch) {
                 PackVersionChoice(content.plan.gameVersion, content.plan.loaderVersion)
             } else {
@@ -81,7 +95,7 @@ class PackInstaller(
                 )
             } ?: newProfile(content.plan, choice)
 
-            onProgress(PackProgress("Переносим файлы сборки"))
+            onProgress(PackProgress(tr("Переносим файлы сборки")))
             val directory = profiles.directory(profile)
             val previous = PackOriginStore.read(directory)
             commit(stage, directory, PackMerge.previouslyShipped(directory, previous))
@@ -109,10 +123,10 @@ class PackInstaller(
                 ),
             )
             profiles.upsert(profile)
-            onProgress(PackProgress("Сборка установлена"))
+            onProgress(PackProgress(tr("Сборка установлена")))
             return profile
         } finally {
-            stage.deleteRecursively()
+            if (!keepStage) stage.deleteRecursively()
             content.workDir?.deleteRecursively()
         }
     }
@@ -123,40 +137,51 @@ class PackInstaller(
         stage: File,
         onProgress: (PackProgress) -> Unit,
     ): List<PackOriginFile> {
-        val landed = ArrayList<PackOriginFile>(files.size)
-        files.forEachIndexed { index, entry ->
-            val target = SafePath.join(stage, entry.path)
-            var lastError: IOException? = null
-            var done = false
-            for (url in entry.urls) {
-                try {
-                    hosts.check(url)
-                    downloader.fetch(RemoteFile(url = url, target = target, sha1 = entry.sha1, size = entry.size))
-                    landed += PackOriginFile(
-                        path = entry.path,
-                        url = url,
-                        sha1 = entry.sha1.orEmpty(),
-                        size = entry.size,
-                        projectId = entry.projectId,
-                        versionId = entry.versionId,
-                    )
-                    done = true
-                    break
-                } catch (error: IOException) {
-                    lastError = error
+        val results = arrayOfNulls<PackOriginFile>(files.size)
+        val finished = java.util.concurrent.atomic.AtomicInteger(0)
+        val gate = kotlinx.coroutines.sync.Semaphore(PARALLEL_FILES)
+        kotlinx.coroutines.coroutineScope {
+            files.forEachIndexed { index, entry ->
+                launch(kotlinx.coroutines.Dispatchers.IO) {
+                    gate.withPermit {
+                        val target = SafePath.join(stage, entry.path)
+                        var lastError: IOException? = null
+                        // A break of the link is waited out: three rounds with a growing pause before a file is given up.
+                        for (round in 0 until ROUNDS) {
+                            if (round > 0) kotlinx.coroutines.delay(ROUND_PAUSE_MS * round)
+                            for (url in entry.urls) {
+                                try {
+                                    hosts.check(url)
+                                    downloader.fetch(RemoteFile(url = url, target = target, sha1 = entry.sha1, size = entry.size))
+                                    results[index] = PackOriginFile(
+                                        path = entry.path,
+                                        url = url,
+                                        sha1 = entry.sha1.orEmpty(),
+                                        size = entry.size,
+                                        projectId = entry.projectId,
+                                        versionId = entry.versionId,
+                                    )
+                                    break
+                                } catch (error: IOException) {
+                                    lastError = error
+                                }
+                            }
+                            if (results[index] != null) break
+                        }
+                        if (results[index] == null) {
+                            if (entry.required) {
+                                throw IOException(
+                                    tr("не скачался файл сборки {path}: {0} — проверь сеть и попробуй ещё раз", entry.path, lastError?.message ?: tr("нет ответа")),
+                                )
+                            }
+                            target.delete()
+                        }
+                        onProgress(finished.incrementAndGet().let { n -> PackProgress(tr("Файлы сборки: {0} из {1}", n, files.size), n, files.size, "") })
+                    }
                 }
             }
-            if (!done) {
-                if (entry.required) {
-                    throw IOException(
-                        "не скачался файл сборки ${entry.path}: ${lastError?.message ?: "нет ответа"} — проверь сеть и попробуй ещё раз",
-                    )
-                }
-                target.delete()
-            }
-            onProgress(PackProgress("Файлы сборки", index + 1, files.size, entry.path))
         }
-        return landed
+        return results.filterNotNull()
     }
 
     private fun takenNames(exceptId: String): Set<String> =
@@ -197,7 +222,7 @@ class PackInstaller(
                     if (target.exists()) {
                         val moved = File(directory, PackParking.parkedName(entry.name, stamp))
                         if (!target.renameTo(moved)) {
-                            throw IOException("не удалось освободить папку ${entry.name} — закрой игру и повтори установку")
+                            throw IOException(tr("не удалось освободить папку {name} — закрой игру и повтори установку", entry.name))
                         }
                         parked += target to moved
                         aside = moved
@@ -214,7 +239,7 @@ class PackInstaller(
                     if (target.exists()) {
                         val moved = File(directory, PackParking.parkedName(entry.name, stamp))
                         if (!target.renameTo(moved)) {
-                            throw IOException("не удалось освободить файл ${entry.name} — закрой игру и повтори установку")
+                            throw IOException(tr("не удалось освободить файл {name} — закрой игру и повтори установку", entry.name))
                         }
                         parked += target to moved
                     } else {
@@ -244,18 +269,31 @@ class PackInstaller(
             val copied = runCatching { from.copyRecursively(into, overwrite = false) }.getOrDefault(false)
             if (!copied) {
                 into.deleteRecursively()
-                throw IOException("не удалось перенести «$folder/$name» в обновлённую сборку — освободи место и повтори")
+                throw IOException(tr("не удалось перенести «{folder}/{name}» в обновлённую сборку — освободи место и повтори", folder, name))
             }
         }
     }
 
-    private fun newStage(): File {
+    /** One stage per pack version, so a broken download is continued, not started over. */
+    private fun newStage(plan: PackPlan): File {
         val root = File(layout.caches, "packs")
         root.mkdirs()
-        val stage = File(root, "stage-" + System.nanoTime())
-        stage.deleteRecursively()
+        val now = System.currentTimeMillis()
+        root.listFiles { f -> f.isDirectory && f.name.startsWith("stage-") }.orEmpty()
+            .filter { now - it.lastModified() > STAGE_KEEP_MS }
+            .forEach { it.deleteRecursively() }
+        val key = "${plan.source.id}|${plan.sourceId}|${plan.versionId}|${plan.name}".hashCode().toUInt().toString(16)
+        val stage = File(root, "stage-$key")
         stage.mkdirs()
+        stage.setLastModified(now)
         return stage
+    }
+
+    private companion object {
+        const val STAGE_KEEP_MS = 2 * 24 * 3_600_000L
+        const val PARALLEL_FILES = 6
+        const val ROUNDS = 3
+        const val ROUND_PAUSE_MS = 4_000L
     }
 }
 

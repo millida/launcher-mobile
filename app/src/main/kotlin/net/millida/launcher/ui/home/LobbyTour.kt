@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalDensity
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.LocalReducedMotion
 import net.millida.launcher.ui.LocalWideLayout
 import net.millida.launcher.ui.LocalTour
@@ -21,16 +22,16 @@ import net.millida.launcher.ui.TourViewport
 import net.millida.launcher.ui.bringIntoTour
 
 /** The desktop guide's steps, in its order, pointed at the phone lobby's own elements. */
-private val LOBBY_STEPS = listOf(
-    TourStep(TourTarget.PLAY, "Кнопка «Играть»", "Нет сборок — создаст первую. Дальше сама скачает игру и запустит"),
-    TourStep(TourTarget.BUILDS, "Твои сборки", "Полка под «Играть»: выбери, во что играешь сегодня"),
-    TourStep(TourTarget.CHARACTER, "Твой персонаж", "Стоит в том, что ты надел. Нажми — скины, плащи и косметика"),
-    TourStep(TourTarget.WARDROBE, "Скины и плащи", "Свой скин, плащ и косметика. Видно на серверах с аккаунтом Millida"),
-    TourStep(TourTarget.SHOP, "Магазин", "Рубины, ежедневный бонус и вещи. «!» — ждёт бесплатный бонус"),
-    TourStep(TourTarget.SERVER, "Свой сервер", "Сервер для друзей, есть бесплатный тариф"),
-    TourStep(TourTarget.FRIENDS, "Друзья", "Кто в сети и где играет. Чат и приглашение — одной кнопкой"),
-    TourStep(TourTarget.ACCOUNT, "Аккаунт", "Переключение аккаунтов и лицензия Minecraft"),
-    TourStep(TourTarget.SETTINGS, "Настройки", "Цвет кнопок, звук и память. Гайд запускается отсюда заново"),
+private val LOBBY_STEPS get() = listOf(
+    TourStep(TourTarget.PLAY, tr("Кнопка «Играть»"), tr("Нет сборок — создаст первую. Дальше сама скачает игру и запустит")),
+    TourStep(TourTarget.BUILDS, tr("Твои сборки"), tr("Полка под «Играть»: выбери, во что играешь сегодня")),
+    TourStep(TourTarget.CHARACTER, tr("Твой персонаж"), tr("Стоит в том, что ты надел. Нажми — скины, плащи и косметика")),
+    TourStep(TourTarget.WARDROBE, tr("Скины и плащи"), tr("Свой скин, плащ и косметика. Видно на серверах с аккаунтом Millida")),
+    TourStep(TourTarget.SHOP, tr("Магазин"), tr("Рубины, ежедневный бонус и вещи. «!» — ждёт бесплатный бонус")),
+    TourStep(TourTarget.SERVER, tr("Свой сервер"), tr("Сервер для друзей, есть бесплатный тариф")),
+    TourStep(TourTarget.FRIENDS, tr("Друзья"), tr("Кто в сети и где играет. Чат и приглашение — одной кнопкой")),
+    TourStep(TourTarget.ACCOUNT, tr("Аккаунт"), tr("Переключение аккаунтов и лицензия Minecraft")),
+    TourStep(TourTarget.SETTINGS, tr("Настройки"), tr("Цвет кнопок, звук и память. Гайд запускается отсюда заново")),
 )
 
 private val LOBBY_STEPS_NO_BUILDS = LOBBY_STEPS.filter { it.target != TourTarget.BUILDS }
@@ -40,15 +41,15 @@ private val LOBBY_STEPS_NO_BUILDS = LOBBY_STEPS.filter { it.target != TourTarget
  * words there: the builds sit behind the «Сегодня играем» plate, which is
  * always on the scene, with or without builds.
  */
-private val WIDE_LOBBY_STEPS = LOBBY_STEPS.map { step ->
+private val WIDE_LOBBY_STEPS get() = LOBBY_STEPS.map { step ->
     when (step.target) {
         TourTarget.BUILDS -> TourStep(
             TourTarget.BUILDS,
-            "Что играем сегодня",
-            "Плашка слева от «Играть» открывает библиотеку: свои сборки, версии, режимы и серверы",
+            tr("Что играем сегодня"),
+            tr("Плашка слева от «Играть» открывает библиотеку: свои сборки, версии, режимы и серверы"),
         )
-        TourTarget.WARDROBE -> TourStep(TourTarget.WARDROBE, "Мой скин", step.text)
-        TourTarget.SERVER -> TourStep(TourTarget.SERVER, "Играть с друзьями", step.text)
+        TourTarget.WARDROBE -> TourStep(TourTarget.WARDROBE, tr("Мой скин"), step.text)
+        TourTarget.SERVER -> TourStep(TourTarget.SERVER, tr("Играть с друзьями"), step.text)
         else -> step
     }
 }

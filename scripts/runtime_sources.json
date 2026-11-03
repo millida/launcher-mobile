@@ -5,10 +5,25 @@
     "sha256": "3111f7b444e61f4fb312b04aa6bde674a8ade2a49cfb4cae2ace3e9a5a0fb870",
     "origin": "scripts/make_bundle.py: ZalithLauncher2 APK (GPL-3.0) + bridge/ of this repository (GPL-3.0-only)"
   },
+  "abiPacks": {
+    "armeabi-v7a": {
+      "file": "millida-runtime-arm.zip",
+      "s3Key": "mobile/runtime/millida-runtime-arm.zip",
+      "sha256": "ff2cea32f7fbe58b9401903baa84ca395b913853c76990d2f5f32dcc10575f7e",
+      "releaseAsset": {
+        "tag": "runtime-pack-arm32-2.4.11"
+      },
+      "origin": "scripts/make_bundle.py --abi armeabi-v7a: ZalithLauncher-2.4.11-armeabi-v7a.apk (GPL-3.0, sha256 73c6057c0d07d99c17828248679d0fb3a972233b1d5e995b825d8a363c6471d4) + millida-glfw.jar of the arm64 pack (GPL-3.0-only)"
+    }
+  },
   "downloads": {
     "jre8-android-arm64": {
       "url": "https://github.com/AngelAuraMC/angelauramc-openjdk-build/releases/download/download_jre8/jre8-android-arm64.tar.xz",
       "sha256": "9a59124d9791957d55c68be664ab76831f336cf2e1e1cd4414220c6fdbf0e06d"
+    },
+    "jre8-android-arm": {
+      "url": "https://github.com/AngelAuraMC/angelauramc-openjdk-build/releases/download/download_jre8/jre8-android-arm.tar.xz",
+      "sha256": "9dbee3b09af5f170e2ed9dd596bc81d0e573c88f8bf760c59c8fadbb9073d1e7"
     },
     "openjdk-LICENSE": {
       "url": "https://raw.githubusercontent.com/openjdk/jdk21u/jdk-21.0.1-ga/LICENSE",
@@ -233,6 +248,9 @@
       "id": "jre-8",
       "category": "jre",
       "major": 8,
+      "onlyAbis": [
+        "arm64-v8a"
+      ],
       "fromDownload": "jre8-android-arm64",
       "licenses": [],
       "notice": [
@@ -240,6 +258,22 @@
         "Binary: https://github.com/AngelAuraMC/angelauramc-openjdk-build/releases/tag/download_jre8 (CI run 22620663943).",
         "Build scripts and patches: https://github.com/AngelAuraMC/angelauramc-openjdk-build/tree/62359f04413c3ffe339e652b88a96d9087840cbf",
         "OpenJDK source revision: cea3cd4c1d7a (see the release file)."
+      ]
+    },
+    {
+      "id": "jre-8",
+      "category": "jre",
+      "major": 8,
+      "onlyAbis": [
+        "armeabi-v7a"
+      ],
+      "fromDownload": "jre8-android-arm",
+      "licenses": [],
+      "notice": [
+        "OpenJDK 8 (1.8.0_482) for Android arm (32-bit, client VM), GPL-2.0 with the Classpath Exception; LICENSE, ASSEMBLY_EXCEPTION and THIRD_PARTY_README are at the root of this folder.",
+        "Binary: https://github.com/AngelAuraMC/angelauramc-openjdk-build/releases/tag/download_jre8 (CI run 22620663943).",
+        "Build scripts and patches: https://github.com/AngelAuraMC/angelauramc-openjdk-build/tree/62359f04413c3ffe339e652b88a96d9087840cbf",
+        "OpenJDK source revision: b2165a2663ca (see the release file)."
       ]
     },
     {
@@ -253,7 +287,7 @@
         "openjdk-ADDITIONAL_LICENSE_INFO"
       ],
       "notice": [
-        "OpenJDK 21.0.1 for Android arm64, GPL-2.0 with the Classpath Exception.",
+        "OpenJDK 21.0.1 for Android {arch}, GPL-2.0 with the Classpath Exception.",
         "Taken from the runtime bundled in ZalithLauncher2: https://github.com/ZalithLauncher/ZalithLauncher2",
         "OpenJDK source: https://github.com/openjdk/jdk21u/tree/jdk-21.0.1-ga"
       ]
@@ -269,7 +303,7 @@
         "openjdk-ADDITIONAL_LICENSE_INFO"
       ],
       "notice": [
-        "OpenJDK 25.0.3 for Android arm64, GPL-2.0 with the Classpath Exception.",
+        "OpenJDK 25.0.3 for Android {arch}, GPL-2.0 with the Classpath Exception.",
         "Taken from the runtime bundled in ZalithLauncher2: https://github.com/ZalithLauncher/ZalithLauncher2",
         "OpenJDK source: https://github.com/openjdk/jdk25u/tree/jdk-25.0.3-ga"
       ]
@@ -312,14 +346,14 @@
         "libopenal: OpenAL Soft, LGPL-2.0-or-later (https://github.com/kcat/openal-soft).",
         "liblwjgl*: LWJGL 3.3.6, BSD-3-Clause. libEGL_angle/libGLESv2_angle: ANGLE, BSD-3-Clause. libEGL_mesa, libglapi, libzink_dri: Mesa, MIT.",
         "libshaderc, libspirv-cross-c-shared, libfreetype, libjnidispatch, libbytehook, libc++_shared, libcutils: their upstream licenses (Apache-2.0, FreeType/GPL-2.0, Apache-2.0/LGPL-2.1, MIT, Apache-2.0 with LLVM exception, Apache-2.0).",
-        "libmobileglues.so: MobileGlues 2.0.0, LGPL-2.1-only (licenses/mobileglues-LICENSE), unmodified binary from lib/arm64-v8a of MobileGlues_2.0.0.apk: https://github.com/MobileGL-Dev/MobileGlues-release/releases/tag/V2.0.0",
+        "libmobileglues.so: MobileGlues 2.0.0, LGPL-2.1-only (licenses/mobileglues-LICENSE), unmodified binary from lib/{abi} of MobileGlues_2.0.0.apk: https://github.com/MobileGL-Dev/MobileGlues-release/releases/tag/V2.0.0",
         "MobileGlues source of this binary: https://github.com/MobileGL-Dev/MobileGlues/tree/f56af31d3e490d95808b3adc4ace20234249a37a. It is a separate shared library loaded at run time and can be replaced by a build of that source.",
         "libmobileglues.so links statically glslang (BSD-3-Clause and others), SPIRV-Cross (Apache-2.0), cJSON (MIT), FidelityFX FSR 1 (MIT) and xxHash (BSD-2-Clause)."
       ],
       "addFiles": [
         {
           "download": "mobileglues-2.0.0.apk",
-          "member": "lib/arm64-v8a/libmobileglues.so",
+          "member": "lib/{abi}/libmobileglues.so",
           "as": "libmobileglues.so"
         }
       ],
@@ -340,6 +374,9 @@
     {
       "id": "sdl3",
       "category": "sdl",
+      "onlyAbis": [
+        "arm64-v8a"
+      ],
       "fromBuild": "sdl3",
       "licenses": [
         "sdl-LICENSE",

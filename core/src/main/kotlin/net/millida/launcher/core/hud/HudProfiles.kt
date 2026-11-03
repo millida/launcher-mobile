@@ -6,6 +6,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.atomicWriteText
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
 
@@ -89,9 +91,9 @@ data class HudProfiles(
 
     companion object {
         const val VERSION = 2
-        const val LEGACY = "Старая раскладка"
-        const val NEW_NAME = "Моя раскладка"
-        const val COPY_SUFFIX = "копия"
+        val LEGACY: String = trKey("Старая раскладка")
+        val NEW_NAME: String get() = tr("Моя раскладка")
+        val COPY_SUFFIX: String get() = tr("копия")
         const val MAX_PROFILES = 16
         const val MAX_NAME = 32
 
@@ -157,6 +159,9 @@ object HudTransfer {
             opacity = layout.opacity.takeIf { it.isFinite() }?.coerceIn(HudLayout.MIN_OPACITY, 1f) ?: HudLayout.DEFAULT_OPACITY,
             lookTap = if (layout.lookTap == HudKeys.MOUSE_RIGHT) HudKeys.MOUSE_RIGHT else HudKeys.MOUSE_LEFT,
             holdDelay = layout.holdDelay.coerceIn(HudLayout.MIN_HOLD_MS, HudLayout.MAX_HOLD_MS),
+            scheme = layout.scheme,
+            sizeScale = layout.shownSizeScale,
+            invertY = layout.invertY,
         )
         layout.controls.asSequence()
             .mapNotNull(::control)

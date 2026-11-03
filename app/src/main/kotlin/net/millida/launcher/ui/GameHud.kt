@@ -1,11 +1,13 @@
 package net.millida.launcher.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -16,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -35,6 +38,10 @@ private const val TOP_STRIP_DP = 56f
 private const val FLOAT_ZONE_SHARE = 0.4f
 private const val HOTBAR_GAP_DP = 4f
 private const val HIDDEN_ALPHA = 0.45f
+private const val GRID_LINE_DP = 32f
+private const val GRID_ALPHA = 0.35f
+private const val HANDLE_DP = 18f
+private const val HANDLE_INSET_DP = 2f
 
 private class HudGeometry(val width: Float, val height: Float, val hotbar: Rect, val density: Density) {
 
@@ -77,21 +84,39 @@ fun GameHud(
     onFly: () -> Unit,
     onSelect: (String?) -> Unit,
     onChange: (HudControl) -> Unit,
+    resolution: Float = 1f,
+    snap: Boolean = true,
+    onResize: (HudControl) -> Unit = onChange,
+    onGestureEnd: () -> Unit = {},
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val width = constraints.maxWidth
         val height = constraints.maxHeight
         val density = LocalDensity.current
-        val scale = Hotbar.scale(width, height, guiScale, forceUnicode)
+        // The game lays its hotbar out in its own pixels; a reduced resolution
+        // makes each of them bigger on the glass by the same factor.
+        val gameWidth = (width * resolution).toInt().coerceAtLeast(1)
+        val gameHeight = (height * resolution).toInt().coerceAtLeast(1)
+        val scale = Hotbar.scale(gameWidth, gameHeight, guiScale, forceUnicode)
         val geometry = HudGeometry(
             width = width.toFloat(),
             height = height.toFloat(),
-            hotbar = Rect(Hotbar.left(width, scale), Hotbar.reachTop(height, scale), Hotbar.right(width, scale), height.toFloat()),
+            hotbar = Rect(
+                Hotbar.left(gameWidth, scale) / resolution,
+                Hotbar.reachTop(gameHeight, scale) / resolution,
+                Hotbar.right(gameWidth, scale) / resolution,
+                height.toFloat(),
+            ),
             density = density,
         )
 
+        if (editing && snap) EditorGrid()
+
+        val sizeScale = if (editing) 1f else layout.shownSizeScale
         val shown = layout.controls.filter { control ->
             editing || (!control.hidden && control.visibility.shown(lookMode, flying))
+        }.map { control ->
+            if (sizeScale == 1f) control else control.copy(width = control.width * sizeScale, height = control.height * sizeScale)
         }
         shown.forEach { control ->
             key(control.id) {
@@ -115,8 +140,11 @@ fun GameHud(
                                 control = control,
                                 selected = control.id == selectedId,
                                 screen = Offset(geometry.width, geometry.height),
+                                snap = snap,
                                 onSelect = { onSelect(control.id) },
                                 onMove = onChange,
+                                onResize = onResize,
+                                onGestureEnd = onGestureEnd,
                             )
                         } else {
                             LiveControl(control, lookMode, opacity, sink, onAction, onFly)
@@ -165,16 +193,41 @@ private fun LiveControl(
 }
 
 @Composable
+private fun EditorGrid() {
+    val line = millida.border.copy(alpha = GRID_ALPHA)
+    Canvas(Modifier.fillMaxSize()) {
+        val step = GRID_LINE_DP.dp.toPx()
+        val stroke = 1.dp.toPx()
+        var x = step
+        while (x < size.width) {
+            drawRect(line, topLeft = Offset(x, 0f), size = Size(stroke, size.height))
+            x += step
+        }
+        var y = step
+        while (y < size.height) {
+            drawRect(line, topLeft = Offset(0f, y), size = Size(size.width, stroke))
+            y += step
+        }
+    }
+}
+
+@Composable
 private fun EditableControl(
     control: HudControl,
     selected: Boolean,
     screen: Offset,
+    snap: Boolean,
     onSelect: () -> Unit,
     onMove: (HudControl) -> Unit,
+    onResize: (HudControl) -> Unit,
+    onGestureEnd: () -> Unit,
 ) {
     val colors = millida
     val latest by rememberUpdatedState(control)
     val move by rememberUpdatedState(onMove)
+    val resize by rememberUpdatedState(onResize)
+    val ended by rememberUpdatedState(onGestureEnd)
+    val snapping by rememberUpdatedState(snap)
     val density = LocalDensity.current.density
     val icon = hudIcon(control.icon)
     val ink = if (selected) colors.onAccent else colors.fg
@@ -213,9 +266,12 @@ private fun EditableControl(
                                 (startY * screen.y + travelled.y) / density,
                                 screen.x / density,
                                 screen.y / density,
+                                grid = if (snapping) HudControl.SNAP_GRID else 1f,
                             ),
                         )
                     },
+                    onDragEnd = { ended() },
+                    onDragCancel = { ended() },
                 )
             },
         contentAlignment = Alignment.Center,
@@ -232,5 +288,54 @@ private fun EditableControl(
                 overflow = TextOverflow.Clip,
             )
         }
+        if (selected) {
+            ResizeHandle(
+                Modifier.align(Alignment.BottomEnd),
+                onStart = { latest.width },
+                onResize = { startWidth, travelled ->
+                    val wanted = startWidth + maxOf(travelled.x, travelled.y) / density
+                    val unit = if (latest.scale > 0f) latest.width / latest.scale else latest.width
+                    if (unit > 0f) resize(latest.withSize(wanted / unit))
+                },
+                onEnd = { ended() },
+            )
+        }
     }
+}
+
+/** The corner a finger drags to change the size, as in the editors of other launchers. */
+@Composable
+private fun ResizeHandle(
+    modifier: Modifier,
+    onStart: () -> Float,
+    onResize: (startWidth: Float, travelled: Offset) -> Unit,
+    onEnd: () -> Unit,
+) {
+    val colors = millida
+    val start by rememberUpdatedState(onStart)
+    val change by rememberUpdatedState(onResize)
+    val end by rememberUpdatedState(onEnd)
+    Box(
+        modifier
+            .padding(HANDLE_INSET_DP.dp)
+            .size(HANDLE_DP.dp)
+            .pixelSurface(fill = colors.onAccent, cut = MillidaCut.control, frame = PixelFrame.Button)
+            .pointerInput(Unit) {
+                var startWidth = 0f
+                var travelled = Offset.Zero
+                detectDragGestures(
+                    onDragStart = {
+                        startWidth = start()
+                        travelled = Offset.Zero
+                    },
+                    onDrag = { pointer, delta ->
+                        pointer.consume()
+                        travelled += delta
+                        change(startWidth, travelled)
+                    },
+                    onDragEnd = { end() },
+                    onDragCancel = { end() },
+                )
+            },
+    )
 }

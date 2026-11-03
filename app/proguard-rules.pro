@@ -15,6 +15,8 @@
 -keep class com.movtery.zalithlauncher.bridge.** { *; }
 -keep class com.movtery.zalithlauncher.game.input.** { *; }
 -keep class com.oracle.dalvik.VMLauncher { *; }
+# Native libbytehook.so of the runtime pack finds this class by name; unreferenced from Java, R8 would drop it.
+-keep class com.bytedance.android.bytehook.** { *; }
 -keep class net.millida.launcher.PackRuntime { *; }
 -keep class net.millida.launcher.PackInputSink { *; }
 

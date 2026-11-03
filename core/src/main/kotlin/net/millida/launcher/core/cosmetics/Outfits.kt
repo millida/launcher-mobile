@@ -12,6 +12,7 @@ import kotlinx.serialization.json.putJsonObject
 import kotlinx.serialization.json.addJsonObject
 import net.millida.launcher.core.Hashing
 import net.millida.launcher.core.atomicWriteText
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
 import java.io.IOException
@@ -46,7 +47,6 @@ data class Look(val skin: OutfitSkin, val cape: OutfitCape, val cosmetics: List<
 object Outfits {
     const val LIMIT = 12
     const val NAME_MAX = 24
-    private const val NAME_PREFIX = "Образ "
     private val SPACES = Regex("\\s+")
 
     fun parse(raw: JsonElement?): List<Outfit> {
@@ -113,8 +113,8 @@ object Outfits {
     /** "Образ N" with a free number: after removing "Образ 2" there is no second "Образ 3". */
     fun nextName(list: List<Outfit>): String {
         val taken = list.map { it.name }.toSet()
-        val free = (1..list.size + 1).firstOrNull { "$NAME_PREFIX$it" !in taken } ?: (list.size + 1)
-        return "$NAME_PREFIX$free"
+        val free = (1..list.size + 1).firstOrNull { tr("Образ {0}", it) !in taken } ?: (list.size + 1)
+        return tr("Образ {0}", free)
     }
 
     /** At the limit the list stays as it is; the screen tells why. */
@@ -162,7 +162,7 @@ class OutfitStore(private val dir: File) {
         return try {
             Outfits.parse(MojangJson.parseToJsonElement(file.readText()))
         } catch (broken: Exception) {
-            throw IOException("сохранённые образы не читаются — сохрани их заново", broken)
+            throw IOException(tr("сохранённые образы не читаются — сохрани их заново"), broken)
         }
     }
 
@@ -170,7 +170,7 @@ class OutfitStore(private val dir: File) {
         try {
             fileOf(accountId).atomicWriteText(Outfits.encode(list).toString())
         } catch (failed: Exception) {
-            throw IOException("образ не сохранился — освободи память телефона и повтори", failed)
+            throw IOException(tr("образ не сохранился — освободи память телефона и повтори"), failed)
         }
     }
 }

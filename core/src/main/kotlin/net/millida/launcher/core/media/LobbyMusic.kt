@@ -6,6 +6,7 @@ import kotlinx.coroutines.withContext
 import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.http.RemoteFile
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.AssetIndex
 import net.millida.launcher.core.mojang.MOJANG_RESOURCES_URL
 import net.millida.launcher.core.mojang.MojangJson
@@ -68,9 +69,9 @@ class LobbyMusic(
     private suspend fun latestIndex(): AssetIndex {
         val manifest = resolver.manifest()
         val release = manifest.latest.release.ifEmpty { manifest.releases().firstOrNull()?.id.orEmpty() }
-        if (release.isEmpty()) throw IOException("в списке версий нет релиза")
+        if (release.isEmpty()) throw IOException(tr("в списке версий нет релиза"))
         resolver.ensureVersionJson(release)
-        val ref = resolver.readLocal(release).assetIndex ?: throw IOException("у версии $release нет индекса ресурсов")
+        val ref = resolver.readLocal(release).assetIndex ?: throw IOException(tr("у версии {release} нет индекса ресурсов", release))
         val target = layout.assetIndex(ref.id)
         downloader.fetch(RemoteFile(ref.url, target, ref.sha1, ref.size))
         return MojangJson.decodeFromString(AssetIndex.serializer(), target.readText())

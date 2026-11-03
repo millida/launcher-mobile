@@ -13,11 +13,12 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 
+import net.millida.launcher.core.i18n.tr
 // The system kills the process when a service started with startForegroundService does not
 // confirm itself within seconds, so confirming is the very first thing this service does.
 class GameKeepAliveService : Service() {
 
-    private var title = "Игра запущена"
+    private var title = tr("Игра запущена")
 
     override fun onCreate() {
         super.onCreate()
@@ -61,14 +62,14 @@ class GameKeepAliveService : Service() {
     private fun prepareChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channel = NotificationChannel(CHANNEL_ID, "Игра", NotificationManager.IMPORTANCE_LOW)
+        val channel = NotificationChannel(CHANNEL_ID, tr("Игра"), NotificationManager.IMPORTANCE_LOW)
         channel.setShowBadge(false)
         manager.createNotificationChannel(channel)
     }
 
     private fun notification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
         .setContentTitle(title)
-        .setContentText("Пока идёт игра, система не выгрузит её из памяти")
+        .setContentText(tr("Пока идёт игра, система не выгрузит её из памяти"))
         .setSmallIcon(R.drawable.ic_stat_millida)
         .setOngoing(true)
         .setPriority(NotificationCompat.PRIORITY_LOW)

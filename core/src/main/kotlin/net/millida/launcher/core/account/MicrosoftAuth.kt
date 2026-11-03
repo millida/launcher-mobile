@@ -11,6 +11,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import net.millida.launcher.core.http.NetworkFaults
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
@@ -48,7 +49,7 @@ class MicrosoftAuth(
         json["error"]?.let { throw IOException(json.text("error_description").ifEmpty { it.jsonPrimitive.content }) }
         val device = json.text("device_code")
         val user = json.text("user_code")
-        if (device.isEmpty() || user.isEmpty()) throw IOException("Microsoft не выдал код устройства")
+        if (device.isEmpty() || user.isEmpty()) throw IOException(tr("Microsoft не выдал код устройства"))
         DeviceCodePrompt(
             deviceCode = device,
             userCode = user,
@@ -71,7 +72,7 @@ class MicrosoftAuth(
             throw IOException(json.text("error_description").ifEmpty { error })
         }
         val msToken = json.text("access_token")
-        if (msToken.isEmpty()) throw IOException("Microsoft не выдал токен")
+        if (msToken.isEmpty()) throw IOException(tr("Microsoft не выдал токен"))
         val chain = xboxChain(msToken)
         DevicePoll.Ready(chain.first, json.text("refresh_token"), chain.second)
     }
@@ -86,10 +87,10 @@ class MicrosoftAuth(
         val json = postJson("https://login.microsoftonline.com/consumers/oauth2/v2.0/token", body)
         val error = json.text("error")
         if (error == "invalid_grant" || error == "interaction_required") {
-            throw MicrosoftSignInRequired("Сессия Microsoft истекла — войди заново")
+            throw MicrosoftSignInRequired(tr("Сессия Microsoft истекла — войди заново"))
         }
         val msToken = json.text("access_token")
-        if (msToken.isEmpty()) throw IOException("Microsoft не ответил — повтори через минуту")
+        if (msToken.isEmpty()) throw IOException(tr("Microsoft не ответил — повтори через минуту"))
         val chain = xboxChain(msToken)
         DevicePoll.Ready(chain.first, json.text("refresh_token").ifEmpty { refreshToken }, chain.second)
     }
@@ -128,10 +129,10 @@ class MicrosoftAuth(
             }
         )
         val xblToken = xbl.text("Token")
-        if (xblToken.isEmpty()) throw IOException("Xbox Live отказал во входе — повтори через минуту")
+        if (xblToken.isEmpty()) throw IOException(tr("Xbox Live отказал во входе — повтори через минуту"))
         val uhs = xbl["DisplayClaims"]?.jsonObject?.get("xui")?.jsonArray?.firstOrNull()
             ?.jsonObject?.get("uhs")?.jsonPrimitive?.content
-            ?: throw IOException("Xbox Live не вернул идентификатор пользователя")
+            ?: throw IOException(tr("Xbox Live не вернул идентификатор пользователя"))
 
         val xsts = postJson(
             "https://xsts.auth.xboxlive.com/xsts/authorize",
@@ -145,7 +146,7 @@ class MicrosoftAuth(
             }
         )
         val xstsToken = xsts.text("Token")
-        if (xstsToken.isEmpty()) throw IOException("XSTS отказал — на аккаунте нет профиля Xbox")
+        if (xstsToken.isEmpty()) throw IOException(tr("XSTS отказал — на аккаунте нет профиля Xbox"))
         val xuid = xsts["DisplayClaims"]?.jsonObject?.get("xui")?.jsonArray?.firstOrNull()
             ?.jsonObject?.get("xid")?.jsonPrimitive?.content.orEmpty()
 
@@ -154,12 +155,12 @@ class MicrosoftAuth(
             buildJsonObject { put("identityToken", "XBL3.0 x=$uhs;$xstsToken") }
         )
         val mcToken = mc.text("access_token")
-        if (mcToken.isEmpty()) throw IOException("Minecraft отказал в сессии — повтори через минуту")
+        if (mcToken.isEmpty()) throw IOException(tr("Minecraft отказал в сессии — повтори через минуту"))
         val expires = mc.number("expires_in", 86400)
 
         val profile = getJson(PROFILE_URL, mcToken)
         val nick = profile.text("name")
-        if (nick.isEmpty()) throw IOException("На этом аккаунте нет лицензии Minecraft")
+        if (nick.isEmpty()) throw IOException(tr("На этом аккаунте нет лицензии Minecraft"))
 
         return GameSession(
             nick = nick,
@@ -192,7 +193,7 @@ class MicrosoftAuth(
     private fun execute(request: Request): JsonObject {
         call(request).use { response ->
             val text = response.body?.string().orEmpty()
-            val unreadable = "Сервер входа Microsoft ответил ${response.code} — повтори позже"
+            val unreadable = tr("Сервер входа Microsoft ответил {code} — повтори позже", response.code)
             if (text.isBlank()) throw IOException(unreadable)
             return try {
                 MojangJson.parseToJsonElement(text).jsonObject
@@ -208,7 +209,7 @@ class MicrosoftAuth(
     } catch (network: IOException) {
         NetworkFaults.unknownHost(network) ?: throw network
         throw IOException(
-            NetworkFaults.nameLookupAdvice("сервера входа Microsoft (${request.url.host})"),
+            NetworkFaults.microsoftLookupAdvice(request.url.host),
             network,
         )
     }

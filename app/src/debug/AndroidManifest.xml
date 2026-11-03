@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Только debug-сборка: тестовый телефон ставит свежую сборку без касаний экрана. -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!-- Только debug-сборка: http к локальному стенду модуля сайта (remote-ui-base.txt). В релиз не попадает. -->
+    <application android:networkSecurityConfig="@xml/network_security_config">
+        <receiver
+            android:name=".DebugInstallReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="net.millida.launcher.DEBUG_INSTALL" />
+            </intent-filter>
+        </receiver>
+        <receiver
+            android:name=".DebugPackTestReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="net.millida.launcher.DEBUG_PACK_TEST" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

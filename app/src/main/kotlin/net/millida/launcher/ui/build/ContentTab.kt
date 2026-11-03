@@ -429,7 +429,7 @@ private fun SkinDiagnosisCard(profile: Profile, diagnosis: SkinDiagnosis, busy: 
     val colors = millida
     MCard {
         Text("Скина нет в игре?", style = MillidaType.rowTitle, color = colors.fg)
-        if (diagnosis.summary.isNotBlank()) {
+        if (diagnosis.summary.isNotBlank() && diagnosis.checks.none { !it.ok && it.detail == diagnosis.summary }) {
             Spacer(Modifier.height(4.dp))
             Text(diagnosis.summary, style = MillidaType.small, color = colors.fgSubtle)
         }

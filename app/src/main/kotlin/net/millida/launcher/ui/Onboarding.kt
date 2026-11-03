@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
+import net.millida.launcher.core.i18n.tr
 private class OnboardingStep(
     val icon: MillidaIcon,
     val tone: MHeroTone,
@@ -52,30 +53,30 @@ private fun onboardingSteps(bundled: Boolean, accentTone: MHeroTone): List<Onboa
     OnboardingStep(
         icon = MIcons.box,
         tone = MHeroTone.Daily,
-        title = "Всё ставится само",
+        title = tr("Всё ставится само"),
         text = if (bundled) {
-            "Java и графика распакуются при первом запуске — один раз"
+            tr("Java и графика распакуются при первом запуске — один раз")
         } else {
-            "Java и графика скачаются при первом запуске игры — один раз"
+            tr("Java и графика скачаются при первом запуске игры — один раз")
         },
     ),
     OnboardingStep(
         icon = MIcons.chest,
         tone = accentTone,
-        title = "Сборка — твоя игра",
-        text = "Версия, моды и память у каждой свои",
+        title = tr("Сборка — твоя игра"),
+        text = tr("Версия, моды и память у каждой свои"),
     ),
     OnboardingStep(
         icon = MIcons.users,
         tone = MHeroTone.Wardrobe,
-        title = "Аккаунт Millida",
-        text = "Скин и плащ на серверах, друзья и облако сборок",
+        title = tr("Аккаунт Millida"),
+        text = tr("Скин и плащ на серверах, друзья и облако сборок"),
     ),
     OnboardingStep(
         icon = MIcons.hand,
         tone = MHeroTone.Shop,
-        title = "Управление под тебя",
-        text = "В игре: «Меню» → «Настроить управление»",
+        title = tr("Управление под тебя"),
+        text = tr("В игре: «Меню» → «Настроить управление»"),
     ),
 )
 
@@ -108,13 +109,8 @@ fun Onboarding(bundledRuntime: Boolean, onDone: () -> Unit, onTour: (() -> Unit)
                     .padding(horizontal = screenPadding),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "Millida",
-                    modifier = Modifier.weight(1f),
-                    style = MillidaType.brand.copy(fontSize = MillidaType.barTitle.fontSize),
-                    color = colors.fg,
-                )
-                if (!last) MTextButton("Пропустить", onClick = onDone)
+                BrandLockup(signSize = 22.dp, color = colors.fg, modifier = Modifier.weight(1f))
+                if (!last) MTextButton(tr("Пропустить"), onClick = onDone)
             }
             HorizontalPager(
                 state = pager,
@@ -133,7 +129,7 @@ fun Onboarding(bundledRuntime: Boolean, onDone: () -> Unit, onTour: (() -> Unit)
                 ProgressSquares(count = steps.size, current = pager.currentPage)
                 Spacer(Modifier.height(20.dp))
                 MPrimaryButton(
-                    text = if (last) "Начать" else "Дальше",
+                    text = if (last) tr("Начать") else tr("Дальше"),
                     onClick = {
                         if (last) {
                             onDone()
@@ -149,7 +145,7 @@ fun Onboarding(bundledRuntime: Boolean, onDone: () -> Unit, onTour: (() -> Unit)
                 )
                 if (last && onTour != null) {
                     Spacer(Modifier.height(8.dp))
-                    MTextButton("Показать лобби", onClick = onTour, icon = MIcons.info)
+                    MTextButton(tr("Показать лобби"), onClick = onTour, icon = MIcons.info)
                 }
             }
         }

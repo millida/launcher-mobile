@@ -1,5 +1,6 @@
 package net.millida.launcher
 
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.input.KeyCodes
 import net.millida.launcher.runtime.GameInputSink
 import org.libsdl.app.SDLActivity
@@ -10,6 +11,9 @@ import org.libsdl.app.SDLInputConnection
  * keyboard and the gamepad keep speaking GLFW codes, and only here they are
  * turned into what SDL's Android backend takes — Android key codes and the
  * whole mouse button state as Android bits.
+ *
+ * Every call leaves the caller's thread, see [SdlHost]: SDL takes its lock on
+ * each of them, and the game thread holds that lock while it swaps buffers.
  */
 object SdlInputSink : GameInputSink {
     private const val ACTION_DOWN = 0
@@ -27,25 +31,25 @@ object SdlInputSink : GameInputSink {
     @Volatile
     private var cursorY = 0f
 
-    private inline fun guard(name: String, block: () -> Unit) {
+    private fun guard(name: String, block: () -> Unit) {
         if (!SdlHost.loaded) return
-        runCatching(block).onFailure { android.util.Log.w("millida-input", "SDL: $name не прошло: ${it.message}") }
+        SdlHost.post(name, block)
     }
 
     override fun key(code: Int, scancode: Int, pressed: Boolean) {
         val android = KeyCodes.android(code) ?: return
-        guard("клавиша") { if (pressed) SDLActivity.onNativeKeyDown(android) else SDLActivity.onNativeKeyUp(android) }
+        guard(tr("клавиша")) { if (pressed) SDLActivity.onNativeKeyDown(android) else SDLActivity.onNativeKeyUp(android) }
     }
 
     /** SDL marks a second press of a held key as a repeat itself. */
     override fun repeat(code: Int, scancode: Int) {
         val android = KeyCodes.android(code) ?: return
-        guard("повтор") { SDLActivity.onNativeKeyDown(android) }
+        guard(tr("повтор")) { SDLActivity.onNativeKeyDown(android) }
     }
 
     override fun char(codePoint: Int) {
         if (!Character.isValidCodePoint(codePoint)) return
-        guard("символ") { SDLInputConnection.nativeCommitText(String(Character.toChars(codePoint)), 1) }
+        guard(tr("символ")) { SDLInputConnection.nativeCommitText(String(Character.toChars(codePoint)), 1) }
     }
 
     /**
@@ -59,11 +63,14 @@ object SdlInputSink : GameInputSink {
         if (state == buttons) return
         buttons = state
         val action = if (pressed) ACTION_DOWN else ACTION_UP
-        guard("кнопка") {
-            if (SdlHost.relative) {
+        val relative = SdlHost.relative
+        val x = cursorX
+        val y = cursorY
+        guard(tr("кнопка")) {
+            if (relative) {
                 SDLActivity.onNativeMouse(state, action, 0f, 0f, true)
             } else {
-                SDLActivity.onNativeMouse(state, action, cursorX, cursorY, false)
+                SDLActivity.onNativeMouse(state, action, x, y, false)
             }
         }
     }
@@ -71,22 +78,24 @@ object SdlInputSink : GameInputSink {
     override fun cursorPosition(x: Float, y: Float) {
         cursorX = x
         cursorY = y
-        guard("курсор") { SDLActivity.onNativeMouse(buttons, if (buttons == 0) ACTION_HOVER_MOVE else ACTION_MOVE, x, y, false) }
+        val held = buttons
+        guard(tr("курсор")) { SDLActivity.onNativeMouse(held, if (held == 0) ACTION_HOVER_MOVE else ACTION_MOVE, x, y, false) }
     }
 
     override fun cursorDelta(x: Float, y: Float) {
-        guard("движение") { SDLActivity.onNativeMouse(buttons, ACTION_MOVE, x, y, true) }
+        val held = buttons
+        guard(tr("движение")) { SDLActivity.onNativeMouse(held, ACTION_MOVE, x, y, true) }
     }
 
     /** GLFW counts a wheel to the left as positive, SDL to the right; up is positive in both. */
     override fun scroll(horizontal: Double, vertical: Double) {
-        guard("колесо") { SDLActivity.onNativeMouse(0, ACTION_SCROLL, -horizontal.toFloat(), vertical.toFloat(), false) }
+        guard(tr("колесо")) { SDLActivity.onNativeMouse(0, ACTION_SCROLL, -horizontal.toFloat(), vertical.toFloat(), false) }
     }
 
     /** The size reaches SDL with the surface itself, see [SdlHost.surfaceChanged]. */
     override fun screenSize(width: Int, height: Int) = Unit
 
     override fun focus(focused: Boolean) {
-        guard("фокус") { SDLActivity.nativeFocusChanged(focused) }
+        guard(tr("фокус")) { SDLActivity.nativeFocusChanged(focused) }
     }
 }

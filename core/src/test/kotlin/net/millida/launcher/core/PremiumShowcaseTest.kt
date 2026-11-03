@@ -51,7 +51,7 @@ class PremiumShowcaseTest {
         assertEquals("пустые строки состава выкинуты", listOf("Все сборки"), shown.plans.single().items)
         assertNull("цена строкой не принимается за число", shown.packs[1].priceKopecks)
         assertNull("онлайн null — плитки онлайна нет", shown.packs[1].online)
-        assertEquals("291 модов · 1.20.1 · Forge", plain(Premium.facts(shown.packs[0])))
+        assertEquals("291 мод · 1.20.1 · Forge", plain(Premium.facts(shown.packs[0])))
     }
 
     @Test

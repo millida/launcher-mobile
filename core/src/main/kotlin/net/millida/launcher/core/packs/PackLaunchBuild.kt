@@ -2,6 +2,7 @@ package net.millida.launcher.core.packs
 
 import net.millida.launcher.core.GameLayout
 import net.millida.launcher.core.SafePath
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.launch.LaunchRequest
 import net.millida.launcher.core.launch.LaunchSpec
 import net.millida.launcher.core.launch.LaunchSpecBuilder
@@ -24,7 +25,7 @@ object PackLaunchBuild {
         tokenArgs: List<String>,
     ): LaunchSpec {
         if (spec.needsToken && tokenArgs.isEmpty()) {
-            throw IOException("ключ запуска выдаётся на один старт — вернись в лаунчер и нажми «Играть»")
+            throw IOException(tr("ключ запуска выдаётся на один старт — вернись в лаунчер и нажми «Играть»"))
         }
         val classpath = PackLaunches.classpath(request.gameDir, spec)
         val ownAssets = spec.vanillaAssets.isEmpty()

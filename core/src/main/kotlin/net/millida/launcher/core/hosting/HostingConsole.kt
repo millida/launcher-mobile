@@ -12,6 +12,7 @@ import net.millida.launcher.core.account.MILLIDA_API
 import net.millida.launcher.core.account.MillidaAuth
 import net.millida.launcher.core.account.SecretVault
 import net.millida.launcher.core.http.Downloader
+import net.millida.launcher.core.i18n.tr
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URLEncoder
@@ -40,14 +41,14 @@ class ServerConsole(
     suspend fun send(serverId: String, command: String): HostingActionResult {
         val id = HostingPaths.serverId(serverId)
         val text = command.trim()
-        if (text.isEmpty()) throw HostingError("Команда пустая — нечего отправлять")
-        return guard("Команда не ушла") {
+        if (text.isEmpty()) throw HostingError(tr("Команда пустая — нечего отправлять"))
+        return guard(tr("Команда не ушла")) {
             auth.authorized(
                 "/hosting/servers/${URLEncoder.encode(id, "UTF-8")}/console/command",
                 "POST",
                 buildJsonObject { put("command", text) },
             )
-            HostingActionResult("Команда отправлена", text)
+            HostingActionResult(tr("Команда отправлена"), text)
         }
     }
 
@@ -60,7 +61,7 @@ class ServerConsole(
         val id = HostingPaths.serverId(serverId)
         return flow {
             val token = vault.read(MillidaAuth.KEY_ACCESS)
-            if (token.isNullOrEmpty()) throw HostingError("Консоль недоступна: ${statusText(401)}")
+            if (token.isNullOrEmpty()) throw HostingError(tr("Консоль недоступна: {0}", statusText(401)))
             val request = Request.Builder()
                 .url("$apiBase/hosting/servers/${URLEncoder.encode(id, "UTF-8")}/console/stream")
                 .header("Authorization", "Bearer $token")
@@ -70,9 +71,9 @@ class ServerConsole(
             try {
                 call.execute().use { response ->
                     if (!response.isSuccessful) {
-                        throw HostingError("Консоль недоступна: ${statusText(response.code)}")
+                        throw HostingError(tr("Консоль недоступна: {0}", statusText(response.code)))
                     }
-                    val body = response.body ?: throw HostingError("Консоль недоступна: поток пустой")
+                    val body = response.body ?: throw HostingError(tr("Консоль недоступна: поток пустой"))
                     val source = body.source()
                     var replay = true
                     while (true) {
@@ -97,7 +98,7 @@ class ServerConsole(
                 throw cancelled
             } catch (error: Throwable) {
                 call.cancel()
-                throw hostingFailure("Консоль оборвалась", error)
+                throw hostingFailure(tr("Консоль оборвалась"), error)
             }
         }.flowOn(Dispatchers.IO)
     }

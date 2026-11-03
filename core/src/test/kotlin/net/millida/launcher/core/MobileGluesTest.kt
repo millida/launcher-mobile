@@ -106,8 +106,8 @@ class MobileGluesTest {
                 "в старом пакете рантайма MobileGlues нет — запуск как раньше, а не отказ"),
             Case("26.1.2", mali, all, "", true, "mobileglues",
                 "для Sodium MobileGlues берётся и на Mali, как в Zalith и FCL: правило Mali сдвигается за ним"),
-            Case("26.1.2", mali, all, "", false, "zink",
-                "правило Mali для сборок без Sodium не тронуто"),
+            Case("26.1.2", mali, all, "", false, "mobileglues",
+                "26.1.2 на Mali идёт через GLFW-слой, где Zink падает в 89% запусков: MobileGlues и без Sodium"),
             Case("1.16.5", adreno, all, "", true, "krypton",
                 "MobileGlues начинается с 1.17, Sodium для 1.16.5 остаётся на Krypton"),
             Case("1.17.1", adreno, all, "", true, "mobileglues",
@@ -153,6 +153,21 @@ class MobileGluesTest {
         )
         assertEquals("вычислительные шейдеры GLES на телефонах нестабильны", 0, config.getValue("enableExtComputeShader").jsonPrimitive.int)
         assertTrue("без кэша GLSL каждый запуск заново переводит все шейдеры", config.getValue("maxGlslCacheSize").jsonPrimitive.int > 0)
+    }
+
+    @Test
+    fun `на 26_3 MobileGlues не останавливает игру на статусе шейдера`() {
+        val usual = Json.parseToJsonElement(MobileGluesSetup.configFor(ignoreShaderErrors = false)).jsonObject
+        val sdl = Json.parseToJsonElement(MobileGluesSetup.configFor(ignoreShaderErrors = true)).jsonObject
+        assertEquals("до 26.3 проверка ошибок остаётся как была", 0, usual.getValue("enableNoError").jsonPrimitive.int)
+        assertEquals("с 26.3 MobileGlues требует уровень «ошибки шейдеров и программ»", 2, sdl.getValue("enableNoError").jsonPrimitive.int)
+        assertEquals("остальные настройки от окна не зависят", usual - "enableNoError", sdl - "enableNoError")
+        assertEquals("прежняя константа — настройки без этого уровня", MobileGluesSetup.configFor(false), MobileGluesSetup.config)
+
+        val folder = MobileGluesSetup.folder(temp.newFolder())
+        assertTrue(MobileGluesSetup.writeConfig(folder, ignoreShaderErrors = true))
+        assertFalse("тот же уровень не переписывает файл", MobileGluesSetup.writeConfig(folder, ignoreShaderErrors = true))
+        assertTrue("сборка, запущенная через другой слой, получает свои настройки", MobileGluesSetup.writeConfig(folder))
     }
 
     @Test

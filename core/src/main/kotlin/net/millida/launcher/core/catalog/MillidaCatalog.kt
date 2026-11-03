@@ -9,8 +9,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
+import net.millida.launcher.core.hub.PhoneBlocked
 import net.millida.launcher.core.account.MillidaAuth
-import net.millida.launcher.core.packs.PhoneCard
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.core.packs.PhoneFit
 import java.io.IOException
 import java.net.URI
@@ -104,7 +106,7 @@ class MillidaCatalog(private val auth: MillidaAuth) {
     suspend fun listing(section: String, query: String, page: Int, filters: MillidaFilters = MillidaFilters()): MillidaListing {
         val params = listingParams(section, query, page, filters)
         val body = auth.publicCall("/catalog/listing?$params", "GET", null) as? JsonObject
-            ?: throw IOException("каталог Millida ответил не тем — попробуй позже")
+            ?: throw IOException(tr("каталог Millida ответил не тем — попробуй позже"))
         val items = (body["items"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.let(::card) }
         return MillidaListing(
             items = items,
@@ -122,7 +124,7 @@ class MillidaCatalog(private val auth: MillidaAuth) {
             version?.takeIf { it.isNotBlank() }?.let { add("version=" + encode(it)) }
         }.joinToString("&")
         val body = auth.publicCall("/catalog/facets?$params", "GET", null) as? JsonObject
-            ?: throw IOException("фильтры каталога не загрузились — попробуй позже")
+            ?: throw IOException(tr("фильтры каталога не загрузились — попробуй позже"))
         return MillidaFacets(versions = facetsOf(body["versions"]), categories = facetsOf(body["categories"]))
     }
 
@@ -154,7 +156,7 @@ class MillidaCatalog(private val auth: MillidaAuth) {
     suspend fun item(slug: String): MillidaItem {
         requireSlug(slug)
         val body = auth.publicCall("/catalog/items/${encode(slug)}", "GET", null) as? JsonObject
-            ?: throw IOException("в каталоге Millida нет «$slug»")
+            ?: throw IOException(tr("в каталоге Millida нет «{slug}»", slug))
         val files = (body["files"] as? JsonArray).orEmpty().mapNotNull { element ->
             val file = element as? JsonObject ?: return@mapNotNull null
             val id = file.text("id").ifEmpty { return@mapNotNull null }
@@ -225,7 +227,7 @@ class MillidaCatalog(private val auth: MillidaAuth) {
         requireSlug(slug)
         val key = code.trim()
         if (key.length < MIN_KEY || key.length > MAX_KEY || key.any { it.isISOControl() }) {
-            throw IOException("ключ не похож на настоящий — проверь, что скопировал его целиком")
+            throw IOException(tr("ключ не похож на настоящий — проверь, что скопировал его целиком"))
         }
         auth.authorized("/catalog/packs/${encode(slug)}/redeem", "POST", buildJsonObject { put("code", key) })
     }
@@ -286,7 +288,7 @@ class MillidaCatalog(private val auth: MillidaAuth) {
 
     @Throws(IOException::class)
     private fun requireSlug(slug: String) {
-        if (!catalogSlug(slug)) throw IOException("некорректный адрес материала: $slug")
+        if (!catalogSlug(slug)) throw IOException(tr("некорректный адрес материала: {slug}", slug))
     }
 
     companion object {
@@ -369,17 +371,10 @@ class MillidaCatalog(private val auth: MillidaAuth) {
             card: MillidaCard,
             legacyRuntime: Boolean = PhoneFit.legacyRuntime(),
             deviceTotalMb: Int = PhoneFit.deviceTotalMb(),
-        ): Boolean {
-            val loaders = card.loaders.ifEmpty { listOf("") }
-            val versions = card.versions.ifEmpty { listOf("") }
-            return loaders.any { loader ->
-                versions.any { version ->
-                    PhoneFit.listed(PhoneCard(loader, version, card.ownLaunch, card.premium), legacyRuntime, deviceTotalMb)
-                }
-            }
-        }
+        ): Boolean = PhoneFit.listedAny(card.loaders, card.versions, card.ownLaunch, card.premium, legacyRuntime, deviceTotalMb)
 
-        fun forPhone(cards: List<MillidaCard>): List<MillidaCard> = cards.filter { phoneListed(it) }
+        fun forPhone(cards: List<MillidaCard>): List<MillidaCard> =
+            cards.filter { phoneListed(it) && !PhoneBlocked.hides(it.slug) }
 
         /** The site's listing query: «Рекомендуемые» goes without a sort, «Популярные» and «Новые» as a parameter. */
         fun listingParams(section: String, query: String, page: Int, filters: MillidaFilters): String = buildList {
@@ -401,9 +396,11 @@ class MillidaCatalog(private val auth: MillidaAuth) {
     }
 }
 
-enum class MillidaSort(val wire: String, val label: String) {
-    POPULAR("popular", "Популярные"),
-    NEW("new", "Новые"),
+enum class MillidaSort(val wire: String, private val labelKey: String) {
+    POPULAR("popular", trKey("Популярные")),
+    NEW("new", trKey("Новые")),;
+
+    val label: String get() = tr(labelKey)
 }
 
 data class MillidaFilters(val sort: MillidaSort? = null, val version: String? = null, val category: String? = null) {

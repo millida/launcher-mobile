@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import net.millida.launcher.HostingScheduleDraft
 import net.millida.launcher.HostingToolsModel
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.forServer
 import net.millida.launcher.ui.MBadge
 import net.millida.launcher.ui.MBottomSheet
@@ -52,7 +53,7 @@ import net.millida.launcher.ui.pixelSurface
 
 private val KINDS = listOf("restart", "backup", "stop", "command")
 
-private val DAY_NAMES = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+private val DAY_NAMES get() = listOf(tr("Пн"), tr("Вт"), tr("Ср"), tr("Чт"), tr("Пт"), tr("Сб"), tr("Вс"))
 
 private const val EVERY_DAY = 127
 private const val WEEKDAYS = 31
@@ -80,11 +81,11 @@ fun HostingScheduleTab(serverId: String, tools: HostingToolsModel) {
             item(key = "head") {
                 MCard {
                     ToolsHead(
-                        title = "Расписание",
-                        subtitle = "Время московское",
+                        title = tr("Расписание"),
+                        subtitle = tr("Время московское"),
                         action = {
                             MSecondaryButton(
-                                "Добавить",
+                                tr("Добавить"),
                                 onClick = { tools.addSchedule(serverId)?.let { editing = it } },
                                 enabled = list != null && list.size < SCHEDULE_LIMIT && !saving,
                                 icon = MIcons.plus,
@@ -96,12 +97,12 @@ fun HostingScheduleTab(serverId: String, tools: HostingToolsModel) {
                         Spacer(Modifier.height(12.dp))
                         MButtonRow {
                             MPrimaryButton(
-                                "Сохранить",
+                                tr("Сохранить"),
                                 onClick = { tools.saveSchedule(serverId) },
                                 icon = MIcons.check,
                                 loading = saving,
                             )
-                            MTextButton("Отменить", onClick = { tools.loadSchedule(serverId) }, enabled = !saving)
+                            MTextButton(tr("Отменить"), onClick = { tools.loadSchedule(serverId) }, enabled = !saving)
                         }
                     }
                 }
@@ -112,7 +113,7 @@ fun HostingScheduleTab(serverId: String, tools: HostingToolsModel) {
                 }
                 list == null -> items(2, key = { "skeleton-$it" }) { MSkeletonRow() }
                 list.isEmpty() -> item(key = "empty") {
-                    MEmptyState(icon = MIcons.clock, title = "Задач нет")
+                    MEmptyState(icon = MIcons.clock, title = tr("Задач нет"))
                 }
                 else -> {
                     if (error != null) {
@@ -187,7 +188,7 @@ private fun ScheduleCard(
                 )
                 if (last.isNotEmpty()) {
                     Text(
-                        "Запускалась $last",
+                        tr("Запускалась {last}", last),
                         style = MillidaType.small,
                         color = colors.fgFaint,
                         maxLines = 1,
@@ -211,9 +212,9 @@ private fun ScheduleSheet(
     val colors = millida
     MBottomSheet(onDismiss = onDismiss, title = kindTitle(draft)) {
         if (draft.steps > 0) {
-            MBadge("Цепочка из ${draft.steps} шагов · правится на сайте", colors.fgMuted, colors.chipFill, icon = MIcons.list)
+            MBadge(tr("Цепочка из {steps} шагов · правится на сайте", draft.steps), colors.fgMuted, colors.chipFill, icon = MIcons.list)
         } else {
-            MSectionTitle("ЧТО ДЕЛАТЬ")
+            MSectionTitle(tr("ЧТО ДЕЛАТЬ"))
             Spacer(Modifier.height(8.dp))
             MSegmented(
                 options = KINDS,
@@ -223,15 +224,15 @@ private fun ScheduleSheet(
             )
         }
         Spacer(Modifier.height(16.dp))
-        MSectionTitle("ВРЕМЯ ПО МОСКВЕ")
+        MSectionTitle(tr("ВРЕМЯ ПО МОСКВЕ"))
         Spacer(Modifier.height(8.dp))
         if (draft.everyMin > 0) {
-            Text("Каждые ${draft.everyMin} мин · интервал меняется на сайте", style = MillidaType.body, color = colors.fgMuted)
+            Text(tr("Каждые {everyMin} мин · интервал меняется на сайте", draft.everyMin), style = MillidaType.body, color = colors.fgMuted)
         } else {
             TimeFields(key = draft.key, minute = draft.minute) { minute -> onChange { it.copy(minute = minute) } }
         }
         Spacer(Modifier.height(16.dp))
-        MSectionTitle("ДНИ")
+        MSectionTitle(tr("ДНИ"))
         Spacer(Modifier.height(8.dp))
         MButtonRow {
             DAY_NAMES.forEachIndexed { index, name ->
@@ -244,31 +245,31 @@ private fun ScheduleSheet(
                 )
             }
             MChip(
-                text = "Каждый день",
+                text = tr("Каждый день"),
                 selected = draft.days == EVERY_DAY,
                 onClick = { onChange { it.copy(days = EVERY_DAY) } },
             )
         }
         if (draft.days == 0) {
             Spacer(Modifier.height(6.dp))
-            Text("Выбери хотя бы один день", style = MillidaType.small, color = colors.danger)
+            Text(tr("Выбери хотя бы один день"), style = MillidaType.small, color = colors.danger)
         }
         if (draft.kind == "command" && draft.steps == 0) {
             Spacer(Modifier.height(16.dp))
-            MSectionTitle("КОМАНДА")
+            MSectionTitle(tr("КОМАНДА"))
             Spacer(Modifier.height(8.dp))
             MField(
                 value = draft.command,
                 onValueChange = { text -> onChange { it.copy(command = text.take(COMMAND_MAX)) } },
-                placeholder = "say Перезапуск через 5 минут",
+                placeholder = tr("say Перезапуск через 5 минут"),
                 singleLine = false,
                 maxLines = 4,
             )
         }
         Spacer(Modifier.height(20.dp))
-        MPrimaryButton("Готово", onClick = onDismiss, modifier = Modifier.fillMaxWidth(), icon = MIcons.check)
+        MPrimaryButton(tr("Готово"), onClick = onDismiss, modifier = Modifier.fillMaxWidth(), icon = MIcons.check)
         Spacer(Modifier.height(8.dp))
-        MTextButton("Убрать задачу", onClick = onRemove, modifier = Modifier.fillMaxWidth(), icon = MIcons.trash, color = colors.danger)
+        MTextButton(tr("Убрать задачу"), onClick = onRemove, modifier = Modifier.fillMaxWidth(), icon = MIcons.trash, color = colors.danger)
     }
 }
 
@@ -284,7 +285,7 @@ private fun TimeFields(key: String, minute: Int, onChange: (Int) -> Unit) {
                 hours = clean
                 clean.toIntOrNull()?.takeIf { it in 0..23 }?.let { onChange(it * 60 + minute % 60) }
             },
-            placeholder = "ЧЧ",
+            placeholder = tr("ЧЧ"),
             modifier = Modifier.weight(1f),
             keyboardType = KeyboardType.Number,
         )
@@ -301,7 +302,7 @@ private fun TimeFields(key: String, minute: Int, onChange: (Int) -> Unit) {
                 minutes = clean
                 clean.toIntOrNull()?.takeIf { it in 0..59 }?.let { onChange(minute / 60 * 60 + it) }
             },
-            placeholder = "ММ",
+            placeholder = tr("ММ"),
             modifier = Modifier.weight(1f),
             keyboardType = KeyboardType.Number,
         )
@@ -311,21 +312,21 @@ private fun TimeFields(key: String, minute: Int, onChange: (Int) -> Unit) {
 private fun twoDigits(value: Int): String = value.toString().padStart(2, '0')
 
 private fun kindShort(kind: String): String = when (kind) {
-    "restart" -> "Рестарт"
-    "backup" -> "Копия"
-    "stop" -> "Стоп"
-    "command" -> "Команда"
+    "restart" -> tr("Рестарт")
+    "backup" -> tr("Копия")
+    "stop" -> tr("Стоп")
+    "command" -> tr("Команда")
     else -> kind
 }
 
 private fun kindTitle(draft: HostingScheduleDraft): String {
-    if (draft.steps > 0) return "Цепочка действий"
+    if (draft.steps > 0) return tr("Цепочка действий")
     return when (draft.kind) {
-        "restart" -> "Перезапуск"
-        "backup" -> "Резервная копия"
-        "stop" -> "Остановка"
-        "command" -> draft.command.lineSequence().firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }?.let { "/$it" } ?: "Команда"
-        else -> "Задача"
+        "restart" -> tr("Перезапуск")
+        "backup" -> tr("Резервная копия")
+        "stop" -> tr("Остановка")
+        "command" -> draft.command.lineSequence().firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }?.let { "/$it" } ?: tr("Команда")
+        else -> tr("Задача")
     }
 }
 
@@ -338,12 +339,12 @@ private fun kindIcon(draft: HostingScheduleDraft): MillidaIcon = when {
 }
 
 private fun timeText(draft: HostingScheduleDraft): String =
-    if (draft.everyMin > 0) "каждые ${draft.everyMin} мин" else "${twoDigits(draft.minute / 60)}:${twoDigits(draft.minute % 60)}"
+    if (draft.everyMin > 0) tr("каждые {everyMin} мин", draft.everyMin) else "${twoDigits(draft.minute / 60)}:${twoDigits(draft.minute % 60)}"
 
 private fun daysText(days: Int): String = when (days) {
-    EVERY_DAY -> "каждый день"
-    WEEKDAYS -> "по будням"
-    WEEKEND -> "по выходным"
-    0 -> "дни не выбраны"
+    EVERY_DAY -> tr("каждый день")
+    WEEKDAYS -> tr("по будням")
+    WEEKEND -> tr("по выходным")
+    0 -> tr("дни не выбраны")
     else -> DAY_NAMES.filterIndexed { index, _ -> (days and (1 shl index)) != 0 }.joinToString(", ")
 }

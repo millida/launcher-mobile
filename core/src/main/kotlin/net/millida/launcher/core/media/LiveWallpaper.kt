@@ -3,6 +3,7 @@ package net.millida.launcher.core.media
 import kotlin.math.ceil
 import kotlin.math.hypot
 
+import net.millida.launcher.core.i18n.tr
 enum class LiveWallpaperKind { SCENE, VIDEO }
 
 /**
@@ -20,12 +21,12 @@ data class LiveWallpaper(val id: String, val name: String, val kind: LiveWallpap
         const val OFF = ""
         const val FOLDER = "wallpapers"
 
-        val ALL: List<LiveWallpaper> = listOf(
-            LiveWallpaper("pixels", "Сцена", LiveWallpaperKind.SCENE),
-            LiveWallpaper("bg1", "Вишнёвая роща", LiveWallpaperKind.VIDEO),
-            LiveWallpaper("bg2", "Уютная пещера", LiveWallpaperKind.VIDEO),
-            LiveWallpaper("bg3", "Солнечный город", LiveWallpaperKind.VIDEO),
-            LiveWallpaper("bg4", "У камина", LiveWallpaperKind.VIDEO),
+        val ALL: List<LiveWallpaper> get() = listOf(
+            LiveWallpaper("pixels", tr("Сцена"), LiveWallpaperKind.SCENE),
+            LiveWallpaper("bg1", tr("Вишнёвая роща"), LiveWallpaperKind.VIDEO),
+            LiveWallpaper("bg2", tr("Уютная пещера"), LiveWallpaperKind.VIDEO),
+            LiveWallpaper("bg3", tr("Солнечный город"), LiveWallpaperKind.VIDEO),
+            LiveWallpaper("bg4", tr("У камина"), LiveWallpaperKind.VIDEO),
         )
 
         /** An id another build stored and this one does not know means the static background. */
@@ -36,6 +37,19 @@ data class LiveWallpaper(val id: String, val name: String, val kind: LiveWallpap
         /** Moves only with motion allowed by the player and the phone, and only while the app is in front. */
         fun animates(chosen: LiveWallpaper?, motionOn: Boolean, reducedMotion: Boolean, resumed: Boolean): Boolean =
             chosen != null && motionOn && !reducedMotion && resumed
+
+        /**
+         * The player's «Анимация» switch starts on, as the desktop's background
+         * animation does (viewPrefs `m-anim-bg` defaults to on).
+         */
+        const val MOTION_DEFAULT = true
+
+        /**
+         * The plain landscape stage carries the desktop's waves and sparks with
+         * no live wallpaper chosen; they stop like any live wallpaper does.
+         */
+        fun stageAnimates(motionOn: Boolean, reducedMotion: Boolean, resumed: Boolean): Boolean =
+            motionOn && !reducedMotion && resumed
     }
 }
 

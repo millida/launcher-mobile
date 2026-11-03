@@ -58,6 +58,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import net.millida.launcher.LauncherViewModel
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.Screenshot
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.shareFile
@@ -123,7 +124,7 @@ internal fun ShotViewer(
             scope.launch {
                 val failure = failureOf { copyToDocument(context, model.shotFile(shot.profileId, shot.name), uri) }
                 saving = false
-                report(failure, "Снимок сохранён")
+                report(failure, tr("Снимок сохранён"))
             }
         }
     }
@@ -134,7 +135,7 @@ internal fun ShotViewer(
                 scope.launch {
                     val failure = failureOf { saveToGallery(context, model.shotFile(shot.profileId, shot.name), shot.name) }
                     saving = false
-                    report(failure, "Снимок в галерее, папка Millida")
+                    report(failure, tr("Снимок в галерее, папка Millida"))
                 }
             } else {
                 exporting = shot
@@ -148,8 +149,8 @@ internal fun ShotViewer(
         } catch (missing: Exception) {
             null
         }
-        if (file == null || !shareFile(context, file, "image/png", "Снимок Millida")) {
-            model.notice("Не нашлось приложения, готового принять снимок", isError = true)
+        if (file == null || !shareFile(context, file, "image/png", tr("Снимок Millida"))) {
+            model.notice(tr("Не нашлось приложения, готового принять снимок"), isError = true)
         }
     }
 
@@ -207,14 +208,14 @@ internal fun ShotViewer(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     MPrimaryButton(
-                        "Сохранить",
+                        tr("Сохранить"),
                         onClick = { save(current) },
                         modifier = Modifier.weight(1f),
                         icon = MIcons.download,
                         loading = saving,
                     )
-                    MIconButton(MIcons.share, onClick = { share(current) }, label = "Поделиться")
-                    MIconButton(MIcons.trash, onClick = { deleting = current }, label = "Удалить")
+                    MIconButton(MIcons.share, onClick = { share(current) }, label = tr("Поделиться"))
+                    MIconButton(MIcons.trash, onClick = { deleting = current }, label = tr("Удалить"))
                 }
             }
         }
@@ -222,9 +223,9 @@ internal fun ShotViewer(
 
     deleting?.let { shot ->
         MConfirmDialog(
-            title = "Удалить снимок?",
-            text = "Он пропадёт с телефона",
-            confirm = "Удалить",
+            title = tr("Удалить снимок?"),
+            text = tr("Он пропадёт с телефона"),
+            confirm = tr("Удалить"),
             onConfirm = {
                 deleting = null
                 model.deleteShot(shot.profileId, shot.name) { feedback.play(UiSoundEvent.Delete) }
@@ -244,7 +245,7 @@ private fun ViewerTop(shot: Screenshot, note: String, position: String, onClose:
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MIconButton(MIcons.close, onClick = onClose, label = "Закрыть")
+        MIconButton(MIcons.close, onClick = onClose, label = tr("Закрыть"))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(

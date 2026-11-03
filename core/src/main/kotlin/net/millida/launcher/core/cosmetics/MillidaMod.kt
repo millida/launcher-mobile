@@ -15,6 +15,7 @@ import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.atomicWriteText
 import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.http.RemoteFile
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.profile.DISABLED_SUFFIX
 import net.millida.launcher.core.profile.Profile
@@ -110,10 +111,10 @@ object CosmeticsCatalog {
     @Throws(IOException::class)
     fun parse(body: String): CosmeticsManifest {
         val root = runCatching { lenient.parseToJsonElement(body).jsonObject }
-            .getOrElse { throw IOException("Каталог версий мода повреждён — попробуй позже") }
+            .getOrElse { throw IOException(tr("Каталог версий мода повреждён — попробуй позже")) }
         val variants = root["variants"]?.jsonArray.orEmpty()
             .mapNotNull { node -> runCatching { variant(node as? JsonObject) }.getOrNull() }
-        if (variants.isEmpty()) throw IOException("Каталог версий мода пуст — попробуй позже")
+        if (variants.isEmpty()) throw IOException(tr("Каталог версий мода пуст — попробуй позже"))
         return CosmeticsManifest(
             version = root.str("version"),
             baseUrl = root.str("baseUrl").ifEmpty { MILLIDA_MOD_BASE_URL },
@@ -210,20 +211,20 @@ object CosmeticsCatalog {
         if (loaderId == LoaderKind.VANILLA.id) {
             return base.copy(
                 status = CosmeticsModStatus.UNSUPPORTED_LOADER,
-                reason = "Косметика ставится только в сборку с загрузчиком: Fabric или Quilt",
+                reason = tr("Косметика ставится только в сборку с загрузчиком: Fabric или Quilt"),
             )
         }
 
         val variant = pick(manifest, gameVersion, loaderId)
             ?: return base.copy(
                 status = CosmeticsModStatus.UNSUPPORTED_VERSION,
-                reason = "Под $loaderId $gameVersion косметики пока нет — выбери поддерживаемую версию игры",
+                reason = tr("Под {loaderId} {gameVersion} косметики пока нет — выбери поддерживаемую версию игры", loaderId, gameVersion),
             )
         val artifact = artifactName(manifest, variant)
             ?: return base.copy(
                 status = CosmeticsModStatus.CATALOG_INCOMPLETE,
                 variantId = variant.id,
-                reason = "Каталог не сообщил версию мода — обнови лаунчер или попробуй позже",
+                reason = tr("Каталог не сообщил версию мода — обнови лаунчер или попробуй позже"),
             )
 
         val known = base.copy(
@@ -244,11 +245,11 @@ object CosmeticsCatalog {
         val loaderOk = state.status != CosmeticsModStatus.UNSUPPORTED_LOADER
         checks += SkinCheck(
             id = "loader",
-            title = "Загрузчик сборки",
+            title = tr("Загрузчик сборки"),
             detail = if (loaderOk) {
-                "Сборка на ${state.loaderId} — косметика сюда ставится"
+                tr("Сборка на {loaderId} — косметика сюда ставится", state.loaderId)
             } else {
-                "Сборка ванильная, ставить мод некуда. Создай сборку с Fabric или Quilt и играй в ней"
+                tr("Сборка ванильная, ставить мод некуда. Создай сборку с Fabric или Quilt и играй в ней")
             },
             ok = loaderOk,
         )
@@ -257,22 +258,22 @@ object CosmeticsCatalog {
                 state.status != CosmeticsModStatus.CATALOG_INCOMPLETE
             checks += SkinCheck(
                 id = "coverage",
-                title = "Версия игры",
+                title = tr("Версия игры"),
                 detail = if (coverageOk) {
-                    "Для ${state.gameVersion} косметика собрана"
+                    tr("Для {gameVersion} косметика собрана", state.gameVersion)
                 } else {
-                    state.reason.ifEmpty { "Под эту версию игры косметики пока нет" }
+                    state.reason.ifEmpty { tr("Под эту версию игры косметики пока нет") }
                 },
                 ok = coverageOk,
             )
             if (coverageOk) {
                 checks += SkinCheck(
                     id = "present",
-                    title = "Мод в сборке",
+                    title = tr("Мод в сборке"),
                     detail = if (state.installed) {
-                        "Файл ${state.installedFile} лежит в папке модов"
+                        tr("Файл {installedFile} лежит в папке модов", state.installedFile)
                     } else {
-                        "Мода нет в сборке. Нажми «Починить» — лаунчер поставит косметику"
+                        tr("Мода нет в сборке. Нажми «Починить» — лаунчер поставит косметику")
                     },
                     ok = state.installed,
                     fix = if (state.installed) SkinFix.NONE else SkinFix.INSTALL,
@@ -280,11 +281,11 @@ object CosmeticsCatalog {
                 if (state.installed) {
                     checks += SkinCheck(
                         id = "enabled",
-                        title = "Мод включён",
+                        title = tr("Мод включён"),
                         detail = if (state.installedEnabled) {
-                            "Мод включён и загрузится вместе с игрой"
+                            tr("Мод включён и загрузится вместе с игрой")
                         } else {
-                            "Мод выключен: файл помечен как $DISABLED_SUFFIX. Нажми «Починить» и перезапусти сборку"
+                            tr("Мод выключен: файл помечен как {DISABLED_SUFFIX}. Нажми «Починить» и перезапусти сборку", DISABLED_SUFFIX)
                         },
                         ok = state.installedEnabled,
                         fix = if (state.installedEnabled) SkinFix.NONE else SkinFix.ENABLE,
@@ -292,12 +293,12 @@ object CosmeticsCatalog {
                     val fresh = state.status != CosmeticsModStatus.OUTDATED
                     checks += SkinCheck(
                         id = "version",
-                        title = "Версия мода",
+                        title = tr("Версия мода"),
                         detail = if (fresh) {
-                            "Стоит актуальная версия"
+                            tr("Стоит актуальная версия")
                         } else {
-                            "В сборке ${state.installedFile}, а нужна ${state.availableFile}. " +
-                                "Нажми «Починить» — лаунчер заменит файл"
+                            tr("В сборке {installedFile}, а нужна {availableFile}. ", state.installedFile, state.availableFile) +
+                                tr("Нажми «Починить» — лаунчер заменит файл")
                         },
                         ok = fresh,
                         fix = if (fresh) SkinFix.NONE else SkinFix.INSTALL,
@@ -312,8 +313,8 @@ object CosmeticsCatalog {
             state = state,
             checks = checks,
             summary = failed?.detail
-                ?: "Косметика на месте: скины, плащи, шляпы, крылья и эмоции работают. " +
-                "Если скина всё равно нет, зайди на сервер заново и открой гардероб по клавише «M»",
+                ?: tr("Косметика на месте: скины, плащи, шляпы, крылья и эмоции работают. ") +
+                tr("Если скина всё равно нет, зайди на сервер заново и открой гардероб по клавише «M»"),
         )
     }
 
@@ -349,7 +350,7 @@ class MillidaMod(
         val body = try {
             downloader.text(manifestUrl)
         } catch (error: IOException) {
-            throw IOException("Каталог версий косметики недоступен: ${error.message}", error)
+            throw IOException(tr("Каталог версий косметики недоступен: {message}", error.message), error)
         }
         return CosmeticsCatalog.parse(body)
     }
@@ -431,14 +432,14 @@ class MillidaMod(
         val current = state(profile, manifest)
         val artifact = current.availableFile
         if (artifact.isEmpty()) {
-            throw IOException(current.reason.ifEmpty { "Косметика не подошла к этой сборке" })
+            throw IOException(current.reason.ifEmpty { tr("Косметика не подошла к этой сборке") })
         }
         val variant = manifest.variants.firstOrNull { it.id == current.variantId }
-            ?: throw IOException("Вариант мода пропал из каталога — обнови список и попробуй снова")
+            ?: throw IOException(tr("Вариант мода пропал из каталога — обнови список и попробуй снова"))
 
         val mods = mods(profile)
         if (!mods.isDirectory && !mods.mkdirs()) {
-            throw IOException("Не удалось создать папку модов сборки «${profile.name}»")
+            throw IOException(tr("Не удалось создать папку модов сборки «{name}»", profile.name))
         }
         val target = SafePath.join(mods, artifact)
         val stale = jars(profile).filter { it != artifact }
@@ -454,7 +455,7 @@ class MillidaMod(
             ),
             onChunk,
         )
-        if (!target.isFile) throw IOException("Файл косметики не появился в сборке — попробуй ещё раз")
+        if (!target.isFile) throw IOException(tr("Файл косметики не появился в сборке — попробуй ещё раз"))
 
         stale.forEach { File(mods, it).delete() }
         return state(profile, manifest)
@@ -466,7 +467,7 @@ class MillidaMod(
         jars(profile).forEach { name ->
             val file = SafePath.join(mods, name)
             if (file.isFile && !file.delete()) {
-                throw IOException("Не удалось убрать косметику из сборки «${profile.name}»")
+                throw IOException(tr("Не удалось убрать косметику из сборки «{name}»", profile.name))
             }
         }
         return state(profile)
@@ -476,7 +477,7 @@ class MillidaMod(
     suspend fun setEnabled(profile: Profile, enabled: Boolean): CosmeticsModState {
         val mods = mods(profile)
         val name = jars(profile).firstOrNull()
-            ?: throw IOException("Косметики нет в сборке «${profile.name}» — сначала установи её")
+            ?: throw IOException(tr("Косметики нет в сборке «{name}» — сначала установи её", profile.name))
         val target = if (enabled) {
             CosmeticsCatalog.enabledName(name)
         } else {
@@ -487,7 +488,7 @@ class MillidaMod(
     }
 
     private fun move(source: File, target: File) {
-        if (target.exists()) throw IOException("В папке модов уже лежит файл ${target.name}")
+        if (target.exists()) throw IOException(tr("В папке модов уже лежит файл {name}", target.name))
         try {
             Files.move(source.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE)
         } catch (unsupported: AtomicMoveNotSupportedException) {

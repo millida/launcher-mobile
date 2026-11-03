@@ -73,6 +73,7 @@ fun SkinStage(
     hopKey: Any? = null,
     outfit: StageOutfit? = null,
     clipToFrame: Boolean = true,
+    snapshotKey: String? = null,
 ) {
     val masks by rememberMaskSheets(outfit?.masks.orEmpty())
     val skin by rememberTexture(skinUrl, slim to masks.key) { source -> buildSkinAtlas(source, slim, masks.sheets) }
@@ -85,7 +86,10 @@ fun SkinStage(
     val silhouette = millida.fgFaint
     val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     var onScreen by remember { mutableStateOf(true) }
-    val animatePose = (pose != SkinPose.Still || outfit?.animated == true) && !reducedMotion
+    // A shelf figure with a snapshot key is drawn once into a bitmap and then only blitted:
+    // a list of dozens of cards must not run a software 3D renderer (or its clips) per card per frame.
+    val frozen = snapshotKey != null && !interactive
+    val animatePose = !frozen && (pose != SkinPose.Still || outfit?.animated == true) && !reducedMotion
     val live = animatePose || interactive
     val running = live && onScreen && lifecycleState.isAtLeast(Lifecycle.State.STARTED)
     val roomy = interactive || pose == SkinPose.Wave
@@ -99,7 +103,7 @@ fun SkinStage(
     LaunchedEffect(motion, running, animatePose) {
         if (!running) return@LaunchedEffect
         if (animatePose) {
-            motion.play(animatePose = true)
+            motion.play(animatePose = true, decorative = pose == SkinPose.Still)
         } else {
             snapshotFlow { motion.moving.value }.collectLatest { active ->
                 if (active) motion.play(animatePose = false)
@@ -127,6 +131,36 @@ fun SkinStage(
     ) {
         motion.frame.longValue
         val time = if (animatePose) motion.clock else pose.restTime()
+        val wanted = outfit?.pieces.orEmpty().map { it.textureUrl }.toSet()
+        val settled = frozen && skin is TextureLoad.Ready && wanted.all { it in pieceTextures }
+        val cell = if (settled) "$snapshotKey|${size.width.toInt()}x${size.height.toInt()}|$slim" else null
+        val still = cell?.let { StageSnapshots[it] }
+            ?: cell?.takeIf { size.width >= 1f && size.height >= 1f }?.let { id ->
+                runCatching {
+                    val bitmap = Bitmap.createBitmap(size.width.toInt().coerceAtLeast(1), size.height.toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+                    renderer.render(
+                        canvas = android.graphics.Canvas(bitmap),
+                        width = size.width,
+                        height = size.height,
+                        skin = skin,
+                        cape = cape,
+                        stance = pose,
+                        time = time,
+                        motion = motion,
+                        slim = slim,
+                        silhouette = silhouette,
+                        roomy = roomy,
+                        outfit = outfit,
+                        outfitTime = 0f,
+                        pieceTextures = pieceTextures,
+                    )
+                    bitmap
+                }.getOrNull()?.also { StageSnapshots[id] = it }
+            }
+        if (still != null) {
+            drawIntoCanvas { canvas -> canvas.nativeCanvas.drawBitmap(still, 0f, 0f, null) }
+            return@Canvas
+        }
         drawIntoCanvas { canvas ->
             renderer.render(
                 canvas = canvas.nativeCanvas,
@@ -146,6 +180,17 @@ fun SkinStage(
             )
         }
     }
+}
+
+/** Rendered shelf figures, newest kept: scrolling a card back into view blits instead of re-rendering. */
+private object StageSnapshots {
+    private const val LIMIT = 48
+    private val cache = object : LinkedHashMap<String, Bitmap>(LIMIT, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>): Boolean = size > LIMIT
+    }
+
+    operator fun get(key: String): Bitmap? = synchronized(cache) { cache[key] }
+    operator fun set(key: String, bitmap: Bitmap) { synchronized(cache) { cache[key] = bitmap } }
 }
 
 private fun Modifier.stageGestures(motion: StageMotion, onTap: State<(() -> Unit)?>): Modifier =
@@ -200,6 +245,7 @@ private class StageMotion(private var hopKey: Any?) {
     private var rest = 0f
     private var dirty = false
     private var outfitStart = 0f
+    private var sinceDraw = 0f
 
     /** A new outfit starts its clips and its emote from the first frame. */
     fun restartOutfit() {
@@ -245,13 +291,14 @@ private class StageMotion(private var hopKey: Any?) {
         if (key != null) jump()
     }
 
-    suspend fun play(animatePose: Boolean) {
+    /** [decorative]: only an outfit's own clips move (lobby figure at rest), so they redraw at 30 fps, not at every vsync. */
+    suspend fun play(animatePose: Boolean, decorative: Boolean = false) {
         var last = -1L
         while (true) {
             val proceed = withFrameNanos { now ->
                 val step = if (last < 0L) 0f else ((now - last) / NANOS_PER_SECOND).coerceIn(0f, MAX_STEP)
                 last = now
-                if (advance(step, animatePose)) frame.longValue = now
+                if (advance(step, animatePose, decorative)) frame.longValue = now
                 animatePose || !settled()
             }
             if (!proceed) {
@@ -261,12 +308,22 @@ private class StageMotion(private var hopKey: Any?) {
         }
     }
 
-    private fun advance(step: Float, animatePose: Boolean): Boolean {
+    private fun advance(step: Float, animatePose: Boolean, decorative: Boolean): Boolean {
         var changed = dirty
         dirty = false
         if (animatePose) {
             clock = (clock + step) % CLOCK_WRAP
-            changed = true
+            if (decorative) {
+                // Redrawing the 3D figure costs ~4 ms of UI thread and a whole-screen frame
+                // (Redmi Note 13, idle lobby: 60 fps, p50 38 ms); 30 fps reads the same for halo clips.
+                sinceDraw += step
+                if (sinceDraw >= DECOR_FRAME) {
+                    sinceDraw = 0f
+                    changed = true
+                }
+            } else {
+                changed = true
+            }
         }
         if (hop >= 0f) {
             val next = hop + step / HOP_SECONDS
@@ -1372,6 +1429,17 @@ private const val REST_FIT_HEIGHT = 35.5f
 private const val ROOMY_FIT_HEIGHT = 40f
 private const val REST_FIT_WIDTH = 19f
 private const val ROOMY_FIT_WIDTH = 24f
+private const val STANDING_HEIGHT = 32f
+
+/**
+ * Where a standing figure sits inside an interactive (roomy) frame, as shares
+ * of the frame's height: callers that size the frame by the body it has to
+ * show read these instead of guessing the camera's margins.
+ */
+internal object RoomyFrame {
+    const val BODY_SHARE = STANDING_HEIGHT / ROOMY_FIT_HEIGHT
+    const val FEET_SHARE = (ROOMY_FIT_HEIGHT / 2f - ROOMY_ORBIT_Y) / ROOMY_FIT_HEIGHT
+}
 
 private const val FLOOR_HALF_WIDTH = 5.5f
 private const val FLOOR_HALF_DEPTH = 3.25f
@@ -1416,6 +1484,7 @@ private const val CAPE_SPIN_LIMIT = 0.5f
 private const val CAPE_EASE = 6f
 private const val SETTLE_EPSILON = 0.002f
 private const val MAX_STEP = 0.05f
+private const val DECOR_FRAME = 0.03f
 private const val CLOCK_WRAP = 3600f
 private const val NANOS_PER_SECOND = 1_000_000_000f
 

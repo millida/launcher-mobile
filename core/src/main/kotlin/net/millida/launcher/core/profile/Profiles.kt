@@ -72,6 +72,19 @@ class ProfileStore(
         current
     }
 
+    /** The order on the home screen is the order of the list; two builds trade places in it. */
+    fun swap(first: String, second: String): List<Profile> = synchronized(LOCK) {
+        val current = load().toMutableList()
+        val a = current.indexOfFirst { it.id == first }
+        val b = current.indexOfFirst { it.id == second }
+        if (a < 0 || b < 0 || a == b) return@synchronized current
+        val moved = current[a]
+        current[a] = current[b]
+        current[b] = moved
+        save(current)
+        current
+    }
+
     fun remove(id: String): List<Profile> = synchronized(LOCK) {
         val remaining = load().filterNot { it.id == id }
         save(remaining)

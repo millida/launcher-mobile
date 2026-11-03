@@ -10,14 +10,29 @@ import urllib.request
 import zipfile
 
 FIXED_TIME = (1980, 1, 1, 0, 0, 0)
-JRE_ARCH_FOLDERS = ("aarch64", "arm64")
+DEFAULT_ABI = "arm64-v8a"
+# elfClass and elfMachine are EI_CLASS and e_machine of the ELF header. The
+# 32-bit port of OpenJDK 8 has no server VM, its libjvm.so is the client one.
+ABIS = {
+    "arm64-v8a": {
+        "arch": "arm64",
+        "elfClass": 2,
+        "elfMachine": 183,
+        "jvm": ("lib/server/libjvm.so", "lib/aarch64/server/libjvm.so", "lib/arm64/server/libjvm.so"),
+    },
+    "armeabi-v7a": {
+        "arch": "arm",
+        "elfClass": 1,
+        "elfMachine": 40,
+        "jvm": ("lib/server/libjvm.so", "lib/aarch32/client/libjvm.so"),
+    },
+}
 WINDOW_LAYER = "libpojavexec.so"
 SDL_LIBRARY = "libSDL3.so"
 BRIDGE_JAR = "lwjgl-glfw-classes.jar"
 RENDERER_VARIABLE = b"POJAV_RENDERER"
 OWN_RENDERER_VARIABLE = b"MILLIDA_RENDER"
 BRIDGE_RENDERER_READERS = {"org/lwjgl/glfw/GLFW.class", "org/lwjgl/opengl/GL.class", "org/lwjgl/opengl/Display.class"}
-ELF_MACHINE_AARCH64 = 183
 
 
 def fail(message):
@@ -129,12 +144,10 @@ def java_major(home):
     return None
 
 
-def check_jre(home, major):
+def check_jre(home, major, abi):
     if not os.path.isfile(os.path.join(home, "bin", "java")):
         fail("в java {} нет bin/java".format(major))
-    candidates = [os.path.join(home, "lib", "server", "libjvm.so")]
-    candidates += [os.path.join(home, "lib", arch, "server", "libjvm.so") for arch in JRE_ARCH_FOLDERS]
-    if not any(os.path.isfile(path) for path in candidates):
+    if not any(os.path.isfile(os.path.join(home, path)) for path in ABIS[abi]["jvm"]):
         fail("в java {} нет libjvm.so".format(major))
     declared = java_major(home)
     if declared is not None and declared != major:
@@ -214,11 +227,51 @@ def rename_in_bridge(folder):
     os.replace(staging, path)
 
 
-def require_arm64_elf(data, what):
-    if len(data) < 20 or data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
-        fail(what + " — не 64-битная библиотека ELF")
-    if int.from_bytes(data[18:20], "little") != ELF_MACHINE_AARCH64:
-        fail(what + " собрана не под arm64")
+def elf_problem(data, abi):
+    target = ABIS[abi]
+    if len(data) < 20 or data[:4] != b"\x7fELF" or data[4] != target["elfClass"] or data[5] != 1:
+        return " — не {}-битная библиотека ELF".format(32 * target["elfClass"])
+    if int.from_bytes(data[18:20], "little") != target["elfMachine"]:
+        return " собрана не под " + target["arch"]
+    return ""
+
+
+def require_abi_libraries(folder, abi, where=""):
+    for root, _, files in os.walk(folder):
+        for name in files:
+            if name.endswith(".so"):
+                path = os.path.join(root, name)
+                with open(path, "rb") as handle:
+                    problem = elf_problem(handle.read(20), abi)
+                if problem:
+                    fail(where + os.path.relpath(path, folder).replace("\\", "/") + problem)
+
+
+def for_abi(value, abi):
+    if isinstance(value, str):
+        return value.replace("{abi}", abi).replace("{arch}", ABIS[abi]["arch"])
+    if isinstance(value, list):
+        return [for_abi(item, abi) for item in value]
+    if isinstance(value, dict):
+        return {key: for_abi(item, abi) for key, item in value.items()}
+    return value
+
+
+def components_for(sources, abi):
+    chosen = [for_abi(component, abi) for component in sources["components"] if abi in component.get("onlyAbis", [abi])]
+    ids = [component["id"] for component in chosen]
+    if len(ids) != len(set(ids)):
+        fail("под {} компоненты повторяются: {}".format(abi, ids))
+    return chosen
+
+
+def pack_for(sources, abi):
+    if abi == DEFAULT_ABI:
+        return sources["pack"]
+    packs = sources.get("abiPacks", {})
+    if abi not in packs:
+        fail("пакет рантайма под {} не закреплён в abiPacks".format(abi))
+    return packs[abi]
 
 
 def add_downloaded_files(folder, component, sources, cache):
@@ -231,8 +284,6 @@ def add_downloaded_files(folder, component, sources, cache):
             if item["member"] not in source.namelist():
                 fail("в {} нет {}".format(item["download"], item["member"]))
             data = source.read(item["member"])
-        if item["as"].endswith(".so"):
-            require_arm64_elf(data, item["member"])
         with open(destination, "wb") as out:
             out.write(data)
 
@@ -242,7 +293,7 @@ def describe_pack(pack):
         return json.loads(archive.read("millida-runtime.json").decode("utf-8"))
 
 
-def meta_for(component, description, folder, sources):
+def meta_for(component, description, folder, sources, abi):
     category = component["category"]
     if category == "sdl":
         build = sources["builds"][component["fromBuild"]]
@@ -258,7 +309,7 @@ def meta_for(component, description, folder, sources):
                                                 "classpath": build["jars"]}}]
     if category == "jre":
         return [{"category": "jre", "fields": {"id": component["id"], "major": component["major"],
-                                                "abi": "arm64-v8a", "javaHome": ""}}]
+                                                "abi": abi, "javaHome": ""}}]
     if category == "bridge":
         classpath = [entry.split("/", 1)[1] for entry in description["bridge"] if entry.startswith("bridge/")]
         for jar in classpath:
@@ -296,7 +347,8 @@ def meta_for(component, description, folder, sources):
 def main():
     parser = argparse.ArgumentParser(description="Раскладывает рантайм на компоненты по закреплённым источникам")
     parser.add_argument("--sources", required=True)
-    parser.add_argument("--pack", required=True, help="millida-runtime-arm64.zip, уже скачанный из бакета")
+    parser.add_argument("--abi", choices=sorted(ABIS), default=DEFAULT_ABI)
+    parser.add_argument("--pack", required=True, help="пакет рантайма под --abi (millida-runtime-arm64.zip), уже скачанный из бакета")
     parser.add_argument("--cache", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--built", action="append", default=[], metavar="ИМЯ=ПАПКА",
@@ -311,7 +363,7 @@ def main():
 
     with open(args.sources, encoding="utf-8") as handle:
         sources = json.load(handle)
-    require_sha256(args.pack, sources["pack"]["sha256"], "пакет рантайма")
+    require_sha256(args.pack, pack_for(sources, args.abi)["sha256"], "пакет рантайма")
     description = describe_pack(args.pack)
 
     work = os.path.join(args.out, "work")
@@ -322,7 +374,7 @@ def main():
         os.makedirs(path)
 
     meta = []
-    for component in sources["components"]:
+    for component in components_for(sources, args.abi):
         folder = os.path.join(work, component["id"])
         os.makedirs(folder)
         if "fromPack" in component:
@@ -338,8 +390,9 @@ def main():
         else:
             fail("у компонента {} не указан источник".format(component["id"]))
         add_downloaded_files(folder, component, sources, args.cache)
+        require_abi_libraries(folder, args.abi, component["id"] + "/")
         if component["category"] == "jre":
-            check_jre(folder, component["major"])
+            check_jre(folder, component["major"], args.abi)
         if component["category"] == "renderer":
             rename_in_window_layer(folder)
         if component["category"] == "bridge":
@@ -350,7 +403,7 @@ def main():
         deterministic_zip(folder, staging)
         name = "{}-{}.zip".format(component["id"], sha256_of(staging)[:16])
         os.replace(staging, os.path.join(components, name))
-        for entry in meta_for(component, description, folder, sources):
+        for entry in meta_for(component, description, folder, sources, args.abi):
             entry["file"] = name
             meta.append(entry)
         print("компонент", name, round(os.path.getsize(os.path.join(components, name)) / 1048576, 1), "МБ")

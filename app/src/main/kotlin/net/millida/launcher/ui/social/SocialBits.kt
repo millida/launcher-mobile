@@ -34,6 +34,7 @@ import net.millida.launcher.core.friends.ChatTarget
 import net.millida.launcher.core.friends.Dialog
 import net.millida.launcher.core.friends.DialogKind
 import net.millida.launcher.core.friends.Friend
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MAvatar
 import net.millida.launcher.ui.MButtonRow
 import net.millida.launcher.ui.MCard
@@ -112,7 +113,7 @@ internal fun PersonCard(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    nick.ifEmpty { "Игрок" },
+                    nick.ifEmpty { tr("Игрок") },
                     style = MillidaType.rowTitle,
                     color = colors.fg,
                     maxLines = 1,
@@ -150,9 +151,9 @@ internal fun DialogRow(
 ) {
     val colors = millida
     val room = dialog.kind == DialogKind.ROOM
-    val title = friend?.shownName() ?: dialog.title.ifEmpty { if (room) "Группа" else "Игрок" }
+    val title = friend?.shownName() ?: dialog.title.ifEmpty { if (room) tr("Группа") else tr("Игрок") }
     val line = preview ?: when {
-        room -> dialog.subtitle.ifEmpty { "Группа" }
+        room -> dialog.subtitle.ifEmpty { tr("Группа") }
         friend != null -> friend.statusLine()
         else -> dialog.subtitle
     }
@@ -206,7 +207,7 @@ internal fun inboxOf(dialogs: List<Dialog>): List<Dialog> {
 
 internal fun LauncherViewModel.startCall(context: Context, target: ChatTarget) {
     val url = runCatching { CallHandoff.threadUrl(target) }.getOrElse { failure ->
-        notice(failure.message ?: "Звонок не открылся — открой переписку на сайте", isError = true)
+        notice(failure.message ?: tr("Звонок не открылся — открой переписку на сайте"), isError = true)
         return
     }
     openLinkOrNotice(context, url)
@@ -220,11 +221,11 @@ internal fun LauncherViewModel.placeCall(context: Context, target: ChatTarget) {
         is ChatTarget.Dm -> {
             val nick = now.friends.firstOrNull { it.userId == target.userId }?.shownName()
                 ?: now.dialogs.firstOrNull { it.kind == DialogKind.DM && it.id == target.userId }?.title?.takeIf { it.isNotEmpty() }
-                ?: "Друг"
+                ?: tr("Друг")
             center.callFriend(target.userId, nick)
         }
         is ChatTarget.Room -> {
-            val title = now.dialogs.firstOrNull { it.kind == DialogKind.ROOM && it.id == target.roomId }?.title?.takeIf { it.isNotEmpty() } ?: "Группа"
+            val title = now.dialogs.firstOrNull { it.kind == DialogKind.ROOM && it.id == target.roomId }?.title?.takeIf { it.isNotEmpty() } ?: tr("Группа")
             center.joinRoom(target.roomId, title)
         }
     }
@@ -243,9 +244,9 @@ internal fun rememberCallHandoff(model: LauncherViewModel, hintShown: Boolean): 
     var asking by remember { mutableStateOf<ChatTarget?>(null) }
     asking?.let { target ->
         MConfirmDialog(
-            title = "Звонок на сайте",
+            title = tr("Звонок на сайте"),
             text = CallHandoff.HINT,
-            confirm = "Открыть",
+            confirm = tr("Открыть"),
             onConfirm = {
                 asking = null
                 model.social.markCallHintShown()

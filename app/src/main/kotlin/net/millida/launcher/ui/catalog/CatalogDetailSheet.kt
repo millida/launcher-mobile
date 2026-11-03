@@ -33,6 +33,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import net.millida.launcher.core.catalog.CatalogVersion
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.core.profile.Profile
 import net.millida.launcher.core.rating.versionRangeLabel
 import net.millida.launcher.ui.MBadge
@@ -112,7 +114,7 @@ private fun DetailHead(detail: CatalogDetail) {
             if (item.author.isNotBlank()) {
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "от ${item.author}",
+                    tr("от {author}", item.author),
                     style = MillidaType.small,
                     color = colors.fgFaint,
                     maxLines = 1,
@@ -162,7 +164,7 @@ private fun DetailAction(
     when {
         kind == null && modpack != null && modpack.key == item.key -> ModpackProgress(modpack)
         kind == null -> MPrimaryButton(
-            text = "Установить",
+            text = tr("Установить"),
             onClick = { onInstall(CatalogModel.modpackPick(detail.versions)) },
             modifier = Modifier.fillMaxWidth(),
             enabled = !busy && (detail.loading || detail.versions.isNotEmpty()),
@@ -171,13 +173,13 @@ private fun DetailAction(
         )
         job != null -> InstallProgress(job)
         installed != null -> Row(verticalAlignment = Alignment.CenterVertically) {
-            MBadge("Установлено", colors.accentText, colors.accentSoft, icon = MIcons.check)
+            MBadge(tr("Установлено"), colors.accentText, colors.accentSoft, icon = MIcons.check)
             Spacer(Modifier.weight(1f))
-            MDangerButton(text = "Удалить", onClick = onRemove, icon = MIcons.trash, size = MButtonSize.Medium)
+            MDangerButton(text = tr("Удалить"), onClick = onRemove, icon = MIcons.trash, size = MButtonSize.Medium)
         }
-        target == null -> Text("Сначала создай сборку", style = MillidaType.body, color = colors.fgMuted)
+        target == null -> Text(tr("Сначала создай сборку"), style = MillidaType.body, color = colors.fgMuted)
         else -> MPrimaryButton(
-            text = "Поставить в «${target.name}»",
+            text = tr("Поставить в «{name}»", target.name),
             onClick = { onInstall(null) },
             modifier = Modifier.fillMaxWidth(),
             enabled = !detail.loading && detail.versions.isNotEmpty(),
@@ -230,7 +232,7 @@ private fun DetailBody(detail: CatalogDetail, modifier: Modifier = Modifier) {
             overflow = TextOverflow.Ellipsis,
         )
         MTextButton(
-            text = if (bodyOpen) "Свернуть" else "Читать дальше",
+            text = if (bodyOpen) tr("Свернуть") else tr("Читать дальше"),
             onClick = { bodyOpen = !bodyOpen },
             color = colors.accentText,
         )
@@ -264,7 +266,7 @@ private fun DetailVersions(
         }
         detail.error != null -> MErrorCard(message = detail.error, onRetry = onRetry)
         detail.versions.isEmpty() -> Text(
-            if (kind == null) "Нет версий для телефона — выбери другую сборку" else "Нет версий под эту сборку — выбери другую",
+            if (kind == null) tr("Нет версий для телефона — выбери другую сборку") else tr("Нет версий под эту сборку — выбери другую"),
             style = MillidaType.body,
             color = colors.fgMuted,
         )
@@ -277,7 +279,7 @@ private fun DetailVersions(
                         version = version,
                         installed = installed != null && installed.versionId.isNotEmpty() &&
                             installed.versionId == version.id,
-                        actionLabel = if (kind == null) "Установить" else "Поставить",
+                        actionLabel = if (kind == null) tr("Установить") else tr("Поставить"),
                         enabled = !busy && (kind == null || target != null),
                         onInstall = { onInstall(version) },
                     )
@@ -285,7 +287,7 @@ private fun DetailVersions(
             }
             if (!allVersions && detail.versions.size > VERSIONS_SHOWN) {
                 MTextButton(
-                    text = "Ещё ${detail.versions.size - VERSIONS_SHOWN}",
+                    text = tr("Ещё {0}", detail.versions.size - VERSIONS_SHOWN),
                     onClick = { allVersions = true },
                     icon = MIcons.chevronDown,
                     color = colors.accentText,
@@ -301,13 +303,17 @@ private fun DetailPageLink(detail: CatalogDetail, onOpenPage: (String) -> Unit) 
     val pageUrl = webLink(detail.project?.pageUrl) ?: webLink(item.pageUrl) ?: return
     Spacer(Modifier.height(10.dp))
     MTextButton(
-        text = "Открыть на ${item.source.label}",
+        text = tr("Открыть на {label}", item.source.label),
         onClick = { onOpenPage(pageUrl) },
         icon = MIcons.externalLink,
     )
 }
 
-private enum class ItemPageTab(val title: String) { ABOUT("Описание"), GALLERY("Галерея"), VERSIONS("Версии") }
+private enum class ItemPageTab(private val titleKey: String) {
+    ABOUT(trKey("Описание")), GALLERY(trKey("Галерея")), VERSIONS(trKey("Версии"));
+
+    val title: String get() = tr(titleKey)
+}
 
 private val ITEM_ASIDE_WIDTH = 300.dp
 private val ITEM_ICON = 96.dp
@@ -395,7 +401,7 @@ internal fun CatalogItemPage(
                 }
             }
             ItemPageTab.GALLERY -> if (gallery.isEmpty()) {
-                Text("Картинок нет", style = MillidaType.body, color = colors.fgFaint)
+                Text(tr("Картинок нет"), style = MillidaType.body, color = colors.fgFaint)
             } else {
                 ItemGallery(gallery)
             }
@@ -440,7 +446,7 @@ internal fun ItemPageFrame(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MSecondaryButton("Назад", onClick = onBack, icon = MIcons.chevronLeft, size = MButtonSize.Small)
+            MSecondaryButton(tr("Назад"), onClick = onBack, icon = MIcons.chevronLeft, size = MButtonSize.Small)
             Spacer(Modifier.width(12.dp))
             Text(section, style = MillidaType.small.copy(fontWeight = FontWeight.Bold), color = colors.fgSubtle, maxLines = 1)
         }
@@ -488,7 +494,7 @@ internal fun ItemPageFrame(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (author.isNotBlank()) {
-                        Text("от $author", style = MillidaType.body, color = colors.fgSubtle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(tr("от {author}", author), style = MillidaType.body, color = colors.fgSubtle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     facts()
                 }
@@ -554,7 +560,7 @@ private fun VersionRow(
         plate = false,
         trailing = {
             if (installed) {
-                MBadge("Стоит", colors.accentText, colors.accentSoft, icon = MIcons.check)
+                MBadge(tr("Установлено"), colors.accentText, colors.accentSoft, icon = MIcons.check)
             } else {
                 MButton(
                     text = actionLabel,
@@ -574,7 +580,7 @@ internal fun InstallProgress(job: ItemJob) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (job.action == ItemAction.REMOVE) "Удаляем" else "Ставим",
+                if (job.action == ItemAction.REMOVE) tr("Удаляем") else tr("Ставим"),
                 modifier = Modifier.weight(1f),
                 style = MillidaType.rowTitle,
                 color = colors.fg,
@@ -594,7 +600,7 @@ internal fun ModpackProgress(job: ModpackJob) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                job.stage.ifBlank { "Ставим сборку" },
+                job.stage.ifBlank { tr("Ставим сборку") },
                 modifier = Modifier.weight(1f),
                 style = MillidaType.rowTitle,
                 color = colors.fg,
@@ -611,6 +617,18 @@ internal fun ModpackProgress(job: ModpackJob) {
 }
 
 @Composable
+internal fun PackStatFact(vararg keys: String?) {
+    val stat = net.millida.launcher.core.hub.PhoneBlocked.statFor(*keys) ?: return
+    val colors = millida
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        MIcon(MIcons.clock, size = 14.dp, color = colors.fgSubtle)
+        Spacer(Modifier.width(4.dp))
+        val text = if (stat.fps > 0) tr("≈ {min} мин · {fps} FPS", stat.minutes, stat.fps) else tr("≈ {min} мин", stat.minutes)
+        Text(text, style = MillidaType.pixelSmall, color = colors.fgMuted, maxLines = 1)
+    }
+}
+
+@Composable
 internal fun DownloadsFact(downloads: Long) {
     val colors = millida
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -623,9 +641,9 @@ internal fun DownloadsFact(downloads: Long) {
 private fun versionsTitle(detail: CatalogDetail, target: Profile?): String {
     val kind = detail.tab.kind
     return when {
-        kind == null -> "Версии для телефона"
-        target == null -> "Версии"
-        else -> "Версии для ${CatalogModel.buildLabel(kind, target)}"
+        kind == null -> tr("Версии для телефона")
+        target == null -> tr("Версии")
+        else -> tr("Версии для {0}", CatalogModel.buildLabel(kind, target))
     }
 }
 
@@ -637,8 +655,8 @@ private fun versionLine(version: CatalogVersion): String {
         .distinct()
         .joinToString("/") { loaderName(it) }
     val channel = when (version.versionType.lowercase()) {
-        "beta" -> "бета"
-        "alpha" -> "альфа"
+        "beta" -> tr("бета")
+        "alpha" -> tr("альфа")
         else -> ""
     }
     return listOfNotNull(games, loaders.ifEmpty { null }, channel.ifEmpty { null }).joinToString(" · ")

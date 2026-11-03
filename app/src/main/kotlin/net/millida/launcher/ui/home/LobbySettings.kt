@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.Screen
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.LiveWallpaper
 import net.millida.launcher.core.media.LiveWallpaperKind
 import net.millida.launcher.ui.MBottomSheet
@@ -42,14 +43,14 @@ fun LobbySettingsSection(model: LauncherViewModel, modifier: Modifier = Modifier
     val ambient by model.ambient.state.collectAsStateWithLifecycle()
     var volume by remember(ambient.musicVolume) { mutableIntStateOf(ambient.musicVolume) }
 
-    SettingsSection("ЛОББИ", modifier) {
-        MSwitchRow("Музыка сейчас", ambient.nowPlaying.takeIf { ambient.playing }, ambient.musicOn, model.ambient::setMusicOn)
+    SettingsSection(tr("ЛОББИ"), modifier) {
+        MSwitchRow(tr("Музыка сейчас"), ambient.nowPlaying.takeIf { ambient.playing }, ambient.musicOn, model.ambient::setMusicOn)
         ambient.musicError?.takeIf { ambient.musicOn }?.let { SettingHint(it, color = millida.warning) }
         if (ambient.musicOn) {
             MDivider()
-            MSwitchRow("Включать при запуске", null, ambient.musicAtStart, model.ambient::setMusicAtStart)
+            MSwitchRow(tr("Включать при запуске"), null, ambient.musicAtStart, model.ambient::setMusicAtStart)
             Spacer(Modifier.height(10.dp))
-            SettingHead("Громкость радио", "$volume%")
+            SettingHead(tr("Громкость радио"), "$volume%")
             MSlider(
                 value = volume / 100f,
                 onValueChange = { volume = (it * 100).roundToInt() },
@@ -58,7 +59,7 @@ fun LobbySettingsSection(model: LauncherViewModel, modifier: Modifier = Modifier
         }
         MDivider()
         MListRow(
-            title = "Гайд по лаунчеру",
+            title = tr("Гайд по лаунчеру"),
             icon = MIcons.info,
             plate = false,
             onClick = {
@@ -73,12 +74,12 @@ fun LobbySettingsSection(model: LauncherViewModel, modifier: Modifier = Modifier
 @Composable
 fun LiveWallpaperSheet(selected: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
     val colors = millida
-    MBottomSheet(onDismiss = onDismiss, title = "Живые обои") {
+    MBottomSheet(onDismiss = onDismiss, title = tr("Живые обои")) {
         val options = listOf<LiveWallpaper?>(null) + LiveWallpaper.ALL
         options.forEach { option ->
             val id = option?.id ?: LiveWallpaper.OFF
             MListRow(
-                title = option?.name ?: "Выкл",
+                title = option?.name ?: tr("Выкл"),
                 plate = false,
                 onClick = { onPick(id) },
                 leading = { LiveWallpaperThumb(option) },

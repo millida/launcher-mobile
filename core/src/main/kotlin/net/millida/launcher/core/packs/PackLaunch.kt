@@ -8,6 +8,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import net.millida.launcher.core.SafePath
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
 import java.io.IOException
@@ -174,7 +175,7 @@ object PackLaunches {
     @Throws(IOException::class)
     fun classpath(profileDir: File, spec: PackLaunch): List<File> {
         val kept = everyJar(profileDir, spec).filterNot { DESKTOP_LWJGL.matches(it.name) || it.invariantSeparatorsPath.contains("/org/lwjgl/") }
-        if (kept.isEmpty()) throw IOException("сборка не назвала ни одной библиотеки для запуска — напиши в поддержку")
+        if (kept.isEmpty()) throw IOException(tr("сборка не назвала ни одной библиотеки для запуска — напиши в поддержку"))
         return kept
     }
 
@@ -208,9 +209,9 @@ object PackLaunches {
             when {
                 path.isDirectory -> out += jarsUnder(profileDir, path)
                 path.isFile -> out += path
-                else -> throw IOException("в сборке нет файла «$entry» — переустанови её из каталога")
+                else -> throw IOException(tr("в сборке нет файла «{entry}» — переустанови её из каталога", entry))
             }
-            if (out.size > MAX_ENTRIES) throw IOException("в сборке слишком много библиотек — она собрана неверно, напиши в поддержку")
+            if (out.size > MAX_ENTRIES) throw IOException(tr("в сборке слишком много библиотек — она собрана неверно, напиши в поддержку"))
         }
         return out
     }
@@ -266,7 +267,7 @@ object PackLaunches {
     }
 
     private fun outside(entry: String) =
-        IOException("сборка указала путь вне своей папки: «$entry» — запуск остановлен, напиши в поддержку")
+        IOException(tr("сборка указала путь вне своей папки: «{entry}» — запуск остановлен, напиши в поддержку", entry))
 
     private fun classNameOk(name: String): Boolean =
         name.isNotEmpty() && name.all { (it.isLetterOrDigit() && it.code < 0x80) || it in ".\$_" }

@@ -27,6 +27,8 @@ import net.millida.launcher.core.cosmetics.CosmeticItem
 import net.millida.launcher.core.cosmetics.CosmeticSections
 import net.millida.launcher.core.cosmetics.Outfit
 import net.millida.launcher.core.cosmetics.Outfits
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trPlural
 import net.millida.launcher.core.rubies.RubyItem
 import net.millida.launcher.core.rubies.WardrobeBill
 import net.millida.launcher.core.skins.ShowcaseKind
@@ -62,19 +64,19 @@ import net.millida.launcher.ui.shop.rubyWord
 private val ART_SIDE = 112.dp
 
 /** How a channel hands out an item that is not sold, as the desktop wardrobe names it. */
-private val EARNED_BY = mapOf(
-    "ACHIEVEMENT" to "Достижение",
-    "HOURS" to "Часы в игре",
-    "QUEST" to "Задание",
-    "SEASON" to "Сезон",
+private val EARNED_BY get() = mapOf(
+    "ACHIEVEMENT" to tr("Достижение"),
+    "HOURS" to tr("Часы в игре"),
+    "QUEST" to tr("Задание"),
+    "SEASON" to tr("Сезон"),
     "PLUS_MONTH" to "PLUS",
-    "WELCOME" to "Подарок",
+    "WELCOME" to tr("Подарок"),
 )
 
 private fun lockedNote(item: CosmeticItem): String? = when {
     item.access == "PLUS" -> "PLUS"
     item.onSale -> item.priceRubies?.let { "$it ${rubyWord(it.toLong())}" }
-    item.access == "PURCHASE" -> EARNED_BY[item.channel] ?: "Не продаётся"
+    item.access == "PURCHASE" -> EARNED_BY[item.channel] ?: tr("Не продаётся")
     else -> null
 }
 
@@ -106,14 +108,14 @@ internal fun LazyGridScope.cosmeticItemsSection(p: CharacterPanel, sectionKey: S
     val sections = CosmeticSections.of(catalog.map { it.slot }.toSet())
         .filter { it.key == sectionKey }
     if (sections.isEmpty()) {
-        full("cos-empty") { MEmptyState(if (emotes) MIcons.smile else MIcons.shirt, "Вещей пока нет") }
+        full("cos-empty") { MEmptyState(if (emotes) MIcons.smile else MIcons.shirt, tr("Вещей пока нет")) }
         return
     }
     val section = sections.firstOrNull { it.key == p.itemSection } ?: sections.first()
     val chip = section.chips.firstOrNull { it.key == p.itemChip } ?: section.chips.first()
     if (!p.state.millidaSignedIn) {
         full("cos-sign-in") {
-            MSignInGate(onSignIn = { p.signIn() }, title = "Войди, чтобы надевать вещи")
+            MSignInGate(onSignIn = { p.signIn() }, title = tr("Войди, чтобы надевать вещи"))
         }
     }
     if (error != null) {
@@ -143,7 +145,7 @@ internal fun LazyGridScope.cosmeticItemsSection(p: CharacterPanel, sectionKey: S
         ShelfTitle(chip.name) {
             if (wornHere || state.fitting.any { it.slot in chip.slots }) {
                 MTextButton(
-                    "Снять",
+                    tr("Снять"),
                     onClick = { model.takeOff(chip.slots) },
                     enabled = state.busy.isEmpty(),
                 )
@@ -151,13 +153,13 @@ internal fun LazyGridScope.cosmeticItemsSection(p: CharacterPanel, sectionKey: S
             MIconButton(
                 MIcons.refresh,
                 onClick = { p.reloadCosmetics() },
-                label = "Обновить",
+                label = tr("Обновить"),
                 enabled = !state.loading,
             )
         }
     }
     if (shelf.isEmpty()) {
-        full("cos-shelf-empty-${chip.key}") { MEmptyState(MIcons.shirt, "Здесь пока пусто") }
+        full("cos-shelf-empty-${chip.key}") { MEmptyState(MIcons.shirt, tr("Здесь пока пусто")) }
         return
     }
     items(shelf, key = { "cos:" + it.id }, contentType = { "tile" }) { item ->
@@ -171,9 +173,9 @@ internal fun LazyGridScope.cosmeticCapes(p: CharacterPanel) {
     val capes = p.cosmetics.catalog.items.filter { it.slot == "CAPE" }
     if (capes.isEmpty()) return
     full("cos-cape-title") {
-        ShelfTitle("Плащи-вещи") {
+        ShelfTitle(tr("Плащи-вещи")) {
             if (p.cosmetics.worn.any { it.slot == "CAPE" }) {
-                MTextButton("Снять", onClick = { p.wardrobe?.takeOff(listOf("CAPE")) }, enabled = p.cosmetics.busy.isEmpty())
+                MTextButton(tr("Снять"), onClick = { p.wardrobe?.takeOff(listOf("CAPE")) }, enabled = p.cosmetics.busy.isEmpty())
             }
         }
     }
@@ -206,7 +208,7 @@ private fun CosmeticTile(p: CharacterPanel, item: CosmeticItem, modifier: Modifi
 }
 
 @Composable
-private fun ChipRow(content: @Composable () -> Unit) {
+internal fun ChipRow(content: @Composable () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -226,31 +228,24 @@ internal fun LazyGridScope.showcaseSection(p: CharacterPanel, kind: ShowcaseKind
             MErrorCard(failed, onRetry = { p.wardrobe?.loadShowcase(kind, force = true) })
         }
         cards == null -> skeletons("showcase-${kind.wire}", 4)
-        cards.isEmpty() -> full("showcase-empty-${kind.wire}") { MEmptyState(MIcons.catalog, "Каталог пока пуст") }
+        cards.isEmpty() -> full("showcase-empty-${kind.wire}") { MEmptyState(MIcons.catalog, tr("Каталог пока пуст")) }
         else -> items(cards, key = { "sc:" + kind.wire + ":" + it.name }, contentType = { "tile" }) { card ->
             CatalogTile(p, SkinShowcase.catalogSkin(card), Modifier.animateItem())
         }
     }
 }
 
-private fun things(count: Int): String {
-    val last = count % 10
-    val tens = count % 100
-    return when {
-        last == 1 && tens != 11 -> "$count вещь"
-        last in 2..4 && (tens < 12 || tens > 14) -> "$count вещи"
-        else -> "$count вещей"
-    }
-}
+private fun things(count: Int): String =
+    trPlural(count, tr("{count} вещь", count), tr("{count} вещи", count), tr("{count} вещей", count))
 
 internal fun LazyGridScope.looksSection(p: CharacterPanel) {
     val state = p.cosmetics
     if (p.target != WearTarget.Millida) {
         full("looks-gate") {
             if (p.target == WearTarget.SignedOut) {
-                MSignInGate(onSignIn = { p.signIn() }, title = "Войди, чтобы сохранять образы")
+                MSignInGate(onSignIn = { p.signIn() }, title = tr("Войди, чтобы сохранять образы"))
             } else {
-                MEmptyState(MIcons.looks, "Образы собираются на аккаунте Millida")
+                MEmptyState(MIcons.looks, tr("Образы собираются на аккаунте Millida"))
             }
         }
         return
@@ -259,10 +254,10 @@ internal fun LazyGridScope.looksSection(p: CharacterPanel) {
     if (state.outfits.size < Outfits.LIMIT && look != null) {
         item(key = "look-save", contentType = "tile") {
             ItemTile(
-                name = if (state.outfits.isEmpty()) "Сохранить образ" else "Новый образ",
+                name = if (state.outfits.isEmpty()) tr("Сохранить образ") else tr("Новый образ"),
                 onClick = { p.wardrobe?.saveOutfit(look) },
                 modifier = Modifier.animateItem(),
-                note = "${state.outfits.size} из ${Outfits.LIMIT}",
+                note = tr("{size} из {LIMIT}", state.outfits.size, Outfits.LIMIT),
             ) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     MIcon(MIcons.plus, size = 40.dp)
@@ -284,7 +279,7 @@ internal fun LazyGridScope.looksSection(p: CharacterPanel) {
             note = if (state.outfitBusy == outfit.id) null else things(outfit.cosmetics.size + 1 + if (outfit.cape.url.isNotEmpty()) 1 else 0),
             onRemove = { p.onEditOutfit(outfit) },
             toolIcon = MIcons.edit,
-            toolLabel = "Изменить",
+            toolLabel = tr("Изменить"),
         ) {
             SkinFigure(url = outfit.skin.url, slim = outfit.skin.slim, modifier = Modifier.fillMaxSize())
         }
@@ -297,27 +292,27 @@ internal fun OutfitEditDialog(outfit: Outfit, onRename: (String) -> Unit, onRemo
     var name by remember(outfit.id) { mutableStateOf(outfit.name) }
     var removing by remember(outfit.id) { mutableStateOf(false) }
     MDialog(
-        title = if (removing) "Удалить образ?" else "Образ",
+        title = if (removing) tr("Удалить образ?") else tr("Образ"),
         onDismiss = onDismiss,
         body = {
             if (removing) {
-                Text("«${outfit.name}» пропадёт с телефона", style = MillidaType.body, color = millida.fgMuted)
+                Text(tr("«{name}» пропадёт с телефона", outfit.name), style = MillidaType.body, color = millida.fgMuted)
             } else {
                 MField(
                     value = name,
                     onValueChange = { name = it.take(Outfits.NAME_MAX) },
-                    placeholder = "Название",
+                    placeholder = tr("Название"),
                     onImeAction = { onRename(name) },
                 )
             }
         },
         actions = {
             if (removing) {
-                MTextButton("Отмена", onClick = { removing = false })
-                MDangerButton("Удалить", onClick = onRemove)
+                MTextButton(tr("Отмена"), onClick = { removing = false })
+                MDangerButton(tr("Удалить"), onClick = onRemove)
             } else {
-                MTextButton("Удалить", onClick = { removing = true })
-                MPrimaryButton("Сохранить", onClick = { onRename(name) }, enabled = name.isNotBlank())
+                MTextButton(tr("Удалить"), onClick = { removing = true })
+                MPrimaryButton(tr("Сохранить"), onClick = { onRename(name) }, enabled = name.isNotBlank())
             }
         },
     )
@@ -353,7 +348,7 @@ internal fun CosmeticFittingBar(
             )
             .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
     ) {
-        Text("ПРИМЕРКА", style = MillidaType.caption, color = colors.info, maxLines = 1)
+        Text(tr("ПРИМЕРКА"), style = MillidaType.caption, color = colors.info, maxLines = 1)
         Spacer(Modifier.height(2.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -372,12 +367,12 @@ internal fun CosmeticFittingBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MSecondaryButton("Снять", onClick = onClear, modifier = Modifier.weight(1f), enabled = !buying)
+            MSecondaryButton(tr("Снять"), onClick = onClear, modifier = Modifier.weight(1f), enabled = !buying)
             when {
-                bill.isEmpty -> MPrimaryButton("В магазин", onClick = onShop, modifier = Modifier.weight(1f), icon = MIcons.shop)
-                !signedIn -> MPrimaryButton("Войти", onClick = onSignIn, modifier = Modifier.weight(1f), icon = MIcons.login)
+                bill.isEmpty -> MPrimaryButton(tr("В магазин"), onClick = onShop, modifier = Modifier.weight(1f), icon = MIcons.shop)
+                !signedIn -> MPrimaryButton(tr("Войти"), onClick = onSignIn, modifier = Modifier.weight(1f), icon = MIcons.login)
                 else -> MPrimaryButton(
-                    "Купить",
+                    tr("Купить"),
                     onClick = onBuy,
                     modifier = Modifier.weight(1f),
                     enabled = canBuy,
@@ -414,9 +409,9 @@ internal fun TryOnPurchaseDialog(
         is TryOnPurchase.Confirm -> {
             val bill = prompt.bill
             MConfirmDialog(
-                title = "Купить и надеть?",
-                text = "${billSubject(bill)} за ${groupDigits(bill.total)} ${rubyWord(bill.total)}",
-                confirm = "Купить",
+                title = tr("Купить и надеть?"),
+                text = billText(bill),
+                confirm = tr("Купить"),
                 onConfirm = {
                     onDismiss()
                     onBuy(bill)
@@ -433,6 +428,12 @@ internal fun TryOnPurchaseDialog(
             onDismiss = onDismiss,
         )
     }
+}
+
+private fun billText(bill: WardrobeBill): String {
+    val subject = billSubject(bill)
+    val total = groupDigits(bill.total)
+    return trPlural(bill.total, tr("{0} за {1} рубин", subject, total), tr("{0} за {1} рубина", subject, total), tr("{0} за {1} рубинов", subject, total))
 }
 
 private fun billSubject(bill: WardrobeBill): String =

@@ -22,6 +22,7 @@ import net.millida.launcher.core.bedrock.BEDROCK_PROXY_PORT
 import net.millida.launcher.core.bedrock.BedrockBridge
 import net.millida.launcher.core.bedrock.parseBedrockAddress
 import net.millida.launcher.core.bedrock.viaProxyArguments
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.runtime.InstalledRuntime
 import net.millida.launcher.core.runtime.RuntimeImport
 import java.io.File
@@ -94,7 +95,7 @@ class BedrockProxyService : Service() {
             prepareEnvironment(runtime, bridge.directory)
             System.load(File(runtime.rendererDir, "libpojavexec.so").absolutePath)
             LoggerBridge.start(log.absolutePath)
-            LoggerBridge.appendTitle("Millida: перевод протокола Bedrock")
+            LoggerBridge.appendTitle(tr("Millida: перевод протокола Bedrock"))
             ZLBridge.setLdLibraryPath(libraryPath(runtime))
             openRuntimeLibraries(runtime)
             ZLBridge.chdir(bridge.directory.absolutePath)
@@ -142,9 +143,9 @@ class BedrockProxyService : Service() {
             File(lib, "jli").absolutePath,
             runtime.rendererDir.absolutePath,
             applicationInfo.nativeLibraryDir,
-            "/system/lib64",
-            "/vendor/lib64",
-            "/system_ext/lib64",
+            "/system/${systemLibraryFolder()}",
+            "/vendor/${systemLibraryFolder()}",
+            "/system_ext/${systemLibraryFolder()}",
         ).joinToString(":")
     }
 
@@ -186,7 +187,7 @@ class BedrockProxyService : Service() {
         out += "-jar"
         out += bridge.jar.absolutePath
         val target = parseBedrockAddress("$host:$port")
-            ?: throw IllegalStateException("адрес $host:$port не разобран")
+            ?: throw IllegalStateException(tr("адрес {host}:{port} не разобран", host, port))
         out += viaProxyArguments(target, bridge.targetVersion())
         return out.toTypedArray()
     }
@@ -224,12 +225,12 @@ class BedrockProxyService : Service() {
 
     private fun notification(address: String, stop: PendingIntent): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Bedrock через Millida")
-            .setContentText(address.ifEmpty { "перевод протокола" })
+            .setContentTitle(tr("Bedrock через Millida"))
+            .setContentText(address.ifEmpty { tr("перевод протокола") })
             .setSmallIcon(net.millida.launcher.runtime.R.drawable.ic_stat_millida)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(0, "Остановить", stop)
+            .addAction(0, tr("Остановить"), stop)
             .build()
 
     companion object {

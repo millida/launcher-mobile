@@ -4,6 +4,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.atomicWriteText
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
 import java.io.IOException
@@ -34,7 +35,7 @@ object PackKeep {
     /** The slug names a folder files move in and out of, so it is checked like any path. */
     @Throws(IOException::class)
     fun keepDir(root: File, slug: String): File {
-        if (!catalogSlugValid(slug)) throw IOException("некорректный адрес сборки: $slug")
+        if (!catalogSlugValid(slug)) throw IOException(tr("некорректный адрес сборки: {slug}", slug))
         return SafePath.join(File(root, KEEP_FOLDER), slug)
     }
 
@@ -79,7 +80,7 @@ object PackKeep {
         entries.forEach { relative ->
             val target = freeTarget(SafePath.join(keep, relative))
             if (!move(SafePath.join(profileDir, relative), target)) {
-                throw IOException("не удалось сохранить «$relative» — освободи место на телефоне и запусти сборку снова")
+                throw IOException(tr("не удалось сохранить «{relative}» — освободи место на телефоне и запусти сборку снова", relative))
             }
         }
         return entries.size

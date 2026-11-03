@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import net.millida.launcher.core.account.MILLIDA_API
 import net.millida.launcher.core.http.Downloader
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.IOException
@@ -110,7 +111,7 @@ class CurseForgeCatalog(
     suspend fun project(projectId: String): CatalogProject {
         val body = downloader.text("$apiBase/v1/mods/$projectId")
         val data = MojangJson.parseToJsonElement(body).jsonObject["data"]?.jsonObject
-            ?: throw IOException("CurseForge не нашёл этот проект — обнови список")
+            ?: throw IOException(tr("CurseForge не нашёл этот проект — обнови список"))
         val description = try {
             val answer = downloader.text("$apiBase/v1/mods/$projectId/description")
             MojangJson.parseToJsonElement(answer).jsonObject["data"]?.jsonPrimitive?.content.orEmpty()
@@ -194,7 +195,7 @@ class CurseForgeCatalog(
     suspend fun downloadUrl(projectId: String, fileId: String): String {
         val body = downloader.text("$apiBase/v1/mods/$projectId/files/$fileId/download-url")
         val data = MojangJson.parseToJsonElement(body).jsonObject["data"]?.jsonPrimitive?.content
-        return data?.takeIf { it.isNotEmpty() } ?: throw IOException("файл недоступен для скачивания")
+        return data?.takeIf { it.isNotEmpty() } ?: throw IOException(tr("файл недоступен для скачивания"))
     }
 
     private fun loaderOf(loader: LoaderKind): Int? = when (loader) {

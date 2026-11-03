@@ -1,6 +1,10 @@
 package net.millida.launcher.core.catalog
 
 import kotlinx.coroutines.CancellationException
+import net.millida.launcher.core.hub.PhoneBlocked
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
+import net.millida.launcher.core.packs.PhoneFit
 import net.millida.launcher.core.account.MILLIDA_API
 import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.loader.LoaderKind
@@ -12,10 +16,12 @@ import java.io.IOException
 import java.net.URLEncoder
 
 /** What the player is looking through: one catalogue or both at once. */
-enum class CatalogFilter(val label: String) {
-    ALL("Всё"),
+enum class CatalogFilter(private val labelKey: String) {
+    ALL(trKey("Всё")),
     MODRINTH("Modrinth"),
-    CURSEFORGE("CurseForge"),
+    CURSEFORGE("CurseForge"),;
+
+    val label: String get() = tr(labelKey)
 }
 
 /**
@@ -116,7 +122,8 @@ class Catalog(
             val page = answer.getOrNull()
             page != null && page.fetched > 0 && offset + page.fetched < page.total
         }
-        return CatalogPage(ranked(items.distinctBy { it.mergeKey }, query), more)
+        val offered = if (section == CatalogSection.MODPACK) modpacksForPhone(items) else items
+        return CatalogPage(ranked(offered.distinctBy { it.mergeKey }, query), more)
     }
 
     // A search sorted by downloads buries the exact title under popular fuzzy
@@ -246,6 +253,19 @@ class Catalog(
 
     companion object {
         const val PAGE_SIZE = 20
+
+        /** Modpacks the phone may offer: not on the server's list and some loader and version of them starts here. */
+        fun modpacksForPhone(
+            items: List<CatalogItem>,
+            legacyRuntime: Boolean = PhoneFit.legacyRuntime(),
+            deviceTotalMb: Int = PhoneFit.deviceTotalMb(),
+        ): List<CatalogItem> = PhoneBlocked.filter(items, ::blockKeys).filter { item ->
+            PhoneFit.listedAny(item.loaderIds, item.gameVersions, legacyRuntime = legacyRuntime, deviceTotalMb = deviceTotalMb)
+        }
+
+        /** The ids a build is sent under in telemetry: Modrinth by project id (its slug is the readable twin), CurseForge by number. */
+        private fun blockKeys(item: CatalogItem): List<String?> =
+            if (item.source == CatalogSource.MODRINTH) listOf(item.projectId, item.slug) else listOf(item.projectId)
     }
 }
 

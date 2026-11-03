@@ -13,6 +13,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -54,17 +55,20 @@ import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import kotlin.math.abs
 import kotlin.math.cos
@@ -72,6 +76,28 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextDecoration
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import net.millida.launcher.ui.shop.leftLabel
+import net.millida.launcher.ui.shop.rememberNow
+import java.util.concurrent.ConcurrentHashMap
 
 private const val SCREEN_TITLE_KEY = "m-screen-title"
 private val WIDE_STRIP_HEIGHT = 56.dp
@@ -135,7 +161,7 @@ fun MScreen(
                 start = screenPadding,
                 end = screenPadding,
                 top = if (wide) WIDE_LIST_TOP else if (onBack != null) 6.dp else screenPadding,
-                bottom = 28.dp,
+                bottom = 28.dp + wideBottomInset(),
             ),
             verticalArrangement = Arrangement.spacedBy(spacing),
         ) {
@@ -264,7 +290,7 @@ fun WideTopBar(
             if (leave != null) {
                 Box {
                     MPrimaryButton(
-                        text = back?.label ?: "Лобби",
+                        text = back?.label ?: tr("Лобби"),
                         onClick = leave,
                         icon = MIcons.chevronLeft,
                         size = MButtonSize.Small,
@@ -372,8 +398,8 @@ fun MEmptyState(
 fun MSignInGate(
     onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
-    title: String = "Войди в Millida",
-    actionText: String = "Войти",
+    title: String = tr("Войди в Millida"),
+    actionText: String = tr("Войти"),
 ) {
     MEmptyState(
         icon = MIcons.key,
@@ -390,7 +416,7 @@ fun MErrorCard(
     message: String,
     onRetry: (() -> Unit)?,
     modifier: Modifier = Modifier,
-    retryText: String = "Повторить",
+    retryText: String = tr("Повторить"),
 ) {
     val colors = millida
     Column(
@@ -430,6 +456,12 @@ fun MBusyCard(
 ) {
     val colors = millida
     val share = progress?.takeIf { !it.isNaN() && it > 0f }?.coerceAtMost(1f)
+    // Time left from the pace so far: shown only once the pace means something.
+    val startedAt = remember(label) { android.os.SystemClock.elapsedRealtime() }
+    val eta = share?.takeIf { it in 0.03f..0.97f }?.let {
+        val elapsedSec = (android.os.SystemClock.elapsedRealtime() - startedAt) / 1000f
+        if (elapsedSec < 20f) null else (elapsedSec * (1f - it) / it / 60f).roundToInt().coerceAtLeast(1)
+    }
     Column(
         modifier
             .fillMaxWidth()
@@ -454,6 +486,10 @@ fun MBusyCard(
         }
         Spacer(Modifier.height(12.dp))
         MProgressBar(share)
+        if (eta != null) {
+            Spacer(Modifier.height(6.dp))
+            Text(tr("Осталось около {0} мин", eta), style = MillidaType.small, color = colors.fgMuted, maxLines = 1)
+        }
         if (!note.isNullOrBlank()) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -684,7 +720,9 @@ private fun rememberRarityClock(active: Boolean): State<Float>? {
     return rememberInfiniteTransition(label = "rarity").animateFloat(
         initialValue = 0f,
         targetValue = RARITY_CYCLE_MS,
-        animationSpec = infiniteRepeatable(tween(RARITY_CYCLE_MS.toInt(), easing = LinearEasing)),
+        // Steps of the prism's own 400 ms: a linear clock woke the whole lobby 60 times a second
+        // for a colour that changes 2.5 times (measured on the Redmi Note 13: all frames of the idle lobby).
+        animationSpec = infiniteRepeatable(tween(RARITY_CYCLE_MS.toInt(), easing = MillidaMotion.steps((RARITY_CYCLE_MS / PRISM_STEP_MS).toInt()))),
         label = "rarity-clock",
     )
 }
@@ -958,7 +996,8 @@ private fun AlertMarker(modifier: Modifier) {
         rememberInfiniteTransition(label = "alert").animateFloat(
             initialValue = 0f,
             targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(MillidaMotion.hop, easing = LinearEasing)),
+            // hopAt() has four levels, so ten steps show the same hop and draw ten times a cycle, not sixty a second.
+            animationSpec = infiniteRepeatable(tween(MillidaMotion.hop, easing = MillidaMotion.steps(10))),
             label = "alert-hop",
         )
     }
@@ -987,7 +1026,55 @@ private fun AlertMarker(modifier: Modifier) {
     }
 }
 
-/** The plate sits three pixels inside the outline with the same step: a smaller step would thin the line to nothing at the corner. */
+/** One line of [title] at the largest size from [COMPACT_TITLE_SP] down that fits the width, the desktop tile's caption. */
+@Composable
+private fun FittedTitle(title: String, style: TextStyle) {
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val room = constraints.maxWidth
+        val size = remember(title, style, room, measurer) {
+            (COMPACT_TITLE_SP downTo COMPACT_TITLE_MIN_SP).firstOrNull { points ->
+                measurer.measure(title, style.copy(fontSize = points.sp, lineHeight = (points + 2).sp), maxLines = 1, softWrap = false).size.width <= room
+            } ?: COMPACT_TITLE_MIN_SP
+        }
+        Text(
+            title,
+            style = style.copy(fontSize = size.sp, lineHeight = (size + 2).sp),
+            color = MillidaPixel.white,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+private val HERO_BAND = Modifier.padding(start = 12.dp, end = 12.dp, top = 9.dp, bottom = 11.dp)
+
+// A short landscape tile keeps most of its picture above the caption, as the
+// desktop tile does, so the band gives up some padding and type size there.
+private val HERO_BAND_COMPACT = Modifier.padding(start = 10.dp, end = 10.dp, top = 5.dp, bottom = 7.dp)
+
+private val RIBBON_ON_BAND = Modifier.offset(x = (-8).dp, y = (-11).dp)
+
+// The slim band's one-line title runs the whole width, so the ribbon stands on
+// the picture just above the band instead of straddling the band's edge.
+private val RIBBON_OVER_BAND = Modifier.layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    layout(placeable.width, placeable.height) {
+        placeable.place(-RIBBON_INSET.roundToPx(), -placeable.height - RIBBON_LIFT.roundToPx())
+    }
+}
+private val RIBBON_INSET = 8.dp
+private val RIBBON_LIFT = 2.dp
+
+private const val COMPACT_TITLE_SP = 15
+private const val COMPACT_TITLE_MIN_SP = 10
+
+/**
+ * The plate sits three pixels inside the outline with the same step: a smaller step would thin the line to nothing at the corner.
+ * [compactBand] is the desktop lobby's slim caption: the title alone on one line, set as large as fits, so the picture above
+ * keeps the characters down to their shoulders on a low landscape tile.
+ */
 @Composable
 fun MHeroCard(
     title: String,
@@ -999,6 +1086,8 @@ fun MHeroCard(
     ribbon: String? = null,
     alert: Boolean = false,
     onClick: (() -> Unit)? = null,
+    titleMaxLines: Int = 1,
+    compactBand: Boolean = false,
     art: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -1071,20 +1160,21 @@ fun MHeroCard(
                         ),
                         corners = PixelCorners.Bottom,
                     )
-                    .padding(start = 12.dp, end = 12.dp, top = 9.dp, bottom = 11.dp),
+                    .then(if (compactBand) HERO_BAND_COMPACT else HERO_BAND),
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
-                Text(
-                    title,
-                    style = MillidaType.tileTitle.copy(
-                        fontSize = 18.sp,
-                        lineHeight = 20.sp,
-                        shadow = Shadow(MillidaPixel.textShadow, Offset(0f, shadowOffset), 0f),
-                    ),
-                    color = MillidaPixel.white,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                val titleShadow = Shadow(MillidaPixel.textShadow, Offset(0f, shadowOffset), 0f)
+                if (compactBand) {
+                    FittedTitle(title, MillidaType.tileTitle.copy(shadow = titleShadow))
+                } else {
+                    Text(
+                        title,
+                        style = MillidaType.tileTitle.copy(fontSize = 18.sp, lineHeight = 20.sp, shadow = titleShadow),
+                        color = MillidaPixel.white,
+                        maxLines = titleMaxLines,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 if (subtitle != null) {
                     Text(
                         subtitle,
@@ -1099,7 +1189,7 @@ fun MHeroCard(
                 Box(
                     Modifier
                         .align(Alignment.TopEnd)
-                        .offset(x = (-8).dp, y = (-11).dp)
+                        .then(if (compactBand) RIBBON_OVER_BAND else RIBBON_ON_BAND)
                         .pixelSurface(Rarity.LEGENDARY.color, MillidaCut.badge)
                         .padding(horizontal = 7.dp, vertical = 4.dp),
                 ) {
@@ -1115,5 +1205,553 @@ fun MHeroCard(
         if (alert) {
             AlertMarker(Modifier.align(Alignment.TopStart).offset(x = (-6).dp, y = overflow - 8.dp))
         }
+    }
+}
+
+private val SECTION_CHIP_HEIGHT = 38.dp
+private val DAY_CLOCK_HEIGHT = 30.dp
+private const val DAY_CLOCK_TICK_MS = 20_000L
+private val RAIL_CARD_WIDTH = 230.dp
+private val RAIL_GAP = 12.dp
+private const val RAIL_AUTO_MS = 4_000L
+private val PLUS_CHIP_HEIGHT = 28.dp
+private val PLUS_CHIP_MARK = 14.dp
+private const val PLUS_GLOW_MS = 2_200
+private const val PLUS_SHINE_MS = 3_600
+private val BALANCE_HEIGHT = 38.dp
+
+/**
+ * The desktop shop's sticky anchor bar (`sv-nav`): one chip per section, the open
+ * one in the accent. The caller keeps it in a sticky header and scrolls on a pick.
+ */
+@Composable
+fun <T> MSectionChipBar(
+    sections: List<T>,
+    active: T,
+    label: (T) -> String,
+    onPick: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    icon: (T) -> MillidaIcon? = { null },
+) {
+    val colors = millida
+    Row(
+        modifier
+            .fillMaxWidth()
+            .background(colors.bg)
+            .horizontalScroll(rememberScrollState())
+            .padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        sections.forEach { section ->
+            SectionChip(label(section), icon(section), section == active) { onPick(section) }
+        }
+    }
+}
+
+@Composable
+private fun SectionChip(text: String, icon: MillidaIcon?, on: Boolean, onClick: () -> Unit) {
+    val colors = millida
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(interaction, UiSoundEvent.Click)
+    val fill = when {
+        on -> colors.accent
+        pressed -> colors.raised
+        else -> colors.surface2
+    }
+    val ink = when {
+        on -> colors.onAccent
+        pressed -> colors.fg
+        else -> colors.fgMuted
+    }
+    Row(
+        Modifier
+            .heightIn(min = SECTION_CHIP_HEIGHT)
+            .pixelSurface(fill, MillidaCut.control)
+            .selectable(on, interaction, null, role = Role.Tab, onClick = onClick)
+            .padding(start = 12.dp, end = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) MIcon(icon, size = 18.dp, color = ink)
+        Text(
+            text,
+            style = MillidaType.button.copy(fontSize = 14.sp, fontWeight = FontWeight.ExtraBold),
+            color = ink,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+/** A section's head in the desktop shop's feed (`sv-sec > .sh-head`): a big title and, on the right, its timer or action. */
+@Composable
+fun MSecHead(
+    title: String,
+    modifier: Modifier = Modifier,
+    icon: MillidaIcon? = null,
+    aside: @Composable RowScope.() -> Unit = {},
+) {
+    val colors = millida
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) MIcon(icon, size = 22.dp, color = colors.fg)
+            Text(
+                title,
+                style = MillidaType.sectionTitle.copy(fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = (-0.02).em),
+                color = colors.fg,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        aside()
+    }
+}
+
+/**
+ * The desktop's `DayClock`: a clock and the calm time left, «5ч 12м». It ticks every
+ * 20 seconds, as the desktop's, and wakes exactly at zero so the shelf turns over at once.
+ */
+@Composable
+fun MDayClock(to: Long, modifier: Modifier = Modifier, onEnd: (() -> Unit)? = null) {
+    val ticked by rememberNow(DAY_CLOCK_TICK_MS)
+    val ended by rememberUpdatedState(onEnd)
+    var woke by remember(to) { mutableLongStateOf(0L) }
+    LaunchedEffect(to) {
+        val left = to - System.currentTimeMillis()
+        if (left > 0) {
+            delay(left + 50)
+            woke = System.currentTimeMillis()
+            ended?.invoke()
+        }
+    }
+    val now = max(ticked, woke)
+    Row(
+        modifier
+            .height(DAY_CLOCK_HEIGHT)
+            .pixelSurface(MillidaPixel.clockPlate, MillidaCut.control)
+            .padding(horizontal = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MIcon(MIcons.clock, size = 16.dp, color = MillidaPixel.white)
+        Text(
+            leftLabel(max(0L, to - now)),
+            style = MillidaType.button.copy(fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, fontFeatureSettings = "tnum"),
+            color = MillidaPixel.white,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+/**
+ * The desktop's `CardRail`: one row of cards scrolled sideways with arrows at the
+ * edges. With [auto] it moves on by a card every four seconds while nobody holds it,
+ * and goes back to the start from the end; reduced motion keeps it still.
+ */
+@Composable
+fun <T> MCardRail(
+    entries: List<T>,
+    key: (T) -> Any,
+    label: String,
+    modifier: Modifier = Modifier,
+    cardWidth: Dp = RAIL_CARD_WIDTH,
+    auto: Boolean = false,
+    card: @Composable (T) -> Unit,
+) {
+    val state = rememberLazyListState()
+    val reduced = LocalReducedMotion.current
+    val scope = rememberCoroutineScope()
+    var held by remember { mutableStateOf(false) }
+    if (auto && !reduced) {
+        LaunchedEffect(entries.size) {
+            while (true) {
+                delay(RAIL_AUTO_MS)
+                if (held || state.isScrollInProgress) continue
+                val next = state.firstVisibleItemIndex + 1
+                if (!state.canScrollForward || next >= entries.size) state.animateScrollToItem(0) else state.animateScrollToItem(next)
+            }
+        }
+    }
+    Box(
+        modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = label }
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        held = event.changes.any { it.pressed }
+                    }
+                }
+            },
+    ) {
+        LazyRow(
+            state = state,
+            horizontalArrangement = Arrangement.spacedBy(RAIL_GAP),
+            contentPadding = PaddingValues(horizontal = 2.dp),
+        ) {
+            items(entries, key = key) { entry ->
+                Box(Modifier.width(cardWidth)) { card(entry) }
+            }
+        }
+        if (state.canScrollBackward) {
+            RailArrow(MIcons.arrowLeft, tr("Назад"), Modifier.align(Alignment.CenterStart).padding(start = 4.dp)) {
+                scope.launch { state.animateScrollToItem(max(0, state.firstVisibleItemIndex - 1)) }
+            }
+        }
+        if (state.canScrollForward) {
+            RailArrow(MIcons.arrowRight, tr("Дальше"), Modifier.align(Alignment.CenterEnd).padding(end = 4.dp)) {
+                scope.launch { state.animateScrollToItem(minOf(entries.lastIndex, state.firstVisibleItemIndex + 1)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RailArrow(icon: MillidaIcon, label: String, modifier: Modifier, onClick: () -> Unit) {
+    val colors = millida
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(interaction, UiSoundEvent.Nav)
+    Box(
+        modifier
+            .size(width = 40.dp, height = 56.dp)
+            .pixelSurface(if (pressed) colors.raised else colors.bg.copy(alpha = MillidaPixel.railArrowAlpha), MillidaCut.control)
+            .clickable(interaction, indication = null, role = Role.Button, onClickLabel = label, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        MIcon(icon, size = 20.dp, color = colors.fg)
+    }
+}
+
+enum class PlusTier {
+    PLUS,
+    DIAMOND,
+    ;
+
+    companion object {
+        fun of(raw: String?): PlusTier? = entries.firstOrNull { it.name == raw?.trim()?.uppercase() }
+    }
+}
+
+@Immutable
+data class PlusMarkTone(val sole: Color, val line: Color, val body: Color, val hi: Color, val lo: Color) {
+    companion object {
+        val Plus = PlusMarkTone(
+            MillidaPixel.plusMarkSole,
+            MillidaPixel.plusMarkLine,
+            MillidaPixel.plusMarkBody,
+            MillidaPixel.plusMarkHi,
+            MillidaPixel.plusMarkLo,
+        )
+        val Diamond = PlusMarkTone(
+            MillidaPixel.diamondMarkSole,
+            MillidaPixel.diamondMarkLine,
+            MillidaPixel.diamondMarkBody,
+            MillidaPixel.diamondMarkHi,
+            MillidaPixel.diamondMarkLo,
+        )
+        val Off = PlusMarkTone(
+            MillidaPixel.offMarkSole,
+            MillidaPixel.offMarkLine,
+            MillidaPixel.offMarkBody,
+            MillidaPixel.offMarkHi,
+            MillidaPixel.offMarkLo,
+        )
+    }
+}
+
+private val PLUS_GLYPHS: Map<Char, List<String>> = mapOf(
+    'P' to listOf("####.", "##.##", "##.##", "####.", "##...", "##..."),
+    'L' to listOf("##...", "##...", "##...", "##...", "#####", "#####"),
+    'U' to listOf("##.##", "##.##", "##.##", "##.##", "#####", ".###."),
+    'S' to listOf(".####", "##...", ".###.", "...##", "...##", "####."),
+    'D' to listOf("####.", "##.##", "##.##", "##.##", "##.##", "####."),
+    'I' to listOf("##", "##", "##", "##", "##", "##"),
+    'A' to listOf(".###.", "##.##", "##.##", "#####", "##.##", "##.##"),
+    'M' to listOf("##...##", "###.###", "#######", "##.#.##", "##...##", "##...##"),
+    'O' to listOf(".###.", "##.##", "##.##", "##.##", "##.##", ".###."),
+    'N' to listOf("##..##", "###.##", "######", "##.###", "##..##", "##..##"),
+)
+private const val GLYPH_ROWS = 6
+private const val GLYPH_PAD = 1
+private const val GLYPH_SOLE = 1
+private const val GLYPH_GAP_UNKNOWN = 3
+private const val SHINE_WIDTH = 3
+private const val SHINE_START = -6
+
+private class PlusMarkCells(
+    val width: Int,
+    val height: Int,
+    val outline: List<Long>,
+    val sole: List<Long>,
+    val body: List<Long>,
+    val hi: List<Long>,
+    val lo: List<Long>,
+)
+
+private fun cellKey(x: Int, y: Int): Long = (x.toLong() shl 32) or (y.toLong() and 0xffffffffL)
+
+private fun cellX(key: Long): Int = (key shr 32).toInt()
+
+private fun cellY(key: Long): Int = key.toInt()
+
+private val plusMarkCache = ConcurrentHashMap<String, PlusMarkCells>()
+
+/** The desktop's `PlusMark` grid: letters of squares, a one-cell outline with a sole below, a light top edge and a dark bottom one. */
+private fun plusMarkCells(text: String): PlusMarkCells = plusMarkCache.getOrPut(text) {
+    val cells = LinkedHashSet<Long>()
+    var x = GLYPH_PAD
+    for (ch in text) {
+        val glyph = PLUS_GLYPHS[ch]
+        if (glyph == null) {
+            x += GLYPH_GAP_UNKNOWN
+            continue
+        }
+        glyph.forEachIndexed { y, row ->
+            row.forEachIndexed { i, c -> if (c == '#') cells += cellKey(x + i, y + GLYPH_PAD) }
+        }
+        x += glyph[0].length + 1
+    }
+    val width = x - 1 + GLYPH_PAD
+    val height = GLYPH_ROWS + GLYPH_PAD * 2 + GLYPH_SOLE
+    val ring = LinkedHashSet<Long>()
+    for (key in cells) {
+        for (dx in -1..1) for (dy in -1..1) ring += cellKey(cellX(key) + dx, cellY(key) + dy)
+    }
+    val sole = ring.filter { cellKey(cellX(it), cellY(it) + 1) !in ring }.map { cellKey(cellX(it), cellY(it) + 1) }
+    val hi = ArrayList<Long>()
+    val lo = ArrayList<Long>()
+    val body = ArrayList<Long>()
+    for (key in cells) {
+        when {
+            cellKey(cellX(key), cellY(key) - 1) !in cells -> hi += key
+            cellKey(cellX(key), cellY(key) + 1) !in cells -> lo += key
+            else -> body += key
+        }
+    }
+    PlusMarkCells(width, height, ring.toList(), sole, body, hi, lo)
+}
+
+/**
+ * The subscription's sign, the big block word «PLUS» or «DIAMOND» (desktop
+ * `PlusMark`): one component for every place the brand shows. [height] sets the
+ * size, the width follows the word; [shine] runs a glint over the letters.
+ */
+@Composable
+fun MPlusMark(
+    modifier: Modifier = Modifier,
+    tier: PlusTier = PlusTier.PLUS,
+    height: Dp = 24.dp,
+    text: String? = null,
+    tone: PlusMarkTone = if (tier == PlusTier.DIAMOND) PlusMarkTone.Diamond else PlusMarkTone.Plus,
+    shine: Boolean = false,
+) {
+    val word = (text ?: tier.name).uppercase()
+    val cells = remember(word) { plusMarkCells(word) }
+    val reduced = LocalReducedMotion.current
+    val sweep = if (shine && !reduced) {
+        rememberInfiniteTransition(label = "plus-mark-shine").animateFloat(
+            initialValue = SHINE_START.toFloat(),
+            targetValue = (cells.width + SHINE_WIDTH).toFloat(),
+            // The sweep is read as floor(), one cell at a time: draw only when it moves a cell.
+            animationSpec = infiniteRepeatable(
+                tween(PLUS_SHINE_MS, easing = MillidaMotion.steps(cells.width + SHINE_WIDTH - SHINE_START)),
+            ),
+            label = "plus-mark-sweep",
+        )
+    } else {
+        null
+    }
+    val width = height * cells.width.toFloat() / cells.height.toFloat()
+    Canvas(
+        modifier
+            .size(width = width, height = height)
+            .semantics { contentDescription = word },
+    ) {
+        val cell = size.height / cells.height
+        fun paint(list: List<Long>, color: Color) {
+            for (key in list) drawRect(color, Offset(cellX(key) * cell, cellY(key) * cell), Size(cell + 0.5f, cell + 0.5f))
+        }
+        paint(cells.sole, tone.sole)
+        paint(cells.outline, tone.line)
+        paint(cells.body, tone.body)
+        paint(cells.hi, tone.hi)
+        paint(cells.lo, tone.lo)
+        val at = sweep?.value?.let { floor(it).toInt() } ?: return@Canvas
+        val lit = (cells.body + cells.hi + cells.lo).filter { cellX(it) in at until at + SHINE_WIDTH }
+        paint(lit, MillidaPixel.markShine)
+    }
+}
+
+/**
+ * The desktop's subscription chip (`PlusChip`): 28 tall, the pixel word and the
+ * paid-until date. Without a subscription the word is grey with a small glowing
+ * gold «+» beside it; a tap opens PLUS.
+ */
+@Composable
+fun MPlusChip(tier: PlusTier?, onClick: () -> Unit, modifier: Modifier = Modifier, until: String? = null) {
+    val colors = millida
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(interaction, UiSoundEvent.Click)
+    val off = tier == null
+    val fill = when {
+        off -> if (pressed) colors.raised else colors.surface2
+        tier == PlusTier.DIAMOND -> if (pressed) MillidaPixel.diamondChipPressed else MillidaPixel.diamondChip
+        else -> if (pressed) MillidaPixel.plusChipPressed else MillidaPixel.plusChip
+    }
+    val markTone = when {
+        off && pressed -> PlusMarkTone.Plus
+        off -> PlusMarkTone.Off
+        tier == PlusTier.DIAMOND -> PlusMarkTone.Diamond
+        else -> PlusMarkTone.Plus
+    }
+    val spoken = when {
+        off -> tr("Подключить PLUS")
+        tier == PlusTier.DIAMOND -> "Diamond"
+        else -> "PLUS"
+    }
+    Row(
+        modifier
+            .height(PLUS_CHIP_HEIGHT)
+            .pixelSurface(fill, MillidaCut.badge)
+            .clickable(interaction, indication = null, role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = spoken }
+            .padding(horizontal = 9.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MPlusMark(tier = tier ?: PlusTier.PLUS, height = PLUS_CHIP_MARK, tone = markTone, shine = !off)
+        if (off) {
+            PlusAdd()
+        } else if (!until.isNullOrEmpty()) {
+            Text(
+                tr("до {until}", until),
+                style = MillidaType.small.copy(fontSize = 12.sp, fontWeight = FontWeight.ExtraBold),
+                color = if (tier == PlusTier.DIAMOND) MillidaPixel.diamondChipInk else MillidaPixel.plusChipInk,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlusAdd() {
+    val reduced = LocalReducedMotion.current
+    val glow = if (reduced) {
+        null
+    } else {
+        rememberInfiniteTransition(label = "plus-add").animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(tween(PLUS_GLOW_MS, easing = LinearEasing)),
+            label = "plus-add-glow",
+        )
+    }
+    Canvas(Modifier.size(12.dp)) {
+        val phase = glow?.value ?: 0f
+        val dim = if (phase < 0.5f) phase * 2f else (1f - phase) * 2f
+        val halo = lerp(MillidaPixel.plusAddGlow, MillidaPixel.plusAddGlowDim, dim)
+        val cell = size.width / 3f
+        val spread = cell * 0.6f
+        val haze = halo.copy(alpha = halo.alpha * PLUS_HAZE)
+        drawRect(haze, Offset(cell - spread, -spread), Size(cell + spread * 2, size.height + spread * 2))
+        drawRect(haze, Offset(-spread, cell - spread), Size(size.width + spread * 2, cell + spread * 2))
+        drawRect(MillidaPixel.plusAdd, Offset(cell, 0f), Size(cell, size.height))
+        drawRect(MillidaPixel.plusAdd, Offset(0f, cell), Size(size.width, cell))
+    }
+}
+
+private const val PLUS_HAZE = 0.35f
+
+/**
+ * A currency balance plate from the desktop shop's head (`sh-bal`): the coin and the
+ * number, «—» while the amount is still unknown.
+ */
+@Composable
+fun MBalanceBadge(icon: MillidaIcon, amount: Long?, label: String, modifier: Modifier = Modifier) {
+    val colors = millida
+    Row(
+        modifier
+            .height(BALANCE_HEIGHT)
+            .pixelSurface(
+                colors.surface2,
+                MillidaCut.control,
+                PixelFrame(top = colors.plateTop, topWidth = 2.dp, bottom = colors.plateBottom, bottomWidth = 3.dp),
+            )
+            .semantics(mergeDescendants = true) { contentDescription = label }
+            .padding(start = 12.dp, end = 12.dp, bottom = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MIcon(icon, size = 20.dp)
+        Text(
+            amount?.let { groupDigits(it) } ?: "—",
+            style = MillidaType.button.copy(
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold,
+                letterSpacing = (-0.01).em,
+                fontFeatureSettings = "tnum",
+            ),
+            color = colors.fg,
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+@Composable
+fun MShardBalance(amount: Long?, modifier: Modifier = Modifier) {
+    MBalanceBadge(MIcons.shard, amount, tr("Осколки"), modifier)
+}
+
+/** The desktop's `faint-note`: a quiet grey line under a block. */
+@Composable
+fun MFaintNote(text: String, modifier: Modifier = Modifier, textAlign: TextAlign? = null) {
+    Text(
+        text,
+        modifier = modifier.padding(top = 10.dp),
+        style = MillidaType.small.copy(fontSize = 12.5.sp, lineHeight = 20.sp),
+        color = millida.fgSubtle,
+        textAlign = textAlign,
+    )
+}
+
+/**
+ * An underlined grey text link (`acc-choice-buy`): for a way out that must not
+ * compete with the buttons above it. The row keeps a finger-sized height.
+ */
+@Composable
+fun MTextLink(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = millida
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by rememberPressed(interaction, UiSoundEvent.Click)
+    Box(
+        modifier
+            .heightIn(min = 44.dp)
+            .clickable(interaction, indication = null, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            style = MillidaType.body.copy(fontSize = 13.sp, textDecoration = TextDecoration.Underline),
+            color = if (pressed) colors.fg else colors.fgMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }

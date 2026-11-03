@@ -17,6 +17,7 @@ import org.junit.Test
  * | сохранён неизвестный id / пусто                   | статичный фон, как было до живых обоев          |
  * | обои выбраны, всё разрешено, приложение спереди   | движется                                        |
  * | выключена анимация / системное «меньше движения» / свёрнуто | стоит                                 |
+ * | сцена лобби без обоев, настройки по умолчанию     | волны и искры идут, как на ПК                   |
  * | клетка волны до фронта / после вспышки            | 0 — не горит                                    |
  * | вспышка                                           | ровно ступени по 1/4                            |
  * | искра в начале / середине / после жизни           | гаснет, горит, 0                                |
@@ -65,6 +66,25 @@ class LiveWallpaperTest {
         )
         for (case in cases) {
             assertEquals(case.why, case.moves, LiveWallpaper.animates(case.chosen, case.motion, case.reduced, case.resumed))
+        }
+    }
+
+    @Test
+    fun `сцена горизонтального лобби движется по умолчанию, как фон ПК`() {
+        assertTrue(
+            "«Анимация» включена с первого запуска: на ПК волны и искры идут по умолчанию, выключенный флаг вернёт мёртвый фон",
+            LiveWallpaper.MOTION_DEFAULT,
+        )
+        data class Case(val motion: Boolean, val reduced: Boolean, val resumed: Boolean, val moves: Boolean, val why: String)
+
+        val cases = listOf(
+            Case(LiveWallpaper.MOTION_DEFAULT, reduced = false, resumed = true, moves = true, why = "новый игрок без настроек видит волны и искры"),
+            Case(motion = false, reduced = false, resumed = true, moves = false, why = "игрок выключил «Анимацию»"),
+            Case(LiveWallpaper.MOTION_DEFAULT, reduced = true, resumed = true, moves = false, why = "телефон просит меньше движения — один кадр"),
+            Case(LiveWallpaper.MOTION_DEFAULT, reduced = false, resumed = false, moves = false, why = "приложение не спереди — кадры не считаются"),
+        )
+        for (case in cases) {
+            assertEquals(case.why, case.moves, LiveWallpaper.stageAnimates(case.motion, case.reduced, case.resumed))
         }
     }
 

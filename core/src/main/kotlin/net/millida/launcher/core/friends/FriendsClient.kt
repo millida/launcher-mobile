@@ -13,6 +13,7 @@ import java.io.IOException
 import java.net.URLEncoder
 import java.util.Base64
 
+import net.millida.launcher.core.i18n.tr
 /**
  * Friends, presence and messages as the portal serves them. Every path here is
  * the one the desktop launcher already uses, so both clients read the same
@@ -23,11 +24,11 @@ import java.util.Base64
  */
 class FriendsClient(private val auth: MillidaAuth) {
 
-    suspend fun friends(): List<Friend> = guarded("Не удалось загрузить друзей") {
+    suspend fun friends(): List<Friend> = guarded(tr("Не удалось загрузить друзей")) {
         auth.authorized("/friends", "GET", null).array("friends").map { it.jsonObject.toFriend() }.distinctBy { it.userId }
     }
 
-    suspend fun requests(): FriendRequests = guarded("Не удалось загрузить заявки") {
+    suspend fun requests(): FriendRequests = guarded(tr("Не удалось загрузить заявки")) {
         val response = auth.authorized("/friends/requests", "GET", null)
         FriendRequests(
             incoming = response.array("incoming").map { it.jsonObject.toRequestCard() },
@@ -36,7 +37,7 @@ class FriendsClient(private val auth: MillidaAuth) {
     }
 
     /** The server answers an empty list for a query shorter than two characters. */
-    suspend fun search(query: String): List<FoundPlayer> = guarded("Поиск недоступен") {
+    suspend fun search(query: String): List<FoundPlayer> = guarded(tr("Поиск недоступен")) {
         val path = "/friends/search?q=" + URLEncoder.encode(query.trim(), "UTF-8")
         auth.authorized(path, "GET", null).array("results").map { it.jsonObject.toFoundPlayer() }
     }
@@ -45,28 +46,28 @@ class FriendsClient(private val auth: MillidaAuth) {
         sendRequest(buildJsonObject { put("nickname", nickname.trim()) })
 
     /** `id` here is the id of the request row, not of the player. */
-    suspend fun acceptRequest(requestId: String) = act("/friends/accept", "Не удалось принять заявку") {
+    suspend fun acceptRequest(requestId: String) = act("/friends/accept", tr("Не удалось принять заявку")) {
         put("id", requireId(requestId))
     }
 
-    suspend fun declineRequest(requestId: String) = act("/friends/decline", "Не удалось отклонить заявку") {
+    suspend fun declineRequest(requestId: String) = act("/friends/decline", tr("Не удалось отклонить заявку")) {
         put("id", requireId(requestId))
     }
 
-    suspend fun cancelRequest(requestId: String) = act("/friends/cancel", "Не удалось отменить заявку") {
+    suspend fun cancelRequest(requestId: String) = act("/friends/cancel", tr("Не удалось отменить заявку")) {
         put("id", requireId(requestId))
     }
 
-    suspend fun removeFriend(userId: String) = act("/friends/remove", "Не удалось убрать из друзей") {
+    suspend fun removeFriend(userId: String) = act("/friends/remove", tr("Не удалось убрать из друзей")) {
         put("userId", requireId(userId))
     }
 
     /** Older servers kept the friendship after a block, so the caller removes the friend right after. */
-    suspend fun blockPlayer(userId: String) = act("/friends/block", "Не удалось заблокировать") {
+    suspend fun blockPlayer(userId: String) = act("/friends/block", tr("Не удалось заблокировать")) {
         put("userId", requireId(userId))
     }
 
-    suspend fun blocked(): List<BlockedPlayer> = guarded("Не удалось загрузить список блокировок") {
+    suspend fun blocked(): List<BlockedPlayer> = guarded(tr("Не удалось загрузить список блокировок")) {
         auth.authorized("/core/blocks", "GET", null).array("items").map { entry ->
             val row = entry.jsonObject
             val user = row["user"] as? JsonObject
@@ -78,18 +79,18 @@ class FriendsClient(private val auth: MillidaAuth) {
         }
     }
 
-    suspend fun unblock(userId: String) = guarded("Не удалось разблокировать") {
+    suspend fun unblock(userId: String) = guarded(tr("Не удалось разблокировать")) {
         auth.authorized("/core/blocks/" + pathSegment(userId), "DELETE", null)
         Unit
     }
 
-    suspend fun roomsPage(): RoomsPage = guarded("Не удалось загрузить группы") {
+    suspend fun roomsPage(): RoomsPage = guarded(tr("Не удалось загрузить группы")) {
         val response = auth.authorized("/friends/rooms", "GET", null)
         RoomsPage(me = response.text("me"), rooms = response.array("rooms").map { it.jsonObject.toRoom() })
     }
 
     /** Hours played come only from here: the friends list does not carry them. */
-    suspend fun profile(userId: String): FriendProfileCard = guarded("Профиль не загрузился") {
+    suspend fun profile(userId: String): FriendProfileCard = guarded(tr("Профиль не загрузился")) {
         val response = auth.authorized("/friends/profile/" + pathSegment(userId), "GET", null)
         val stats = response["stats"] as? JsonObject
         FriendProfileCard(
@@ -111,20 +112,20 @@ class FriendsClient(private val auth: MillidaAuth) {
     }
 
     /** The server toggles the reaction and answers with the whole message, like an edit does. */
-    suspend fun react(messageId: String, emoji: String): ChatMessage = guarded("Реакция не поставилась") {
+    suspend fun react(messageId: String, emoji: String): ChatMessage = guarded(tr("Реакция не поставилась")) {
         val path = "/friends/chat/message/" + pathSegment(messageId) + "/react"
         auth.authorized(path, "POST", buildJsonObject { put("emoji", emoji) }).toMessage()
     }
 
     /** The server answers with the whole message, the same shape the poll uses for edits. */
-    suspend fun editMessage(messageId: String, text: String): ChatMessage = guarded("Сообщение не изменилось") {
+    suspend fun editMessage(messageId: String, text: String): ChatMessage = guarded(tr("Сообщение не изменилось")) {
         val body = text.trim()
-        if (body.isEmpty()) throw FriendsError("Пустым сообщение не сделать — удали его")
+        if (body.isEmpty()) throw FriendsError(tr("Пустым сообщение не сделать — удали его"))
         val path = "/friends/chat/message/" + pathSegment(messageId) + "/edit"
         auth.authorized(path, "POST", buildJsonObject { put("text", body) }).toMessage()
     }
 
-    suspend fun deleteMessage(messageId: String): ChatMessage = guarded("Сообщение не удалилось") {
+    suspend fun deleteMessage(messageId: String): ChatMessage = guarded(tr("Сообщение не удалилось")) {
         val path = "/friends/chat/message/" + pathSegment(messageId) + "/delete"
         auth.authorized(path, "POST", buildJsonObject { }).toMessage()
     }
@@ -171,7 +172,7 @@ class FriendsClient(private val auth: MillidaAuth) {
      * re-reading the whole thread.
      */
     suspend fun history(target: ChatTarget, before: Long? = null, limit: Int? = null): ChatPage =
-        guarded("Не удалось открыть переписку") {
+        guarded(tr("Не удалось открыть переписку")) {
             val query = buildList {
                 before?.let { add("before=$it") }
                 limit?.let { add("limit=$it") }
@@ -190,9 +191,9 @@ class FriendsClient(private val auth: MillidaAuth) {
         text: String,
         attachment: ChatAttachment? = null,
         replyToId: String? = null,
-    ): ChatMessage = guarded("Сообщение не отправлено") {
+    ): ChatMessage = guarded(tr("Сообщение не отправлено")) {
         val body = text.trim()
-        if (body.isEmpty() && attachment == null) throw FriendsError("Пустое сообщение отправить нельзя")
+        if (body.isEmpty() && attachment == null) throw FriendsError(tr("Пустое сообщение отправить нельзя"))
         val payload = buildJsonObject {
             if (body.isNotEmpty()) put("text", body)
             attachment?.let { put("attachment", it.toJson()) }
@@ -201,7 +202,7 @@ class FriendsClient(private val auth: MillidaAuth) {
         auth.authorized(chatBase(target), "POST", payload).toMessage()
     }
 
-    suspend fun markRead(target: ChatTarget) = guarded("Не удалось отметить прочитанным") {
+    suspend fun markRead(target: ChatTarget) = guarded(tr("Не удалось отметить прочитанным")) {
         val path = when (target) {
             is ChatTarget.Dm -> "/friends/chat/" + pathSegment(target.userId) + "/read"
             is ChatTarget.Room -> "/friends/rooms/" + pathSegment(target.roomId) + "/read"
@@ -214,16 +215,16 @@ class FriendsClient(private val auth: MillidaAuth) {
      * Image attachment. The portal takes the file as base64 inside JSON, the
      * same way the desktop launcher sends it.
      */
-    suspend fun uploadImage(bytes: ByteArray): ChatAttachment = guarded("Картинка не отправилась") {
-        if (bytes.isEmpty()) throw FriendsError("Файл пустой")
-        if (bytes.size > MAX_IMAGE_BYTES) throw FriendsError("Картинка больше 2 МБ — выбери поменьше")
+    suspend fun uploadImage(bytes: ByteArray): ChatAttachment = guarded(tr("Картинка не отправилась")) {
+        if (bytes.isEmpty()) throw FriendsError(tr("Файл пустой"))
+        if (bytes.size > MAX_IMAGE_BYTES) throw FriendsError(tr("Картинка больше 2 МБ — выбери поменьше"))
         val payload = buildJsonObject {
             put("kind", "image")
             put("dataBase64", Base64.getEncoder().encodeToString(bytes))
         }
         val response = auth.authorized("/friends/chat/upload", "POST", payload)
         val url = response.text("url")
-        if (url.isEmpty()) throw FriendsError("Millida не вернула ссылку на картинку")
+        if (url.isEmpty()) throw FriendsError(tr("Millida не вернула ссылку на картинку"))
         ChatAttachment(url = url, kind = "image", name = response.text("name"))
     }
 
@@ -231,10 +232,10 @@ class FriendsClient(private val auth: MillidaAuth) {
      * Voice note, recorded on the phone as AAC in MP4. The body is the desktop
      * one (chatMedia.ts uploadVoice): the file, its length and its envelope.
      */
-    suspend fun uploadVoice(bytes: ByteArray, durationMs: Long, peaks: List<Int>): ChatAttachment = guarded("Голосовое не отправилось") {
-        if (bytes.isEmpty()) throw FriendsError("Запись пустая — микрофон ничего не услышал")
-        if (bytes.size > VoiceNotes.MAX_BYTES) throw FriendsError("Голосовое больше 3 МБ — запиши покороче")
-        if (!VoiceNotes.isM4a(bytes)) throw FriendsError("Телефон записал звук в неизвестном формате — обнови приложение")
+    suspend fun uploadVoice(bytes: ByteArray, durationMs: Long, peaks: List<Int>): ChatAttachment = guarded(tr("Голосовое не отправилось")) {
+        if (bytes.isEmpty()) throw FriendsError(tr("Запись пустая — микрофон ничего не услышал"))
+        if (bytes.size > VoiceNotes.MAX_BYTES) throw FriendsError(tr("Голосовое больше 3 МБ — запиши покороче"))
+        if (!VoiceNotes.isM4a(bytes)) throw FriendsError(tr("Телефон записал звук в неизвестном формате — обнови приложение"))
         val payload = buildJsonObject {
             put("kind", "voice")
             put("dataBase64", Base64.getEncoder().encodeToString(bytes))
@@ -243,11 +244,11 @@ class FriendsClient(private val auth: MillidaAuth) {
         }
         val response = auth.authorized("/friends/chat/upload", "POST", payload)
         val url = response.text("url")
-        if (url.isEmpty()) throw FriendsError("Millida не вернула ссылку на голосовое")
+        if (url.isEmpty()) throw FriendsError(tr("Millida не вернула ссылку на голосовое"))
         ChatAttachment(
             url = url,
             kind = "voice",
-            name = response.text("name").ifEmpty { "Голосовое сообщение" },
+            name = response.text("name").ifEmpty { tr("Голосовое сообщение") },
             durationMs = durationMs,
             peaks = peaks,
         )
@@ -255,7 +256,7 @@ class FriendsClient(private val auth: MillidaAuth) {
 
     fun unreadTotal(dialogs: List<Dialog>): Int = dialogs.sumOf { it.unread }
 
-    suspend fun poll(since: Long, wait: Boolean = false): FriendsPoll = guarded("Обновление не пришло") {
+    suspend fun poll(since: Long, wait: Boolean = false): FriendsPoll = guarded(tr("Обновление не пришло")) {
         val path = "/friends/poll?" + (if (wait) "wait=1&" else "") + "since=$since"
         val response = auth.authorized(path, "GET", null)
         val requests = response["requests"] as? JsonObject
@@ -304,7 +305,7 @@ class FriendsClient(private val auth: MillidaAuth) {
         build: String? = null,
         gameNick: String? = null,
         telemetry: JsonObject? = null,
-    ) = guarded("Присутствие не отправлено") {
+    ) = guarded(tr("Присутствие не отправлено")) {
         val playing = status == BeatStatus.PLAYING
         val payload = buildJsonObject {
             put("status", status.wire)
@@ -322,7 +323,7 @@ class FriendsClient(private val auth: MillidaAuth) {
     }
 
     private suspend fun sendRequest(payload: JsonObject): RequestOutcome =
-        guarded("Не удалось отправить заявку") {
+        guarded(tr("Не удалось отправить заявку")) {
             when (auth.authorized("/friends/request", "POST", payload).text("status")) {
                 "accepted" -> RequestOutcome.ACCEPTED
                 "already_friends" -> RequestOutcome.ALREADY_FRIENDS
@@ -361,7 +362,7 @@ class FriendsClient(private val auth: MillidaAuth) {
 internal fun requireId(value: String): String {
     val trimmed = value.trim()
     if (trimmed.isEmpty() || trimmed.contains('/') || trimmed.contains("..")) {
-        throw FriendsError("Неверный идентификатор игрока")
+        throw FriendsError(tr("Неверный идентификатор игрока"))
     }
     return trimmed
 }

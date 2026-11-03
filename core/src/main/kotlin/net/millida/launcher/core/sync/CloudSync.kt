@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import net.millida.launcher.core.account.MillidaAuth
 import java.io.IOException
 
+import net.millida.launcher.core.i18n.tr
 const val SYNC_PATH = "/launcher/sync"
 
 /**
@@ -156,7 +157,7 @@ class CloudSync(
     private val auth: MillidaAuth,
     private val builds: LocalBuilds,
     private val prefs: SyncPrefs = NoPrefs,
-    deviceName: String = "Телефон",
+    deviceName: String = tr("Телефон"),
 ) {
     private val device: String = deviceName.filter { !it.isISOControl() }.take(40)
 
@@ -202,8 +203,8 @@ class CloudSync(
         val size = body.toByteArray(Charsets.UTF_8).size
         if (size > MAX_SNAPSHOT_BYTES) {
             throw IOException(
-                "Слепок сборок весит ${size / 1024} КБ — это больше предела в ${MAX_SNAPSHOT_BYTES / 1024} КБ. " +
-                    "Убери часть сборок из синхронизации.",
+                tr("Слепок сборок весит {0} КБ — это больше предела в {1} КБ. ", size / 1024, MAX_SNAPSHOT_BYTES / 1024) +
+                    tr("Убери часть сборок из синхронизации."),
             )
         }
         val payload = buildJsonObject { put("snapshot", SyncJson.parseToJsonElement(body)) }
@@ -218,10 +219,10 @@ class CloudSync(
      */
     suspend fun pull(only: List<String>? = null, applyPrefs: Boolean = false): PullReport {
         val response = auth.authorized(SYNC_PATH, "GET", null)
-        val raw = response["snapshot"]?.takeIf { it != JsonNull } ?: throw IOException("В облаке ещё ничего нет")
+        val raw = response["snapshot"]?.takeIf { it != JsonNull } ?: throw IOException(tr("В облаке ещё ничего нет"))
         val snapshot = decode(raw)
         if (snapshot.formatVersion > SNAPSHOT_FORMAT) {
-            throw IOException("Копию сделали в более новой версии лаунчера — обнови лаунчер")
+            throw IOException(tr("Копию сделали в более новой версии лаунчера — обнови лаунчер"))
         }
         val local = builds.names()
         val installed = mutableListOf<String>()
@@ -231,12 +232,12 @@ class CloudSync(
 
         for (entry in snapshot.profiles.take(MAX_PROFILES)) {
             if (only != null && entry.name !in only) {
-                skipped += SkippedBuild(entry.name, "не выбрана для загрузки")
+                skipped += SkippedBuild(entry.name, tr("не выбрана для загрузки"))
                 continue
             }
             val exists = entry.name in local
             if (exists && only == null) {
-                skipped += SkippedBuild(entry.name, "уже есть на телефоне — выбери её отдельно, чтобы обновить")
+                skipped += SkippedBuild(entry.name, tr("уже есть на телефоне — выбери её отдельно, чтобы обновить"))
                 continue
             }
             val manifest = try {
@@ -249,7 +250,7 @@ class CloudSync(
                 builds.install(entry.name, manifest, entry.group)
                 if (exists) updated += entry.name else installed += entry.name
             } catch (error: Exception) {
-                failed += "${entry.name}: ${error.message ?: "не установилась"}"
+                failed += "${entry.name}: ${error.message ?: tr("не установилась")}"
             }
         }
 
@@ -288,7 +289,7 @@ class CloudSync(
     private fun decode(raw: JsonElement): Snapshot = try {
         SyncJson.decodeFromJsonElement(Snapshot.serializer(), raw)
     } catch (broken: Exception) {
-        throw IOException("Облачная копия записана в неизвестном формате")
+        throw IOException(tr("Облачная копия записана в неизвестном формате"))
     }
 
     private fun JsonObject.text(key: String): String = this[key]?.jsonPrimitive?.content.orEmpty()
@@ -309,9 +310,9 @@ fun urlAllowed(raw: String): Boolean {
  */
 fun sanitiseManifest(manifest: PackManifest): PackManifest {
     if (manifest.formatVersion > PACK_FORMAT) {
-        throw IOException("Сборку сделали в более новой версии лаунчера — обнови лаунчер")
+        throw IOException(tr("Сборку сделали в более новой версии лаунчера — обнови лаунчер"))
     }
-    if (manifest.game.isBlank()) throw IOException("В сборке не указана версия Minecraft")
+    if (manifest.game.isBlank()) throw IOException(tr("В сборке не указана версия Minecraft"))
     val files = manifest.files
         .take(MAX_FILES)
         .filter { file ->

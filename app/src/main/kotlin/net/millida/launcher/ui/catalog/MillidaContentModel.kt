@@ -25,6 +25,7 @@ import net.millida.launcher.core.catalog.MillidaKind
 import net.millida.launcher.core.catalog.MillidaPaid
 import net.millida.launcher.core.catalog.PaidVerdict
 import net.millida.launcher.core.catalog.Pricing
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.core.packs.PackOriginStore
@@ -187,7 +188,7 @@ class MillidaContentModel(
             } catch (error: Throwable) {
                 if (seq != listSeq.get()) return@launch
                 mutable.update { it.copy(loadingMore = false) }
-                host.notice("Каталог Millida не догрузился: ${host.errorText(error).lowerFirst()}", true)
+                host.notice(tr("Каталог Millida не догрузился: {0}", host.errorText(error).lowerFirst()), true)
             }
         }
     }
@@ -252,7 +253,7 @@ class MillidaContentModel(
         val title = MillidaCatalog.displayName(item.title)
         val pick = MillidaFiles.pickFile(item.files, target.gameVersion, target.loader, kind)
         if (pick == null && !MillidaPaid.isPaid(item.pricing, item.priceKopecks)) {
-            host.notice("У «$title» пока нет файла — открой его на сайте", true)
+            host.notice(tr("У «{title}» пока нет файла — открой его на сайте", title), true)
             return
         }
         mutable.update {
@@ -282,7 +283,7 @@ class MillidaContentModel(
     private fun prepare(slug: String, title: String, kind: MillidaKind, targetId: String, confirmed: MillidaFilePick?) {
         val target = host.profiles.firstOrNull { it.id == targetId }
         if (target == null) {
-            host.notice("Сборки больше нет — выбери другую и поставь заново", true)
+            host.notice(tr("Сборки больше нет — выбери другую и поставь заново"), true)
             return
         }
         if (confirmed != null) {
@@ -295,7 +296,7 @@ class MillidaContentModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                host.notice("Каталог не ответил — повтори: ${host.errorText(error).lowerFirst()}", true)
+                host.notice(tr("Каталог не ответил — повтори: {0}", host.errorText(error).lowerFirst()), true)
                 return@launch
             }
             val modrinth = MillidaCatalog.modrinthSlugOf(item.sourceUrl)
@@ -314,7 +315,7 @@ class MillidaContentModel(
             }
             val pick = MillidaFiles.pickFile(item.files, target.gameVersion, target.loader, kind)
             if (pick == null) {
-                host.notice("У «$title» пока нет файла", true)
+                host.notice(tr("У «{title}» пока нет файла", title), true)
                 return@launch
             }
             if (!pick.fits) {
@@ -364,7 +365,7 @@ class MillidaContentModel(
                 )
                 host.notice(
                     if (kind == MillidaKind.WORLD) {
-                        "Карта «$placed» → «${target.name}»: заходи в одиночную игру"
+                        tr("Карта «{placed}» → «{name}»: заходи в одиночную игру", placed, target.name)
                     } else {
                         "${kind.noun} → «${target.name}»: $placed"
                     },
@@ -390,7 +391,7 @@ class MillidaContentModel(
     private fun failed(error: Throwable, slug: String, title: String) {
         when (val verdict = MillidaPaid.verdict(error.message)) {
             PaidVerdict.LOGIN -> {
-                host.notice("Войди в аккаунт Millida — покупки хранятся в нём", true)
+                host.notice(tr("Войди в аккаунт Millida — покупки хранятся в нём"), true)
                 host.signIn()
             }
             PaidVerdict.NO_ACCESS -> {
@@ -398,7 +399,7 @@ class MillidaContentModel(
                 host.notice(MillidaPaid.verdictText(verdict).orEmpty(), true)
             }
             else -> host.notice(
-                MillidaPaid.verdictText(verdict) ?: "«$title» не поставился: ${host.errorText(error).lowerFirst()}",
+                MillidaPaid.verdictText(verdict) ?: tr("«{title}» не поставился: {0}", title, host.errorText(error).lowerFirst()),
                 true,
             )
         }
@@ -409,11 +410,11 @@ class MillidaContentModel(
     private fun readyTarget(kind: MillidaKind): Profile? {
         val target = target()
         if (target == null) {
-            host.notice("Сначала создай сборку — ${kind.noun.lowercase()} ставится в неё", true)
+            host.notice(tr("Сначала создай сборку — {0} ставится в неё", kind.noun.lowercase()), true)
             return null
         }
         if (kind.loaderBound && target.loader == LoaderKind.VANILLA) {
-            host.notice("В ванильной сборке моды не работают — выбери сборку с загрузчиком", true)
+            host.notice(tr("В ванильной сборке моды не работают — выбери сборку с загрузчиком"), true)
             return null
         }
         return target

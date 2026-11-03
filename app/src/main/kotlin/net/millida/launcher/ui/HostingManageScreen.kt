@@ -44,44 +44,47 @@ import kotlinx.coroutines.delay
 import net.millida.launcher.HostingModel
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.UiState
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.ui.hosting.HostingAccessTab
-import net.millida.launcher.ui.hosting.HostingBackupsTab
 import net.millida.launcher.ui.hosting.HostingBuySheet
 import net.millida.launcher.ui.hosting.HostingConsoleTab
 import net.millida.launcher.ui.hosting.HostingContentTab
 import net.millida.launcher.ui.hosting.HostingFilesTab
 import net.millida.launcher.ui.hosting.HostingNetworkTab
 import net.millida.launcher.ui.hosting.HostingOverviewTab
+import net.millida.launcher.ui.hosting.HostingPlayersTab
 import net.millida.launcher.ui.hosting.HostingPlanTab
 import net.millida.launcher.ui.hosting.HostingScheduleTab
 import net.millida.launcher.ui.hosting.HostingSettingsTab
 import net.millida.launcher.ui.hosting.HostingWorldsTab
 
-internal enum class HostingTab(val label: String, val icon: MillidaIcon) {
-    Overview("Обзор", MIcons.monitor),
-    Console("Консоль", MIcons.list),
-    Content("Моды", MIcons.blocks),
-    Worlds("Мир", MIcons.map),
-    Backups("Бэкапы", MIcons.box),
-    Settings("Настройки", MIcons.settings),
-    Files("Файлы", MIcons.folder),
-    Network("Сеть", MIcons.link),
-    Schedule("Автоматика", MIcons.clock),
-    Access("Доступ", MIcons.key),
-    Plan("Тариф", MIcons.star),
+internal enum class HostingTab(private val labelKey: String, val icon: MillidaIcon) {
+    Overview(trKey("Обзор"), MIcons.monitor),
+    Console(trKey("Консоль"), MIcons.list),
+    Content(trKey("Моды"), MIcons.blocks),
+    Players(trKey("Игроки"), MIcons.users),
+    Worlds(trKey("Мир"), MIcons.map),
+    Settings(trKey("Настройки"), MIcons.settings),
+    Files(trKey("Файлы"), MIcons.folder),
+    Network(trKey("Сеть"), MIcons.link),
+    Schedule(trKey("Автоматика"), MIcons.clock),
+    Access(trKey("Доступ"), MIcons.key),
+    Plan(trKey("Тариф"), MIcons.star),;
+
+    val label: String get() = tr(labelKey)
 }
 
 private const val DETAILS_FAST_MS = 10_000L
 private const val DETAILS_SLOW_MS = 20_000L
 
-/** The desktop panel's five tabs in sight; the players' place goes to the backups its «Мир» holds. */
 private val WIDE_MAIN_TABS: List<HostingTab> = listOf(
     HostingTab.Overview,
     HostingTab.Console,
     HostingTab.Content,
+    HostingTab.Players,
     HostingTab.Worlds,
-    HostingTab.Backups,
 )
 
 private val WIDE_MORE_TABS: List<HostingTab> = listOf(
@@ -111,7 +114,7 @@ fun HostingManageScreen(state: UiState, model: LauncherViewModel, modifier: Modi
     val server = state.hostingDetails?.server ?: state.hosted.firstOrNull { it.id == serverId }
     val status = server?.status.orEmpty()
     val running = status.equals("RUNNING", ignoreCase = true)
-    val name = server?.let(::hostingName) ?: "Сервер"
+    val name = server?.let(::hostingName) ?: tr("Сервер")
     val address = server?.address.orEmpty()
     val tag = server?.let(::hostingTag).orEmpty()
     val canControl = state.hostingDetails?.can("control") ?: true
@@ -210,7 +213,13 @@ fun HostingManageScreen(state: UiState, model: LauncherViewModel, modifier: Modi
             )
 
             HostingTab.Files -> HostingFilesTab(serverId, model.hostingTools)
-            HostingTab.Backups -> HostingBackupsTab(serverId, model.hostingTools)
+            HostingTab.Players -> HostingPlayersTab(
+                serverId = serverId,
+                running = running,
+                panel = panel,
+                hosting = hosting,
+                roster = state.hostingDetails?.players.orEmpty(),
+            )
             HostingTab.Worlds -> HostingWorldsTab(serverId, model.hostingTools)
             HostingTab.Network -> HostingNetworkTab(serverId, model.hostingTools)
             HostingTab.Access -> HostingAccessTab(serverId, model.hostingTools)
@@ -237,7 +246,7 @@ fun HostingManageScreen(state: UiState, model: LauncherViewModel, modifier: Modi
                 onBack = { model.back() },
                 subtitle = tag.ifEmpty { hostingStatusLabel(status) },
                 actions = {
-                    MSecondaryButton("Обновить", onClick = refresh, icon = MIcons.refresh, size = MButtonSize.Small)
+                    MSecondaryButton(tr("Обновить"), onClick = refresh, icon = MIcons.refresh, size = MButtonSize.Small)
                 },
             )
             HostingWideTabs(
@@ -263,7 +272,7 @@ fun HostingManageScreen(state: UiState, model: LauncherViewModel, modifier: Modi
                 onBack = { model.back() },
                 subtitle = tag.ifEmpty { hostingStatusLabel(status) },
                 actions = {
-                    MIconButton(MIcons.refresh, onClick = refresh, label = "Обновить")
+                    MIconButton(MIcons.refresh, onClick = refresh, label = tr("Обновить"))
                 },
             )
             MTabs(
@@ -355,7 +364,7 @@ private fun HostingStrip(
         HostingStatusPlate(status)
         Spacer(Modifier.width(10.dp))
         Text(
-            address.ifEmpty { "адрес появится после запуска" },
+            address.ifEmpty { tr("адрес появится после запуска") },
             modifier = Modifier.weight(1f),
             style = if (address.isEmpty()) MillidaType.small else MillidaType.pixelSmall,
             color = if (address.isEmpty()) colors.fgFaint else colors.fgMuted,
@@ -364,13 +373,13 @@ private fun HostingStrip(
         )
         if (address.isNotEmpty()) {
             Spacer(Modifier.width(6.dp))
-            MIconButton(MIcons.copy, onClick = onCopy, label = "Скопировать адрес")
+            MIconButton(MIcons.copy, onClick = onCopy, label = tr("Скопировать адрес"))
         }
         Spacer(Modifier.width(6.dp))
         if (busy) {
             Box(Modifier.width(44.dp), contentAlignment = Alignment.Center) { MPixelLoader() }
         } else {
-            MIconButton(MIcons.power, onClick = onPower, tint = colors.fg, label = "Питание сервера", enabled = canControl)
+            MIconButton(MIcons.power, onClick = onPower, tint = colors.fg, label = tr("Питание сервера"), enabled = canControl)
         }
     }
 }
@@ -387,11 +396,11 @@ private fun HostingPowerSheet(
     val upper = status.uppercase()
     val running = upper == "RUNNING"
     val canKill = running || upper == "CRASHED" || upper == "STOPPING"
-    MBottomSheet(onDismiss = onDismiss, title = "Питание") {
+    MBottomSheet(onDismiss = onDismiss, title = tr("Питание")) {
         if (upper == "SUSPENDED" && !busy) {
             MListRow(
-                title = "Продлить",
-                subtitle = "Сервер приостановлен",
+                title = tr("Продлить"),
+                subtitle = tr("Сервер приостановлен"),
                 icon = MIcons.wallet,
                 plate = false,
                 onClick = onRenew,
@@ -401,14 +410,14 @@ private fun HostingPowerSheet(
                 MPixelLoader()
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    if (busy) "Команда уже выполняется" else hostingStatusLabel(status),
+                    if (busy) tr("Команда уже выполняется") else hostingStatusLabel(status),
                     style = MillidaType.body,
                     color = colors.fgMuted,
                 )
             }
         } else if (!running) {
             MListRow(
-                title = "Запустить",
+                title = tr("Запустить"),
                 icon = MIcons.play,
                 plate = false,
                 onClick = { onAction(HostingModel.START) },
@@ -416,16 +425,16 @@ private fun HostingPowerSheet(
         }
         if (running && !busy) {
             MListRow(
-                title = "Перезапустить",
-                subtitle = "Игроков выкинет на минуту",
+                title = tr("Перезапустить"),
+                subtitle = tr("Игроков выкинет на минуту"),
                 icon = MIcons.refresh,
                 plate = false,
                 onClick = { onAction(HostingModel.RESTART) },
             )
             MDivider()
             MListRow(
-                title = "Остановить",
-                subtitle = "Мир сохранится",
+                title = tr("Остановить"),
+                subtitle = tr("Мир сохранится"),
                 icon = MIcons.power,
                 plate = false,
                 onClick = { onAction(HostingModel.STOP) },
@@ -434,8 +443,8 @@ private fun HostingPowerSheet(
         if (canKill && !busy) {
             MDivider()
             MListRow(
-                title = "Завершить процесс",
-                subtitle = "Если сервер завис",
+                title = tr("Завершить процесс"),
+                subtitle = tr("Если сервер завис"),
                 icon = MIcons.zap,
                 plate = false,
                 onClick = { onAction(HostingModel.KILL) },
@@ -446,21 +455,21 @@ private fun HostingPowerSheet(
 }
 
 internal fun hostingConfirmTitle(action: String): String = when (action) {
-    HostingModel.STOP -> "Остановить сервер?"
-    HostingModel.RESTART -> "Перезапустить сервер?"
-    else -> "Завершить процесс?"
+    HostingModel.STOP -> tr("Остановить сервер?")
+    HostingModel.RESTART -> tr("Перезапустить сервер?")
+    else -> tr("Завершить процесс?")
 }
 
 internal fun hostingConfirmLabel(action: String): String = when (action) {
-    HostingModel.STOP -> "Остановить"
-    HostingModel.RESTART -> "Перезапустить"
-    else -> "Завершить"
+    HostingModel.STOP -> tr("Остановить")
+    HostingModel.RESTART -> tr("Перезапустить")
+    else -> tr("Завершить")
 }
 
 internal fun hostingConfirmText(action: String): String = when (action) {
-    HostingModel.STOP -> "Игроков выкинет из игры, мир сохранится."
-    HostingModel.RESTART -> "Игроков выкинет на время перезапуска — обычно меньше минуты."
-    else -> "Процесс оборвётся без сохранения, свежие постройки могут пропасть. Так делают, только если сервер завис."
+    HostingModel.STOP -> tr("Игроков выкинет из игры, мир сохранится.")
+    HostingModel.RESTART -> tr("Игроков выкинет на время перезапуска — обычно меньше минуты.")
+    else -> tr("Процесс оборвётся без сохранения, свежие постройки могут пропасть. Так делают, только если сервер завис.")
 }
 
 @Composable
@@ -489,7 +498,7 @@ private fun HostingWideTabs(
         }
         Box(Modifier.weight(1f)) {
             HostingWideTab(
-                text = picked?.label ?: "Ещё",
+                text = picked?.label ?: tr("Ещё"),
                 icon = picked?.icon ?: MIcons.more,
                 picked = picked != null,
                 height = height,

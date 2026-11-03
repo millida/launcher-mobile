@@ -202,6 +202,58 @@ class TelemetryTest {
     }
 
     @Test
+    fun `шум входа и озвучки не становится причиной вылета`() {
+        val noisy = """
+            [12:00:01] [Render thread/ERROR]: Realms authentication error
+            com.mojang.realmsclient.exception.RealmsServiceException: Failed to parse into SignedJWT: abc.def
+            	at net.minecraft.class_1.method(Unknown Source)
+            java.io.IOException: Could not retrieve profile key pair
+            	at a.b.C.d(C.java:1)
+            Caused by: com.mojang.authlib.exceptions.MinecraftClientHttpException: Status: 401
+            	at a.b.C.e(C.java:2)
+            [authlib-injector] [ERROR] Failed to fetch metadata: Connection timed out
+            java.lang.UnsatisfiedLinkError: Unable to load library 'flite'
+            	at com.sun.jna.NativeLibrary.loadLibrary(NativeLibrary.java:1)
+            [MobileGlues] Setting: ignoreError = 1
+            GL_TIMESTAMP is not supported
+        """.trimIndent()
+        assertNull("одни шумовые строки — причины нет", FailureKind.cause(noisy))
+        assertEquals("и вид сбоя не auth/network из-за шума", "unknown", FailureKind.of(FailureKind.kindSource(noisy, null)))
+
+        val real = noisy + "\n[12:05:00] java.lang.IllegalStateException: Boom\n\tat a.b.C.f(C.java:3)"
+        assertEquals("настоящий трейс после шума", "[12:05:00] java.lang.IllegalStateException: Boom", FailureKind.cause(real))
+
+        val realFirst = "java.lang.IllegalStateException: Boom\n\tat a.b.C.f(C.java:3)\n" + noisy
+        assertEquals("шум в конце не перебивает трейс", "java.lang.IllegalStateException: Boom", FailureKind.cause(realFirst))
+    }
+
+    @Test
+    fun `строка стека не бывает причиной, а общий заголовок отчёта уступает трейсу`() {
+        val frameOnly = "\tat net.fabricmc.loader.impl.FormattedException.ofLocalized(FormattedException.java:51)"
+        assertNull("голый фрейм — не причина", FailureKind.cause(frameOnly))
+
+        val report = """
+            java.lang.NullPointerException: no pos
+            	at a.b.C.f(C.java:3)
+            ---- Minecraft Crash Report ----
+            Description: Unexpected error
+            java.lang.Error: x
+        """.trimIndent()
+        assertEquals("заголовок без корня не затирает трейс", "java.lang.NullPointerException: no pos", FailureKind.cause(report))
+
+        val native = "# A fatal error: FATAL ERROR in native method: glGenBuffers\nsignal 6"
+        assertEquals("нативный сбой JVM названа", "A fatal error: FATAL ERROR in native method: glGenBuffers", FailureKind.cause(native))
+    }
+
+    @Test
+    fun `вид сбоя читается по хвосту лога, а не по всему`() {
+        val log = "Java 21 runtime started\nlibc.so loaded\n" + (1..40).joinToString("\n") { "[main/INFO]: line $it" } + "\nUnable to resolve host x"
+        assertEquals("Java 21 и libc.so в начале лога ничего не значат", "network", FailureKind.of(FailureKind.kindSource(log, null)))
+        assertEquals("SIGABRT сам по себе — не native_crash", "other", FailureKind.of("signal 6 SIGABRT libc.so"))
+        assertEquals("а версия class-файла — рантайм", "runtime", FailureKind.of("Unsupported class file major version 65"))
+    }
+
+    @Test
     fun `пак каталога и модпак разводятся как на ПК`() {
         data class Case(val source: String?, val id: String?, val want: Pair<String?, String?>, val why: String)
         listOf(
@@ -254,6 +306,40 @@ class TelemetryTest {
         val first = store.installId()
         assertEquals("второй вызов читает файл", first, TelemetryStore(dir) { "other-id-000" }.installId())
         assertEquals("id создаётся один раз", 1, made)
+    }
+
+    @Test
+    fun `первый кадр и модель телефона доходят до события вылета`() {
+        val store = TelemetryStore(dir)
+        val facts = LaunchFacts("b", "1.21.1", "fabric", gpu = "Adreno (TM) 740", device = "SM-S918B")
+        store.openGame(OpenGame(100, 100, facts))
+        assertEquals("до кадра поля frame нет — вылет такой игры это чёрный экран", null, store.peekGame()?.facts?.frame)
+        store.updateGameFacts(facts.copy(frame = true, frameMs = 8_200))
+        val data = store.takeGame()!!.facts.data()
+        assertEquals("true", data["frame"]?.content)
+        assertEquals("8200", data["frameMs"]?.content)
+        assertEquals("Adreno (TM) 740", data["gpu"]?.content)
+        assertEquals("SM-S918B", data["device"]?.content)
+    }
+
+    @Test
+    fun `загрузка и кадры доходят до game_exit через файл открытой игры`() {
+        val store = TelemetryStore(dir)
+        val facts = LaunchFacts("b", "1.21.1", "fabric", pack = "fo", gpu = "Mali-G52", renderer = "gl4es", resolutionPercent = 75)
+        store.openGame(OpenGame(100, 100, facts))
+        store.updateGameFacts(facts.copy(frame = true, frameMs = 41_000, fpsP50 = 28, fpsP10 = 14, fpsN = 300))
+        val data = store.takeGame()!!.facts.exitData()
+        assertEquals("41000", data["bootMs"]?.content)
+        assertEquals("28", data["fpsP50"]?.content)
+        assertEquals("14", data["fpsP10"]?.content)
+        assertEquals("75", data["resolutionPercent"]?.content)
+        assertEquals("fo", data["pack"]?.content)
+        assertEquals("Mali-G52", data["gpu"]?.content)
+    }
+
+    @Test
+    fun `без первого кадра bootMs не шлём`() {
+        assertEquals(null, LaunchFacts("b", "1.21.1", "fabric", frameMs = 5_000).exitData()["bootMs"])
     }
 
     @Test

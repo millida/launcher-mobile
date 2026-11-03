@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
+import net.millida.launcher.core.i18n.tr
 import org.webrtc.AudioSource
 import org.webrtc.AudioTrack
 import org.webrtc.MediaConstraints
@@ -85,10 +86,10 @@ object VoiceEngine {
                 .createPeerConnectionFactory()
                 .also { factory = it }
         } catch (broken: UnsatisfiedLinkError) {
-            failure = "голосовой движок не загрузился: ${broken.message}"
+            failure = tr("голосовой движок не загрузился: {message}", broken.message)
             throw IllegalStateException(failure, broken)
         } catch (broken: RuntimeException) {
-            failure = "голосовой движок не запустился: ${broken.message}"
+            failure = tr("голосовой движок не запустился: {message}", broken.message)
             throw IllegalStateException(failure, broken)
         }
     }
@@ -120,7 +121,7 @@ object VoiceEngine {
 
         private fun report(message: String?) {
             Log.w(TAG, "микрофон: $message")
-            onMicFailure?.invoke("Микрофон не открылся — его могла занять другая программа")
+            onMicFailure?.invoke(tr("Микрофон не открылся — его могла занять другая программа"))
         }
     }
 }

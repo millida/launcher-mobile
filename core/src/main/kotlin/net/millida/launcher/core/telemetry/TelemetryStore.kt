@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
@@ -103,6 +104,13 @@ class TelemetryStore(private val dir: File, private val newId: () -> String = { 
         locked { gameFile.atomicWriteText(encode(game).toString()) }
     }
 
+    /** The open game with new facts (the first frame arrived), start time kept. */
+    fun updateGameFacts(facts: LaunchFacts) {
+        locked {
+            readGame()?.let { current -> gameFile.atomicWriteText(encode(current.copy(facts = facts)).toString()) }
+        }
+    }
+
     fun touchGame(aliveAt: Long) {
         locked {
             readGame()?.let { current -> gameFile.atomicWriteText(encode(current.copy(aliveAt = aliveAt)).toString()) }
@@ -172,6 +180,14 @@ class TelemetryStore(private val dir: File, private val newId: () -> String = { 
                 java = number("java"),
                 heapMb = number("heapMb"),
                 mods = number("mods"),
+                gpu = text("gpu"),
+                device = text("device"),
+                frame = (facts["frame"] as? JsonPrimitive)?.booleanOrNull,
+                frameMs = (facts["frameMs"] as? JsonPrimitive)?.longOrNull,
+                fpsP50 = number("fpsP50"),
+                fpsP10 = number("fpsP10"),
+                fpsN = number("fpsN"),
+                resolutionPercent = number("resolutionPercent"),
             ),
         )
     }
@@ -179,7 +195,7 @@ class TelemetryStore(private val dir: File, private val newId: () -> String = { 
     private fun encode(game: OpenGame): JsonObject = buildJsonObject {
         put("startedAt", game.startedAt)
         put("aliveAt", game.aliveAt)
-        put("facts", JsonObject(game.facts.data()))
+        put("facts", JsonObject(game.facts.stored()))
     }
 
     /**

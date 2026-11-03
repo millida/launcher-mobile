@@ -10,6 +10,7 @@ import kotlinx.serialization.json.longOrNull
 import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.account.MILLIDA_API
 import net.millida.launcher.core.http.Downloader
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
@@ -32,8 +33,9 @@ class PackReader(
             File(root, MRPACK_INDEX).isFile -> readMrpack(root, nameHint)
             File(root, CF_MANIFEST).isFile -> readCurseForge(root, nameHint)
             File(root, MILLIDA_MANIFEST).isFile -> readMillida(root, nameHint)
+            File(root, MULTIMC_PACK).isFile -> readMultiMc(root, nameHint)
             else -> throw IOException(
-                "в архиве нет ни modrinth.index.json, ни manifest.json — это не файл сборки, выбери .mrpack или zip со сборкой",
+                tr("в архиве нет ни modrinth.index.json, ни manifest.json — это не файл сборки, выбери .mrpack или zip со сборкой"),
             )
         }
     }
@@ -46,7 +48,7 @@ class PackReader(
             ?.filterValues { it.isNotEmpty() }
             .orEmpty()
         val gameVersion = dependencies["minecraft"]
-            ?: throw IOException("в сборке не указана версия Minecraft — установить её не из чего")
+            ?: throw IOException(tr("в сборке не указана версия Minecraft — установить её не из чего"))
         val (loader, loaderVersion) = PackLoaders.fromDependencies(dependencies)
 
         val files = (index["files"] as? JsonArray).orEmpty().mapNotNull { element ->
@@ -57,7 +59,7 @@ class PackReader(
             val urls = (entry["downloads"] as? JsonArray).orEmpty()
                 .map { it.jsonPrimitive.content }
                 .filter { it.isNotEmpty() }
-            if (urls.isEmpty()) throw IOException("у файла $path в сборке нет ссылки на скачивание")
+            if (urls.isEmpty()) throw IOException(tr("у файла {path} в сборке нет ссылки на скачивание", path))
             PackFileEntry(
                 path = path,
                 urls = urls,
@@ -68,7 +70,7 @@ class PackReader(
         }
 
         val plan = PackPlan(
-            name = index.text("name").ifEmpty { nameHint.ifEmpty { "Сборка" } },
+            name = index.text("name").ifEmpty { nameHint.ifEmpty { tr("Сборка") } },
             gameVersion = gameVersion,
             loader = loader,
             loaderVersion = loaderVersion,
@@ -84,9 +86,9 @@ class PackReader(
     suspend fun readCurseForge(root: File, nameHint: String = ""): PackContent = packJson(BROKEN_FILE_LIST) {
         val manifest = parse(File(root, CF_MANIFEST), "manifest.json")
         val minecraft = manifest["minecraft"]?.jsonObject
-            ?: throw IOException("в manifest.json нет раздела minecraft — архив повреждён")
+            ?: throw IOException(tr("в manifest.json нет раздела minecraft — архив повреждён"))
         val gameVersion = minecraft.text("version").ifEmpty {
-            throw IOException("в сборке не указана версия Minecraft — установить её не из чего")
+            throw IOException(tr("в сборке не указана версия Minecraft — установить её не из чего"))
         }
         val loaderId = (minecraft["modLoaders"] as? JsonArray).orEmpty()
             .map { it.jsonObject }
@@ -106,7 +108,7 @@ class PackReader(
         }
 
         val plan = PackPlan(
-            name = manifest.text("name").ifEmpty { nameHint.ifEmpty { "Сборка CurseForge" } },
+            name = manifest.text("name").ifEmpty { nameHint.ifEmpty { tr("Сборка CurseForge") } },
             gameVersion = gameVersion,
             loader = loader,
             loaderVersion = loaderVersion,
@@ -126,11 +128,11 @@ class PackReader(
     fun readMillida(root: File, nameHint: String = ""): PackContent = packJson(BROKEN_FILE_LIST) {
         val manifest = parse(File(root, MILLIDA_MANIFEST), MILLIDA_MANIFEST)
         val gameVersion = manifest.text("game").ifEmpty {
-            throw IOException("сборка не сказала, под какую версию Minecraft она собрана")
+            throw IOException(tr("сборка не сказала, под какую версию Minecraft она собрана"))
         }
         val (loader, loaderVersion) = PackLoaders.fromId(manifest.text("loader"))
         val plan = PackPlan(
-            name = manifest.text("title").ifEmpty { nameHint.ifEmpty { "Сборка Millida" } },
+            name = manifest.text("title").ifEmpty { nameHint.ifEmpty { tr("Сборка Millida") } },
             gameVersion = gameVersion,
             loader = loader,
             loaderVersion = loaderVersion.ifEmpty { manifest.text("loaderVersion") },
@@ -138,6 +140,41 @@ class PackReader(
             source = PackSource.MILLIDA_CATALOG,
         )
         PackContent(plan, listOf(root))
+    }
+
+    /**
+     * A MultiMC or Prism Launcher instance carries every file of the game in
+     * its `.minecraft` folder; the components list names the game and loader.
+     */
+    @Throws(IOException::class)
+    fun readMultiMc(root: File, nameHint: String = ""): PackContent = packJson(BROKEN_FILE_LIST) {
+        val pack = parse(File(root, MULTIMC_PACK), MULTIMC_PACK)
+        val components = (pack["components"] as? JsonArray).orEmpty().map { it.jsonObject }
+        val versionOf: (String) -> String = { uid ->
+            components.firstOrNull { it.text("uid") == uid }?.let { it.text("version").ifEmpty { it.text("cachedVersion") } }.orEmpty()
+        }
+
+        val gameVersion = versionOf(MULTIMC_GAME).ifEmpty {
+            throw IOException(tr("в сборке не указана версия Minecraft — установить её не из чего"))
+        }
+        val loader = MULTIMC_LOADERS.firstOrNull { (uid, _) -> versionOf(uid).isNotEmpty() }
+        val name = instanceName(File(root, MULTIMC_INSTANCE)).ifEmpty { nameHint.ifEmpty { tr("Сборка") } }
+        val plan = PackPlan(
+            name = name,
+            gameVersion = gameVersion,
+            loader = loader?.second ?: LoaderKind.VANILLA,
+            loaderVersion = loader?.let { versionOf(it.first) }.orEmpty(),
+            source = PackSource.FILE,
+        )
+        val game = MULTIMC_GAME_DIRS.map { SafePath.join(root, it) }.firstOrNull { it.isDirectory }
+        PackContent(plan, listOfNotNull(game))
+    }
+
+    private fun instanceName(file: File): String {
+        if (!file.isFile) return ""
+        return runCatching {
+            file.readLines().firstOrNull { it.startsWith("name=") }?.substringAfter('=')?.trim().orEmpty()
+        }.getOrDefault("").filterNot { it.isISOControl() }.take(MAX_NAME)
     }
 
     @Throws(IOException::class)
@@ -148,16 +185,16 @@ class PackReader(
     ): PackFileEntry? {
         val data = try {
             val body = downloader.text("$curseForgeBase/v1/mods/$projectId/files/$fileId")
-            packJson("CurseForge ответил непонятно") { MojangJson.parseToJsonElement(body).jsonObject["data"]?.jsonObject }
+            packJson(tr("CurseForge ответил непонятно")) { MojangJson.parseToJsonElement(body).jsonObject["data"]?.jsonObject }
         } catch (error: IOException) {
-            if (required) throw IOException("CurseForge не отдал файл #$fileId сборки: ${error.message}") else null
+            if (required) throw IOException(tr("CurseForge не отдал файл #{fileId} сборки: {message}", fileId, error.message)) else null
         } ?: run {
-            if (required) throw IOException("CurseForge не отдал файл #$fileId сборки — попробуй позже")
+            if (required) throw IOException(tr("CurseForge не отдал файл #{fileId} сборки — попробуй позже", fileId))
             return null
         }
         val fileName = SafePath.fileName(data.text("fileName"))
         if (fileName.isEmpty() || fileName == "file") {
-            if (required) throw IOException("у файла #$fileId сборки нет имени — CurseForge ответил неполно")
+            if (required) throw IOException(tr("у файла #{fileId} сборки нет имени — CurseForge ответил неполно", fileId))
             return null
         }
         val sha1 = (data["hashes"] as? JsonArray).orEmpty()
@@ -187,11 +224,11 @@ class PackReader(
     @Throws(IOException::class)
     private suspend fun directLink(projectId: String, fileId: String): String {
         val body = downloader.text("$curseForgeBase/v1/mods/$projectId/files/$fileId/download-url")
-        val url = packJson("CurseForge ответил непонятно") {
+        val url = packJson(tr("CurseForge ответил непонятно")) {
             MojangJson.parseToJsonElement(body).jsonObject["data"]?.jsonPrimitive?.content.orEmpty()
         }
         if (url.isEmpty() || url == "null") {
-            throw IOException("автор мода запретил скачивание файла #$fileId — поставь его вручную с сайта CurseForge")
+            throw IOException(tr("автор мода запретил скачивание файла #{fileId} — поставь его вручную с сайта CurseForge", fileId))
         }
         return url
     }
@@ -214,7 +251,7 @@ class PackReader(
     private fun parse(file: File, label: String): JsonObject = try {
         MojangJson.parseToJsonElement(file.readText()).jsonObject
     } catch (broken: Exception) {
-        throw IOException("файл $label в сборке не читается — скачай сборку заново")
+        throw IOException(tr("файл {label} в сборке не читается — скачай сборку заново", label))
     }
 
     private fun JsonObject.text(key: String): String =
@@ -226,6 +263,18 @@ class PackReader(
         const val MRPACK_INDEX = "modrinth.index.json"
         const val CF_MANIFEST = "manifest.json"
         const val MILLIDA_MANIFEST = "millida.pack.json"
-        const val BROKEN_FILE_LIST = "описание сборки в архиве повреждено — скачай сборку заново"
+        const val MULTIMC_PACK = "mmc-pack.json"
+        const val MULTIMC_INSTANCE = "instance.cfg"
+        const val MULTIMC_GAME = "net.minecraft"
+        const val MAX_NAME = 64
+        val MULTIMC_GAME_DIRS = listOf(".minecraft", "minecraft")
+        val MULTIMC_LOADERS = listOf(
+            "net.neoforged" to LoaderKind.NEOFORGE,
+            "net.minecraftforge" to LoaderKind.FORGE,
+            "org.quiltmc.quilt-loader" to LoaderKind.QUILT,
+            "net.fabricmc.fabric-loader" to LoaderKind.FABRIC,
+        )
+
+        val BROKEN_FILE_LIST: String get() = tr("описание сборки в архиве повреждено — скачай сборку заново")
     }
 }

@@ -9,12 +9,21 @@ import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.http.RemoteFile
 import net.millida.launcher.core.http.TransferProgress
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
 import java.io.IOException
 import java.util.zip.ZipInputStream
 
 const val RUNTIME_MANIFEST_URL = "https://launcher-storage.millida.net/mobile/runtime/manifest.json"
+const val RUNTIME_MANIFEST_ARM32_URL = "https://launcher-storage.millida.net/mobile/runtime/manifest-armeabi-v7a.json"
+
+/**
+ * 32-bit ARM has a manifest of its own: applications released before it read
+ * manifest.json and take the first renderer and the first SDL entry they see,
+ * knowing nothing of ABIs.
+ */
+fun runtimeManifestUrl(abi: String): String = if (abi == HostAbi.ARM32) RUNTIME_MANIFEST_ARM32_URL else RUNTIME_MANIFEST_URL
 
 @Serializable
 data class RuntimeManifest(
@@ -25,6 +34,8 @@ data class RuntimeManifest(
     val tools: List<ToolEntry> = emptyList(),
     /** SDL3 and the LWJGL build that talks to it, for packs that open their window through SDL3. */
     val sdl: List<SdlEntry> = emptyList(),
+    /** Which game versions to offer a phone first; absent means the built-in RenderPearl rule. */
+    val phoneVersions: PhoneVersionRules? = null,
 ) {
     @Serializable
     data class SdlEntry(
@@ -110,6 +121,21 @@ data class InstalledRuntime(
 
 data class InstalledJava(val home: File, val major: Int)
 
+/** The part of a runtime below the game and above Java: the window bridge and the renderers. */
+data class InstalledLayer(
+    val bridgeClasspath: List<File>,
+    val renderer: RuntimeManifest.RendererEntry,
+    val rendererDir: File,
+    val lwjglVersion: String = "",
+)
+
+fun InstalledRuntime.withLayer(layer: InstalledLayer): InstalledRuntime = copy(
+    bridgeClasspath = layer.bridgeClasspath,
+    renderer = layer.renderer,
+    rendererDir = layer.rendererDir,
+    lwjglVersion = layer.lwjglVersion,
+)
+
 const val SDL_LIBRARY = "libSDL3.so"
 
 /** The unpacked SDL3 component: the library, its LWJGL jars and natives of the same build. */
@@ -132,9 +158,7 @@ object LibraryCompatibility {
         val game = minorOf(gameVersion) ?: return null
         val pack = minorOf(packVersion) ?: return null
         if (game <= pack) return null
-        return "Эта версия игры собрана под графическую библиотеку $gameVersion, " +
-            "а в пакете рантайма $packVersion. Возьми версию игры до 1.21.4 " +
-            "или обнови пакет рантайма."
+        return tr("Эта версия игры собрана под графическую библиотеку {gameVersion}, а в пакете рантайма {packVersion}. Возьми версию игры до 1.21.4 или обнови пакет рантайма.", gameVersion, packVersion)
     }
 
     private fun minorOf(version: String): Int? {
@@ -151,10 +175,10 @@ class RuntimeInstaller(
     private val manifestUrl: String = RUNTIME_MANIFEST_URL,
 ) {
     suspend fun manifest(): RuntimeManifest {
-        val cached = File(layout.caches, "runtime-manifest.json")
+        val cached = File(layout.caches, MANIFEST_CACHE)
         if (!manifestUrl.startsWith("http://") && !manifestUrl.startsWith("https://")) {
             val local = File(manifestUrl.removePrefix("file://"))
-            if (!local.isFile) throw IOException("файл манифеста не найден: ${local.absolutePath}")
+            if (!local.isFile) throw IOException(tr("файл манифеста не найден: {absolutePath}", local.absolutePath))
             return MojangJson.decodeFromString(RuntimeManifest.serializer(), local.readText())
         }
         val body = try {
@@ -169,6 +193,20 @@ class RuntimeInstaller(
         return MojangJson.decodeFromString(RuntimeManifest.serializer(), body).also { sdlListed = it.sdl.isNotEmpty() }
     }
 
+    /** The manifest as this phone last saw it, without touching the network. */
+    fun cachedManifest(): RuntimeManifest? {
+        val cached = File(layout.caches, MANIFEST_CACHE)
+        if (!cached.isFile) return null
+        return runCatching { MojangJson.decodeFromString(RuntimeManifest.serializer(), cached.readText()) }.getOrNull()
+    }
+
+    /**
+     * For a start of the game. The launcher refreshes the manifest when it opens, so the
+     * copy on disk is asked first: a start must not wait for the network to answer, or to
+     * fail to, before a game that is already on the phone.
+     */
+    suspend fun manifestForLaunch(): RuntimeManifest = cachedManifest() ?: manifest()
+
     @Volatile
     private var sdlListed: Boolean? = null
 
@@ -178,7 +216,7 @@ class RuntimeInstaller(
      */
     fun sdlAvailable(): Boolean {
         sdlListed?.let { listed -> return listed || sdlInstalled() }
-        val cached = File(layout.caches, "runtime-manifest.json")
+        val cached = File(layout.caches, MANIFEST_CACHE)
         val listed = cached.isFile && runCatching {
             MojangJson.decodeFromString(RuntimeManifest.serializer(), cached.readText()).sdl.isNotEmpty()
         }.getOrDefault(false)
@@ -190,13 +228,13 @@ class RuntimeInstaller(
 
     suspend fun installSdl(onProgress: (TransferProgress) -> Unit = {}): InstalledSdl {
         val entry = manifest().sdl.firstOrNull()
-            ?: throw IOException("в манифесте рантайма нет SDL3 — сборки с окном SDL3 на телефоне пока не запускаются")
+            ?: throw IOException(tr("в манифесте рантайма нет SDL3 — сборки с окном SDL3 на телефоне пока не запускаются"))
         val dir = unpackOnce(entry.id, entry.url, entry.sha256, entry.size, onProgress)
         val library = SafePath.join(dir, entry.library)
         val classpath = entry.classpath.map { SafePath.join(dir, it) }
         val missing = (classpath + library).filterNot { it.isFile }
         if (classpath.isEmpty() || missing.isNotEmpty()) {
-            throw IOException("SDL3 распакован не полностью: ${missing.firstOrNull()?.name ?: "нет библиотек LWJGL"}")
+            throw IOException(tr("SDL3 распакован не полностью: {0}", missing.firstOrNull()?.name ?: tr("нет библиотек LWJGL")))
         }
         return InstalledSdl(dir, library, classpath, entry.sdlVersion, entry.lwjglVersion)
     }
@@ -221,8 +259,7 @@ class RuntimeInstaller(
     ): InstalledJava {
         val jre = manifest.jreFor(javaMajor, abi, javaMaximum)
             ?: throw IOException(
-                "для этой версии игры нужна ${JavaRequirement(javaMajor, javaMaximum).describe()} под $abi, " +
-                    "а в манифесте рантайма её нет"
+                tr("для этой версии игры нужна {0} под {abi}, а в манифесте рантайма её нет", JavaRequirement(javaMajor, javaMaximum).describe(), abi)
             )
         val home = unpackOnce(jre.id, jre.url, jre.sha256, jre.size, onProgress).let { dir ->
             if (jre.javaHome.isEmpty()) dir else SafePath.join(dir, jre.javaHome)
@@ -238,31 +275,79 @@ class RuntimeInstaller(
         onProgress: (TransferProgress) -> Unit = {},
     ): InstalledRuntime {
         val manifest = manifest()
+        val parts = layerParts(manifest, rendererId)
+        val java = installJava(manifest, javaMajor, abi, javaMaximum, onProgress)
+        val layer = unpackLayer(parts, onProgress)
+        return InstalledRuntime(
+            javaHome = java.home,
+            bridgeClasspath = layer.bridgeClasspath,
+            renderer = layer.renderer,
+            rendererDir = layer.rendererDir,
+            lwjglVersion = layer.lwjglVersion,
+            javaMajor = java.major,
+        )
+    }
+
+    /**
+     * Only the window bridge and the renderers, for a runtime pack that came
+     * inside the application: the pack is a snapshot of the day the application
+     * was built, while the manifest keeps receiving fixes to the layer.
+     */
+    suspend fun installLayer(
+        rendererId: String?,
+        onProgress: (TransferProgress) -> Unit = {},
+    ): InstalledLayer = unpackLayer(layerParts(manifest(), rendererId), onProgress)
+
+    /** The layer the last seen manifest names, when all of it is already unpacked: no network is touched. */
+    fun installedLayer(rendererId: String?): InstalledLayer? = runCatching {
+        val parts = layerParts(cachedManifest() ?: return null, rendererId)
+        val bridgeDir = unpacked(parts.bridge.id, parts.bridge.sha256) ?: return null
+        val rendererDir = unpacked(parts.renderer.folder, parts.renderer.sha256) ?: return null
+        layerOf(parts, bridgeDir, rendererDir)
+    }.getOrNull()
+
+    /** The Java the last seen manifest names for this need, when it is already unpacked: no network is touched. */
+    fun installedJava(javaMajor: Int, abi: String, javaMaximum: Int? = null): InstalledJava? {
+        val jre = cachedManifest()?.jreFor(javaMajor, abi, javaMaximum) ?: return null
+        val dir = unpacked(jre.id, jre.sha256) ?: return null
+        return InstalledJava(if (jre.javaHome.isEmpty()) dir else SafePath.join(dir, jre.javaHome), jre.major)
+    }
+
+    private class LayerParts(val bridge: RuntimeManifest.BridgeEntry, val renderer: RuntimeManifest.RendererEntry)
+
+    private fun layerParts(manifest: RuntimeManifest, rendererId: String?): LayerParts {
         val bridge = manifest.bridge.firstOrNull()
-            ?: throw IOException("в манифесте нет игрового моста")
+            ?: throw IOException(tr("в манифесте нет игрового моста"))
         val renderer = rendererId?.let { id -> manifest.renderers.firstOrNull { it.id == id } }
             ?: manifest.renderers.firstOrNull()
-            ?: throw IOException("в манифесте нет ни одного рендерера")
+            ?: throw IOException(tr("в манифесте нет ни одного рендерера"))
+        return LayerParts(bridge, renderer)
+    }
 
-        val java = installJava(manifest, javaMajor, abi, javaMaximum, onProgress)
+    private suspend fun unpackLayer(parts: LayerParts, onProgress: (TransferProgress) -> Unit): InstalledLayer {
+        val bridge = parts.bridge
+        val renderer = parts.renderer
         val bridgeDir = unpackOnce(bridge.id, bridge.url, bridge.sha256, bridge.size, onProgress)
         val rendererDir = unpackOnce(renderer.folder, renderer.url, renderer.sha256, renderer.size, onProgress)
+        return layerOf(parts, bridgeDir, rendererDir)
+    }
 
+    private fun layerOf(parts: LayerParts, bridgeDir: File, rendererDir: File): InstalledLayer {
+        val bridge = parts.bridge
+        val renderer = parts.renderer
         val classpath = if (bridge.classpath.isEmpty()) {
             bridgeDir.listFiles { f -> f.extension == "jar" }?.sortedBy { it.name } ?: emptyList()
         } else {
             bridge.classpath.map { SafePath.join(bridgeDir, it) }
         }
         val missing = classpath.filterNot { it.isFile }
-        if (missing.isNotEmpty()) throw IOException("мост распакован не полностью: ${missing.first().name}")
+        if (missing.isNotEmpty()) throw IOException(tr("мост распакован не полностью: {0}", missing.first().name))
 
-        return InstalledRuntime(
-            javaHome = java.home,
+        return InstalledLayer(
             bridgeClasspath = classpath,
             renderer = renderer,
             rendererDir = rendererDir,
             lwjglVersion = bridge.lwjglVersion,
-            javaMajor = java.major,
         )
     }
 
@@ -276,16 +361,15 @@ class RuntimeInstaller(
         size: Long,
         onProgress: (TransferProgress) -> Unit,
     ): File = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        unpacked(id, sha256)?.let { return@withContext it }
         val dir = SafePath.join(layout.runtimes, id)
-        val stamp = File(dir, STAMP)
-        if (stamp.isFile && stamp.readText().trim() == sha256) return@withContext dir
 
         val archive = File(layout.caches, "$id.zip")
         downloader.fetchAll(listOf(RemoteFile(url, archive, null, size)), onProgress)
         val actual = Hashing.digest(archive, "SHA-256")
         if (!actual.equals(sha256, ignoreCase = true)) {
             archive.delete()
-            throw IOException("подпись компонента $id не совпала — установка остановлена")
+            throw IOException(tr("подпись компонента {id} не совпала — установка остановлена", id))
         }
 
         val staging = File(layout.runtimes, "$id.new")
@@ -293,11 +377,17 @@ class RuntimeInstaller(
         staging.mkdirs()
         extract(archive, staging)
         if (dir.exists()) dir.deleteRecursively()
-        if (!staging.renameTo(dir)) throw IOException("не удалось установить компонент $id")
+        if (!staging.renameTo(dir)) throw IOException(tr("не удалось установить компонент {id}", id))
         File(dir, STAMP).writeText(sha256)
         archive.delete()
         markExecutables(dir)
         dir
+    }
+
+    private fun unpacked(id: String, sha256: String): File? {
+        val dir = SafePath.join(layout.runtimes, id)
+        val stamp = File(dir, STAMP)
+        return dir.takeIf { stamp.isFile && stamp.readText().trim() == sha256 }
     }
 
     private suspend fun extract(archive: File, target: File) {
@@ -327,6 +417,7 @@ class RuntimeInstaller(
 
     companion object {
         private const val STAMP = ".millida-sha256"
+        private const val MANIFEST_CACHE = "runtime-manifest.json"
         private const val SDL_COMPONENT_PREFIX = "sdl"
     }
 }

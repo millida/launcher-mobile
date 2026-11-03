@@ -25,6 +25,8 @@ import net.millida.launcher.core.catalog.ModpackLoader
 import net.millida.launcher.core.catalog.mergeKey
 import net.millida.launcher.core.content.DependencyPlan
 import net.millida.launcher.core.content.InstalledIndex
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.core.packs.PackOriginStore
@@ -42,13 +44,15 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
 
-enum class CatalogTab(val label: String, val section: CatalogSection) {
-    MODS("Моды", CatalogSection.MOD),
-    MODPACKS("Сборки", CatalogSection.MODPACK),
-    RESOURCE_PACKS("Ресурс-паки", CatalogSection.RESOURCE_PACK),
-    SHADERS("Шейдеры", CatalogSection.SHADER),
-    DATA_PACKS("Дата-паки", CatalogSection.DATA_PACK),
-    MAPS("Карты", CatalogSection.WORLD);
+enum class CatalogTab(private val labelKey: String, val section: CatalogSection) {
+    MODS(trKey("Моды"), CatalogSection.MOD),
+    MODPACKS(trKey("Сборки"), CatalogSection.MODPACK),
+    RESOURCE_PACKS(trKey("Ресурс-паки"), CatalogSection.RESOURCE_PACK),
+    SHADERS(trKey("Шейдеры"), CatalogSection.SHADER),
+    DATA_PACKS(trKey("Дата-паки"), CatalogSection.DATA_PACK),
+    MAPS(trKey("Карты"), CatalogSection.WORLD);
+
+    val label: String get() = tr(labelKey)
 
     val kind: ContentKind? get() = section.kind
 
@@ -384,11 +388,11 @@ class CatalogModel(
         val kind = mutable.value.tab.kind ?: return
         val target = currentTarget()
         if (target == null) {
-            host.notice("Сначала создай сборку — ${kind.noun} ставятся в неё", true)
+            host.notice(tr("Сначала создай сборку — {noun} ставятся в неё", kind.noun), true)
             return
         }
         if (takesNoMods(kind, target)) {
-            host.notice("В ванильной сборке моды не работают — выбери сборку на Fabric или Quilt", true)
+            host.notice(tr("В ванильной сборке моды не работают — выбери сборку на Fabric или Quilt"), true)
             return
         }
         val key = item.key
@@ -436,7 +440,7 @@ class CatalogModel(
                     error,
                     EventData().put("contentKind", kind.slug).put("source", source).build(),
                 )
-                host.notice("«${item.title}» не поставился: ${host.errorText(error).lowerFirst()}", true)
+                host.notice(tr("«{title}» не поставился: {0}", item.title, host.errorText(error).lowerFirst()), true)
             } finally {
                 clearJob(key)
             }
@@ -454,7 +458,7 @@ class CatalogModel(
     ) {
         val name = replaced.file.name
         if (replaced.versionId.isEmpty()) {
-            host.notice("Старый файл $name остался в сборке — удали его, если это тот же «${item.title}»", true)
+            host.notice(tr("Старый файл {name} остался в сборке — удали его, если это тот же «{title}»", name, item.title), true)
             return
         }
         val removed = try {
@@ -473,14 +477,14 @@ class CatalogModel(
             Log.w(LOG_TAG, "старая версия $name не удалилась: ${error.message}")
             false
         }
-        if (!removed) host.notice("Старая версия $name осталась в сборке — удали её вручную", true)
+        if (!removed) host.notice(tr("Старая версия {name} осталась в сборке — удали её вручную", name), true)
     }
 
     private suspend fun pickVersion(item: CatalogItem, target: Profile, kind: ContentKind): CatalogVersion {
         val versions = container.catalog.versionsFor(item, target.gameVersion, loaderFor(kind, target))
             .filter { it.primaryFile() != null }
         return versions.firstOrNull { it.versionType == "release" } ?: versions.firstOrNull()
-            ?: throw IOException("нет версии под ${buildLabel(kind, target)} — выбери другую сборку")
+            ?: throw IOException(tr("нет версии под {0} — выбери другую сборку", buildLabel(kind, target)))
     }
 
     private suspend fun askDependencies(target: Profile, chosen: CatalogVersion, kind: ContentKind) {
@@ -505,7 +509,7 @@ class CatalogModel(
         val profile = host.profiles.firstOrNull { it.id == ask.profileId }
         if (profile == null) {
             mutable.update { it.copy(dependencies = null) }
-            host.notice("Сборки больше нет — выбери другую и поставь мод заново", true)
+            host.notice(tr("Сборки больше нет — выбери другую и поставь мод заново"), true)
             return
         }
         mutable.update { it.copy(installingDependencies = true) }
@@ -524,15 +528,14 @@ class CatalogModel(
                     container.uiSoundPlayer.play(UiSoundEvent.Install)
                 } else {
                     host.notice(
-                        "Не поставилось ${report.failed.size} из ${ask.plan.missing.size}: " +
-                            "${report.failed.keys.joinToString(", ")} — повтори установку",
+                        tr("Не поставилось {size} из {size2}: {0} — повтори установку", report.failed.size, ask.plan.missing.size, report.failed.keys.joinToString(", ")),
                         true,
                     )
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                host.notice("Зависимости не поставились: ${host.errorText(error).lowerFirst()}", true)
+                host.notice(tr("Зависимости не поставились: {0}", host.errorText(error).lowerFirst()), true)
             } finally {
                 mutable.update { it.copy(installingDependencies = false) }
             }
@@ -563,13 +566,13 @@ class CatalogModel(
                 if (removed) {
                     container.uiSoundPlayer.play(UiSoundEvent.Delete)
                 } else {
-                    host.notice("Файл ${installed.file.name} не удалился — закрой игру и повтори", true)
+                    host.notice(tr("Файл {name} не удалился — закрой игру и повтори", installed.file.name), true)
                 }
                 rescanInstalled()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                host.notice("«${item.title}» не удалился: ${host.errorText(error).lowerFirst()}", true)
+                host.notice(tr("«{title}» не удалился: {0}", item.title, host.errorText(error).lowerFirst()), true)
             } finally {
                 clearJob(key)
             }
@@ -580,6 +583,12 @@ class CatalogModel(
         val snapshot = mutable.value
         mutable.update { it.copy(detail = CatalogDetail(item, snapshot.tab, currentTarget()?.id)) }
         loadDetail()
+    }
+
+    /** A favourite installs through its own section, so the catalogue moves there before its page opens. */
+    fun openStarred(tab: CatalogTab, item: CatalogItem) {
+        setTab(tab)
+        openDetail(item)
     }
 
     fun retryDetail() = loadDetail()
@@ -645,10 +654,15 @@ class CatalogModel(
             .filter { version -> ModpackLoader.phoneFits(version.loaders, version.gameVersions) }
     }
 
-    fun installModpack(item: CatalogItem, version: CatalogVersion? = null) {
-        runModpack(item.key, item.title, source = item.source.name.lowercase()) { onStep ->
+    fun installModpack(
+        item: CatalogItem,
+        version: CatalogVersion? = null,
+        onFailure: (Throwable) -> Boolean = { false },
+        onInstalled: (Profile) -> Unit = {},
+    ) {
+        runModpack(item.key, item.title, onFailure, onInstalled, source = item.source.name.lowercase()) { onStep ->
             val chosen = version ?: modpackPick(phoneModpackVersions(item))
-                ?: throw IOException("нет версии для телефона — выбери другую сборку")
+                ?: throw IOException(tr("нет версии для телефона — выбери другую сборку"))
             when (item.source) {
                 CatalogSource.MODRINTH -> modpacks.installModrinthModpack(item.projectId, chosen.id, null, onStep)
                 CatalogSource.CURSEFORGE -> modpacks.installCurseForgeModpack(item.projectId, chosen.id, null, onStep)
@@ -672,10 +686,10 @@ class CatalogModel(
         work: suspend (onStep: (PackProgress) -> Unit) -> Profile,
     ): Boolean {
         mutable.value.modpack?.let { running ->
-            host.notice("Дождись, пока поставится «${running.title}»", true)
+            host.notice(tr("Дождись, пока поставится «{title}»", running.title), true)
             return false
         }
-        mutable.update { it.copy(modpack = ModpackJob(key, title, "Читаем сборку")) }
+        mutable.update { it.copy(modpack = ModpackJob(key, title, tr("Читаем сборку"))) }
         val began = System.currentTimeMillis()
         scope.launch {
             try {
@@ -709,7 +723,7 @@ class CatalogModel(
                 mutable.update { it.copy(modpack = null) }
                 source?.let { container.telemetry.failure(TelemetryType.MODPACK_INSTALL, error, EventData().put("source", it).build()) }
                 if (!onFailure(error)) {
-                    host.notice("Сборка «$title» не поставилась: ${host.errorText(error).lowerFirst()}", true)
+                    host.notice(tr("Сборка «{title}» не поставилась: {0}", title, host.errorText(error).lowerFirst()), true)
                 }
             }
         }
@@ -809,10 +823,10 @@ class CatalogModel(
 
 internal val ContentKind.noun: String
     get() = when (this) {
-        ContentKind.MOD -> "моды"
-        ContentKind.RESOURCE_PACK -> "ресурс-паки"
-        ContentKind.SHADER -> "шейдеры"
-        ContentKind.DATA_PACK -> "дата-паки"
+        ContentKind.MOD -> tr("моды")
+        ContentKind.RESOURCE_PACK -> tr("ресурс-паки")
+        ContentKind.SHADER -> tr("шейдеры")
+        ContentKind.DATA_PACK -> tr("дата-паки")
     }
 
 private fun String.lowerFirst(): String = replaceFirstChar { it.lowercase() }

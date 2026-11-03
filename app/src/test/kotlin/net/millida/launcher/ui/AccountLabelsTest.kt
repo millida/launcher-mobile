@@ -9,10 +9,10 @@ import org.junit.Test
 class AccountLabelsTest {
 
     @Test
-    fun `вид аккаунта словами`() {
-        assertEquals("Без лицензии", accountKindLabel(AccountKind.OFFLINE))
-        assertEquals("Лицензия Microsoft", accountKindLabel(AccountKind.MICROSOFT))
-        assertEquals("Аккаунт Millida", accountKindLabel(AccountKind.MILLIDA))
+    fun `вид аккаунта словами — как accKindLabel на ПК`() {
+        assertEquals("подпись офлайн-ника совпадает с ПК", "Офлайн-ник", accountKindLabel(AccountKind.OFFLINE))
+        assertEquals("подпись лицензии совпадает с ПК", "Лицензия Microsoft", accountKindLabel(AccountKind.MICROSOFT))
+        assertEquals("подпись входа Millida совпадает с ПК", "Аккаунт Millida", accountKindLabel(AccountKind.MILLIDA))
         assertEquals(
             "у каждого вида аккаунта своя подпись, иначе игрок не отличит лицензию от пиратки",
             AccountKind.entries.size,

@@ -7,7 +7,7 @@ import net.millida.launcher.core.friends.FriendPlace
 import net.millida.launcher.core.friends.PresenceKind
 import net.millida.launcher.core.friends.PresenceMemo
 import net.millida.launcher.core.friends.PresenceNotify
-import net.millida.launcher.core.friends.ruPlural
+import net.millida.launcher.core.i18n.trPlural
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -58,7 +58,7 @@ class FriendPresenceTextTest {
             assertEquals(
                 "${case.count}: ${case.why} — иначе уведомление читается неграмотно",
                 case.expected,
-                ruPlural(case.count, "друг", "друга", "друзей"),
+                trPlural(case.count, "друг", "друга", "друзей"),
             )
         }
     }

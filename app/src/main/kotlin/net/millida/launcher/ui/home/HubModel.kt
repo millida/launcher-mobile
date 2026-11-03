@@ -45,6 +45,7 @@ data class HubState(
     val heroIndex: Int = 0,
     val recommendTurn: Int = 0,
     val day: Long = 0,
+    val promoLobby: Boolean = true,
 )
 
 /**
@@ -62,7 +63,7 @@ class HubModel(
 ) {
     private val app = context.applicationContext
     private val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    private val mutable = MutableStateFlow(HubState())
+    private val mutable = MutableStateFlow(HubState(promoLobby = prefs.getBoolean(KEY_PROMO_LOBBY, true)))
     val state: StateFlow<HubState> = mutable.asStateFlow()
 
     private val modeSeq = AtomicLong()
@@ -120,6 +121,17 @@ class HubModel(
                 null
             }
             mutable.update { it.copy(ownOnline = online) }
+        }
+        scope.launch {
+            try {
+                val shown = withContext(Dispatchers.IO) { hub.lobbyPromo() }
+                prefs.edit().putBoolean(KEY_PROMO_LOBBY, shown).apply()
+                mutable.update { it.copy(promoLobby = shown) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w(LOG_TAG, "размещения лобби не загрузились, остаётся прошлый ответ: ${error.message}")
+            }
         }
         scope.launch {
             val popular = try {
@@ -188,6 +200,7 @@ class HubModel(
         const val PREFS = "millida-hub"
         const val KEY_HERO = "hero"
         const val KEY_RECOMMEND = "recommend"
+        const val KEY_PROMO_LOBBY = "promo-lobby"
         const val LOG_TAG = "millida"
         const val MODE_LIMIT = 30
     }

@@ -1,5 +1,6 @@
 package net.millida.launcher.core.packs
 
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.profile.Profile
 import net.millida.launcher.core.profile.ProfileStore
 
@@ -59,5 +60,5 @@ object PackNames {
     }
 
     private const val MAX_LENGTH = 80
-    private const val FALLBACK = "Сборка"
+    private val FALLBACK: String get() = tr("Сборка")
 }

@@ -20,6 +20,7 @@ import net.millida.launcher.JoinPlan
 import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.catalog.ContentKind
 import net.millida.launcher.core.content.LocalFileCandidate
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.VersionManifest
 import net.millida.launcher.core.profile.BuildMeta
 import net.millida.launcher.core.profile.Profile
@@ -138,7 +139,7 @@ class LobbyModel(
                 mutable.update {
                     it.copy(
                         versionsLoading = false,
-                        versionsError = "Список версий не загрузился — проверь сеть и нажми «Повторить»",
+                        versionsError = tr("Список версий не загрузился — проверь сеть и нажми «Повторить»"),
                     )
                 }
             }
@@ -234,21 +235,21 @@ class LobbyModel(
             try {
                 withContext(Dispatchers.IO) {
                     val extension = imageExtension(resolver, uri)
-                        ?: throw IOException("обложка может быть PNG, JPEG или WebP")
+                        ?: throw IOException(tr("обложка может быть PNG, JPEG или WebP"))
                     val folder = File(container.layout.caches, "cover-pick").also { it.mkdirs() }
                     val target = File(folder, "cover.$extension")
                     staged = target
                     val input = resolver.openInputStream(uri)
-                        ?: throw IOException("картинка не открылась — выбери другую")
+                        ?: throw IOException(tr("картинка не открылась — выбери другую"))
                     input.use { source -> target.outputStream().use { source.copyTo(it) } }
                     container.buildMeta.setCover(profile.id, target)
                 }
-                notify("Обложка обновлена", false)
+                notify(tr("Обложка обновлена"), false)
                 refresh(profiles)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                notify(humanError(error, "Обложка не сохранилась — выбери другую картинку"), true)
+                notify(humanError(error, tr("Обложка не сохранилась — выбери другую картинку")), true)
             } finally {
                 staged?.delete()
                 mutable.update { it.copy(coverBusy = false) }
@@ -264,7 +265,7 @@ class LobbyModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                notify(humanError(error, "Обложка не убралась — повтори"), true)
+                notify(humanError(error, tr("Обложка не убралась — повтори")), true)
             }
         }
     }
@@ -289,7 +290,7 @@ class LobbyModel(
                     staging = folder
                     val copy = File(folder, name)
                     val input = resolver.openInputStream(uri)
-                        ?: throw IOException("файл не открылся — выбери его ещё раз")
+                        ?: throw IOException(tr("файл не открылся — выбери его ещё раз"))
                     input.use { source -> copy.outputStream().use { source.copyTo(it) } }
                     val candidate = container.localContent.identify(copy, profile)
                     if (candidate.rejection.isNotEmpty()) throw IOException(candidate.rejection)
@@ -312,7 +313,7 @@ class LobbyModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                notify(humanError(error, "Файл не добавился — выбери jar или zip"), true)
+                notify(humanError(error, tr("Файл не добавился — выбери jar или zip")), true)
             } finally {
                 if (!kept) staging?.deleteRecursively()
                 mutable.update { it.copy(importing = false) }
@@ -331,7 +332,7 @@ class LobbyModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                notify(humanError(error, "Файл не добавился — повтори"), true)
+                notify(humanError(error, tr("Файл не добавился — повтори")), true)
             } finally {
                 prompt.staging.deleteRecursively()
                 mutable.update { it.copy(importing = false) }
@@ -349,7 +350,7 @@ class LobbyModel(
         withContext(Dispatchers.IO) {
             container.localContent.add(container.profiles.directory(profile), prompt.candidate, consent = consent)
         }
-        notify("Файл добавлен: ${prompt.fileName}", false)
+        notify(tr("Файл добавлен: {fileName}", prompt.fileName), false)
     }
 
     internal fun displayName(resolver: ContentResolver, uri: Uri): String? =

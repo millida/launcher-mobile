@@ -19,6 +19,7 @@ import net.millida.launcher.Screen
 import net.millida.launcher.UiState
 import net.millida.launcher.core.friends.Friend
 import net.millida.launcher.core.friends.FriendPlace
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MAvatar
 import net.millida.launcher.ui.MButtonSize
 import net.millida.launcher.ui.MCounterBadge
@@ -60,22 +61,22 @@ fun LobbyParty(state: UiState, model: LauncherViewModel, modeTitle: String?, mod
             return
         }
         clipboard.setText(AnnotatedString(PROFILE_BASE + java.net.URLEncoder.encode(slug, "UTF-8").replace("+", "%20")))
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) model.notice("Ссылка скопирована — отправь другу")
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) model.notice(tr("Ссылка скопирована — отправь другу"))
     }
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (online.isEmpty()) {
             MListRow(
-                title = "Никого нет в сети",
+                title = tr("Никого нет в сети"),
                 icon = MIcons.users,
                 trailing = {
-                    MPrimaryButton("Пригласить", onClick = ::invite, icon = MIcons.link, size = MButtonSize.Small)
+                    MPrimaryButton(tr("Пригласить"), onClick = ::invite, icon = MIcons.link, size = MButtonSize.Small)
                 },
             )
         }
         online.forEach { friend -> PartyMate(friend, friend.userId in social.called, model, modeTitle) }
         MListRow(
-            title = if (online.isEmpty()) "Друзья" else "Все друзья",
+            title = if (online.isEmpty()) tr("Друзья") else tr("Все друзья"),
             icon = MIcons.users,
             onClick = { model.open(Screen.FRIENDS) },
             badge = state.friendsBadge,
@@ -87,9 +88,9 @@ fun LobbyParty(state: UiState, model: LauncherViewModel, modeTitle: String?, mod
 private fun PartyMate(friend: Friend, called: Boolean, model: LauncherViewModel, modeTitle: String?) {
     val address = friend.joinAddress()
     val status = when {
-        address != null -> friend.serverName?.takeIf { it.isNotBlank() } ?: "В игре"
-        friend.place == FriendPlace.GAME -> "В игре"
-        else -> "В лаунчере"
+        address != null -> friend.serverName?.takeIf { it.isNotBlank() } ?: tr("В игре")
+        friend.place == FriendPlace.GAME -> tr("В игре")
+        else -> tr("В лаунчере")
     }
     MListRow(
         title = friend.shownName(),
@@ -103,16 +104,16 @@ private fun PartyMate(friend: Friend, called: Boolean, model: LauncherViewModel,
         trailing = {
             if (address != null) {
                 MPrimaryButton(
-                    "Зайти",
+                    tr("Зайти"),
                     onClick = {
-                        model.playOnAddress(address, friend.serverName?.takeIf { it.isNotBlank() } ?: "Сервер ${friend.shownName()}")
+                        model.playOnAddress(address, friend.serverName?.takeIf { it.isNotBlank() } ?: tr("Сервер {0}", friend.shownName()))
                     },
                     icon = MIcons.login,
                     size = MButtonSize.Small,
                 )
             } else {
                 MSecondaryButton(
-                    if (called) "Позвали" else "Позвать",
+                    if (called) tr("Позвали") else tr("Позвать"),
                     onClick = { model.social.lobbyCall(friend, modeTitle) },
                     enabled = !called,
                     icon = if (called) MIcons.check else MIcons.send,

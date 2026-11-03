@@ -23,10 +23,12 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
+import net.millida.launcher.BuildConfig
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.Prefs
 import net.millida.launcher.UiState
 import net.millida.launcher.core.bedrock.VIAPROXY_SIZE
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.settings.SettingHint
 import net.millida.launcher.ui.settings.SettingsSection
 import net.millida.launcher.ui.settings.rememberTrackedAction
@@ -58,7 +60,7 @@ fun BedrockScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
     MScreen(
         modifier = modifier,
         title = "Bedrock",
-        subtitle = "Серверы на порту 19132",
+        subtitle = tr("Серверы на порту 19132"),
         onBack = { model.back() },
     ) {
         item(key = "bedrock-mode") { ModeSection(state, model, stepIn()) }
@@ -77,9 +79,9 @@ fun BedrockScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
 
     if (confirmRemove) {
         MConfirmDialog(
-            title = "Удалить переводчик?",
-            text = "Bedrock-серверы будут открываться только официальным клиентом",
-            confirm = "Удалить",
+            title = tr("Удалить переводчик?"),
+            text = tr("Bedrock-серверы будут открываться только официальным клиентом"),
+            confirm = tr("Удалить"),
             onConfirm = {
                 confirmRemove = false
                 remove.start { model.removeBedrockBridge() }
@@ -91,7 +93,7 @@ fun BedrockScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
 
 @Composable
 private fun ModeSection(state: UiState, model: LauncherViewModel, modifier: Modifier) {
-    SettingsSection("ЧЕМ ОТКРЫВАТЬ", modifier) {
+    SettingsSection(tr("ЧЕМ ОТКРЫВАТЬ"), modifier) {
         MSegmented(
             options = listOf(Prefs.BEDROCK_ASK, Prefs.BEDROCK_OFFICIAL, Prefs.BEDROCK_OWN),
             selected = state.bedrockMode,
@@ -99,17 +101,17 @@ private fun ModeSection(state: UiState, model: LauncherViewModel, modifier: Modi
             label = { mode ->
                 when (mode) {
                     Prefs.BEDROCK_OFFICIAL -> "Mojang"
-                    Prefs.BEDROCK_OWN -> "Наш"
-                    else -> "Авто"
+                    Prefs.BEDROCK_OWN -> tr("Наш")
+                    else -> tr("Авто")
                 }
             },
         )
         Spacer(Modifier.height(6.dp))
         SettingHint(
             when (state.bedrockMode) {
-                Prefs.BEDROCK_OFFICIAL -> "Всегда игра Bedrock Edition"
-                Prefs.BEDROCK_OWN -> "Всегда наш Java-клиент"
-                else -> "Что установлено: сначала Mojang, потом наш"
+                Prefs.BEDROCK_OFFICIAL -> tr("Всегда игра Bedrock Edition")
+                Prefs.BEDROCK_OWN -> tr("Всегда наш Java-клиент")
+                else -> tr("Что установлено: сначала Mojang, потом наш")
             },
         )
     }
@@ -118,30 +120,33 @@ private fun ModeSection(state: UiState, model: LauncherViewModel, modifier: Modi
 @Composable
 private fun OfficialSection(state: UiState, model: LauncherViewModel, context: Context, modifier: Modifier) {
     val ready = state.bedrockOfficialReady
-    SettingsSection("ОФИЦИАЛЬНЫЙ КЛИЕНТ", modifier) {
+    SettingsSection(tr("ОФИЦИАЛЬНЫЙ КЛИЕНТ"), modifier) {
         MListRow(
             title = "Bedrock Edition",
-            subtitle = if (ready) "Установлена на телефоне" else "Платная, ставится из магазина",
+            subtitle = if (ready) tr("Установлена на телефоне") else tr("Платная, ставится из магазина"),
             icon = MIcons.blocks,
             plate = false,
-            trailing = { ReadyBadge(ready, if (ready) "Есть" else "Нет") },
+            trailing = { ReadyBadge(ready, if (ready) tr("Есть") else tr("Нет")) },
         )
         Spacer(Modifier.height(8.dp))
         if (ready) {
-            MPrimaryButton("Открыть игру", onClick = model::openBedrockEdition, icon = MIcons.play)
+            MPrimaryButton(tr("Открыть игру"), onClick = model::openBedrockEdition, icon = MIcons.play)
         } else {
             MButtonRow {
-                MPrimaryButton(
-                    "Google Play",
-                    onClick = model::installBedrockEdition,
-                    icon = MIcons.download,
-                    size = MButtonSize.Small,
-                )
-                MSecondaryButton(
-                    "Galaxy Store",
-                    onClick = { model.openLinkOrNotice(context, GALAXY_STORE_URL) },
-                    size = MButtonSize.Small,
-                )
+                // A store build may not send players to other stores; the official site stays.
+                if (BuildConfig.OTHER_STORE_LINKS) {
+                    MPrimaryButton(
+                        "Google Play",
+                        onClick = model::installBedrockEdition,
+                        icon = MIcons.download,
+                        size = MButtonSize.Small,
+                    )
+                    MSecondaryButton(
+                        "Galaxy Store",
+                        onClick = { model.openLinkOrNotice(context, GALAXY_STORE_URL) },
+                        size = MButtonSize.Small,
+                    )
+                }
                 MTextButton(
                     "minecraft.net",
                     onClick = { model.openLinkOrNotice(context, OFFICIAL_SITE_URL) },
@@ -166,33 +171,33 @@ private fun BridgeSection(
     val progress = state.bedrockBridgeProgress
     val sizeMb = VIAPROXY_SIZE / 1024 / 1024
 
-    SettingsSection("НАШ КЛИЕНТ", modifier) {
+    SettingsSection(tr("НАШ КЛИЕНТ"), modifier) {
         MListRow(
-            title = "Java + переводчик",
+            title = tr("Java + переводчик"),
             subtitle = if (ready) {
-                "Протокол ${state.bedrockTargetVersion.ifEmpty { "определяется" }}"
+                tr("Протокол {0}", state.bedrockTargetVersion.ifEmpty { tr("определяется") })
             } else {
-                "Твой скин и управление, вторая игра не нужна"
+                tr("Твой скин и управление, вторая игра не нужна")
             },
             icon = MIcons.link,
             plate = false,
-            trailing = { ReadyBadge(ready, if (ready) "Готов" else "$sizeMb МБ") },
+            trailing = { ReadyBadge(ready, if (ready) tr("Готов") else tr("{sizeMb} МБ", sizeMb)) },
         )
         Spacer(Modifier.height(8.dp))
         when {
             progress > 0f -> {
                 MProgressBar(progress)
                 Spacer(Modifier.height(6.dp))
-                SettingHint("Скачиваем: ${(progress * 100).roundToInt()}%")
+                SettingHint(tr("Скачиваем: {0}%", (progress * 100).roundToInt()))
             }
             ready -> MDangerButton(
-                "Удалить",
+                tr("Удалить"),
                 onClick = onRemove,
                 icon = MIcons.trash,
                 enabled = state.busy == null && !removing,
             )
             else -> MPrimaryButton(
-                "Скачать",
+                tr("Скачать"),
                 onClick = { install.start { model.installBedrockBridge() } },
                 icon = MIcons.download,
                 enabled = state.busy == null,
@@ -203,7 +208,7 @@ private fun BridgeSection(
         Row(verticalAlignment = Alignment.CenterVertically) {
             MIcon(MIcons.info, size = 16.dp, color = colors.fgSubtle)
             Spacer(Modifier.width(8.dp))
-            SettingHint("С проверкой Xbox вход на чужой сервер может не пройти", Modifier.weight(1f))
+            SettingHint(tr("С проверкой Xbox вход на чужой сервер может не пройти"), Modifier.weight(1f))
         }
     }
 }
@@ -220,12 +225,12 @@ private fun ReadyBadge(ready: Boolean, text: String) {
 
 @Composable
 private fun HowSection(modifier: Modifier) {
-    SettingsSection("КАК ЭТО РАБОТАЕТ", modifier) {
-        StepRow(1, "Найди Bedrock-сервер", "Порт 19132, метка «Bedrock»")
+    SettingsSection(tr("КАК ЭТО РАБОТАЕТ"), modifier) {
+        StepRow(1, tr("Найди Bedrock-сервер"), tr("Порт 19132, метка «Bedrock»"))
         MDivider()
-        StepRow(2, "Нажми «Играть»", "Откроется выбранным способом")
+        StepRow(2, tr("Нажми «Играть»"), tr("Откроется выбранным способом"))
         MDivider()
-        StepRow(3, "Для нашего клиента", "Нужна сборка той же версии")
+        StepRow(3, tr("Для нашего клиента"), tr("Нужна сборка той же версии"))
     }
 }
 

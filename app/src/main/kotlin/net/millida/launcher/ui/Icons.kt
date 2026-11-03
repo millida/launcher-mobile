@@ -10,8 +10,10 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.floor
@@ -29,7 +31,8 @@ private const val PX_SNAP_BIAS = 0.4f
 private const val PX_RUN_FIELDS = 4
 
 @Immutable
-class MillidaIcon internal constructor(cells: String) {
+/** A [mirrored] glyph points along the reading direction (back, next, send) and turns around for Arabic and Urdu. */
+class MillidaIcon internal constructor(cells: String, internal val mirrored: Boolean = false) {
     internal val side: Int = sqrt(cells.length.toDouble()).roundToInt()
     internal val runs: IntArray
 
@@ -86,8 +89,8 @@ object MIcons {
     val star = MillidaIcon(PxArt.star)
     val download = MillidaIcon(PxArt.download)
     val wallet = MillidaIcon(PxArt.wallet)
-    val send = MillidaIcon(PxArt.send)
-    val back = MillidaIcon(PxArt.chevL)
+    val send = MillidaIcon(PxArt.send, mirrored = true)
+    val back = MillidaIcon(PxArt.chevL, mirrored = true)
     val phone = MillidaIcon(PxArt.phone)
     val logout = MillidaIcon(PxArt.logout)
     val shield = MillidaIcon(PxArt.shield)
@@ -97,10 +100,10 @@ object MIcons {
     val grid = MillidaIcon(PxArt.grid)
 
     val chevronLeft: MillidaIcon get() = back
-    val chevronRight = MillidaIcon(PxArt.chevR)
+    val chevronRight = MillidaIcon(PxArt.chevR, mirrored = true)
     val chevronUp = MillidaIcon(PxArt.chevU)
-    val arrowLeft = MillidaIcon(PxArt.arrowL)
-    val arrowRight = MillidaIcon(PxArt.arrowR)
+    val arrowLeft = MillidaIcon(PxArt.arrowL, mirrored = true)
+    val arrowRight = MillidaIcon(PxArt.arrowR, mirrored = true)
     val arrowUp = MillidaIcon(PxArt.arrowUp)
     val arrowDown = MillidaIcon(PxArt.arrowDn)
     val refresh = MillidaIcon(PxArt.restart)
@@ -109,7 +112,7 @@ object MIcons {
     val share: MillidaIcon get() = externalLink
     val link = MillidaIcon(PxArt.link)
     val more = MillidaIcon(PxArt.dots)
-    val reply = MillidaIcon(PxArt.reply)
+    val reply = MillidaIcon(PxArt.reply, mirrored = true)
     val pause = MillidaIcon(PxArt.pause)
     val list = MillidaIcon(PxArt.list)
     val grip = MillidaIcon(PxArt.grip)
@@ -152,6 +155,8 @@ object MIcons {
     val shard = MillidaIcon(PxArt.shard)
     val emerald = MillidaIcon(PxArt.emerald)
     val trophy = MillidaIcon(PxArt.trophy)
+    val discord = MillidaIcon(PxArt.discord)
+    val telegram = MillidaIcon(PxArt.telegram)
     val heart = MillidaIcon(PxArt.heart)
     val heartOff = MillidaIcon(PxArt.heartOff)
     val sparkle = MillidaIcon(PxArt.sparkle)
@@ -170,6 +175,7 @@ object MIcons {
     val inbox = MillidaIcon(PxArt.inbox)
     val flag = MillidaIcon(PxArt.flag)
     val blocks = MillidaIcon(PxArt.blocks)
+    val mcGrass = MillidaIcon(PxArt.mcGrass)
     val hammer = MillidaIcon(PxArt.hammer)
     val ban = MillidaIcon(PxArt.ban)
 
@@ -195,6 +201,7 @@ object MIcons {
     val wardrobeBack = MillidaIcon(PxArt.wsBack)
     val wardrobePet = MillidaIcon(PxArt.wsPet)
     val wardrobeEmote = MillidaIcon(PxArt.wsEmote)
+    val wardrobeShop = MillidaIcon(PxArt.wsShop)
 
     val home: MillidaIcon get() = blocks
     val grassBlock: MillidaIcon get() = blocks
@@ -222,7 +229,13 @@ fun MIcon(
     modifier: Modifier = Modifier,
 ) {
     val tint = color.takeOrElse { LocalContentColor.current }
-    Canvas(modifier.size(size)) { drawPixelGlyph(icon, tint) }
+    Canvas(modifier.size(size)) {
+        if (icon.mirrored && layoutDirection == LayoutDirection.Rtl) {
+            scale(-1f, 1f) { drawPixelGlyph(icon, tint) }
+        } else {
+            drawPixelGlyph(icon, tint)
+        }
+    }
 }
 
 private fun DrawScope.drawPixelGlyph(icon: MillidaIcon, tint: Color) {

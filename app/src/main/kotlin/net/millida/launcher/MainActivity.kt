@@ -80,6 +80,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.SaveableStateHolder
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -88,6 +89,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -96,6 +98,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import net.millida.launcher.core.i18n.I18n
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.ui.AccountScreen
 import net.millida.launcher.ui.BedrockScreen
@@ -107,6 +111,7 @@ import net.millida.launcher.ui.FriendsScreen
 import net.millida.launcher.ui.HomeScreen
 import net.millida.launcher.ui.HostingManageScreen
 import net.millida.launcher.ui.HostingScreen
+import net.millida.launcher.ui.RemoteScreen
 import net.millida.launcher.ui.LocalModalStack
 import net.millida.launcher.ui.LocalWideBack
 import net.millida.launcher.ui.LocalWideHub
@@ -117,7 +122,10 @@ import net.millida.launcher.ui.LocalReducedMotion
 import net.millida.launcher.ui.LocalToastOverlay
 import net.millida.launcher.ui.LocalTour
 import net.millida.launcher.ui.LocalUiFeedback
+import net.millida.launcher.ui.GameAccountStep
+import net.millida.launcher.ui.HideSystemBarsWhenWide
 import net.millida.launcher.ui.LoginDialog
+import net.millida.launcher.ui.LoginScreen
 import net.millida.launcher.ui.catalog.MillidaDialogsHost
 import net.millida.launcher.ui.catalog.InstallProgressHost
 import net.millida.launcher.ui.MConfirmDialog
@@ -129,6 +137,8 @@ import net.millida.launcher.ui.MillidaCut
 import net.millida.launcher.ui.MillidaIcon
 import net.millida.launcher.ui.MillidaMotion
 import net.millida.launcher.ui.MillidaTheme
+import net.millida.launcher.ui.settings.LookEffects
+import net.millida.launcher.ui.settings.premiumThemeOn
 import net.millida.launcher.ui.MillidaType
 import net.millida.launcher.ui.ModalStack
 import net.millida.launcher.ui.MoreScreen
@@ -147,13 +157,18 @@ import net.millida.launcher.core.update.UpdateVerdict
 import net.millida.launcher.ui.UpdateOfferSheet
 import net.millida.launcher.ui.LowMemoryNoticeDialog
 import net.millida.launcher.ui.LowMemoryPlayDialog
+import net.millida.launcher.ui.CellularPlayDialog
+import net.millida.launcher.ui.PersonalDataConsentDialog
+
 import net.millida.launcher.ui.MillidaModOfferDialog
+import net.millida.launcher.ui.ModProblemsDialog
 import net.millida.launcher.ui.TourRegistry
 import net.millida.launcher.ui.WhatsNewDialog
 import net.millida.launcher.ui.social.CallLayer
+import net.millida.launcher.ui.plus.PlusScreen
 import net.millida.launcher.ui.premium.PremiumScreen
 import net.millida.launcher.ui.home.AmbientLayer
-import net.millida.launcher.ui.home.WIDE_LOBBY_DOCK_HEIGHT
+import net.millida.launcher.ui.home.wideLobbyDockHeight
 import net.millida.launcher.ui.millida
 import net.millida.launcher.ui.millidaTokens
 import net.millida.launcher.ui.pixelSurface
@@ -188,71 +203,135 @@ class MainActivity : ComponentActivity() {
             askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         val player = Container.get(this).uiSoundPlayer
+        val cellularGate = Container.get(this).cellularGate
+
+        AppLanguage.sync(this)
         setContent {
             val state by model.ui.collectAsStateWithLifecycle()
+            var consented by rememberSaveable { mutableStateOf(!BuildConfig.PD_CONSENT || prefs.personalDataConsentAt > 0L) }
+            val packAsk by cellularGate.pending.collectAsStateWithLifecycle()
+            val language by I18n.locale.collectAsStateWithLifecycle()
             val dark = when (state.themeMode) {
                 Prefs.THEME_DARK -> true
                 Prefs.THEME_LIGHT -> false
                 else -> isSystemInDarkTheme()
             }
             LaunchedEffect(dark, state.accentId) { paintWindow(dark, state.accentId) }
-            MillidaTheme(dark = dark, accentId = state.accentId) {
-                ProvideWideLayout {
-                    ProvideUiFeedback(player) {
-                        val modals = remember { ModalStack() }
-                        val overlay = remember(model) { toastOverlay(model) }
-                        val tour = remember { TourRegistry() }
-                        CompositionLocalProvider(
-                            LocalModalStack provides modals,
-                            LocalToastOverlay provides overlay,
-                            LocalTour provides tour,
-                        ) {
-                            ToastSounds(state.messages)
-                            Root(model, onLeave = { moveTaskToBack(true) })
-                        ScreenWave(state.screen, state.accentId)
-                            if (!state.onboarding) CallLayer(state, model)
-                            AmbientLayer(state, model)
-                            if (state.onboarding) {
-                                Onboarding(
-                                    state.bundledRuntime,
-                                    onDone = model::finishOnboarding,
-                                    onTour = {
-                                        model.finishOnboarding()
-                                        model.ambient.startTour()
-                                    },
-                                )
-                                if (modals.layers.isEmpty()) ToastHost(state, model, barShown = false, atTop = false)
-                            }
-                            state.releaseNotes?.let { notes ->
-                                WhatsNewDialog(state.appVersion, notes, onClose = model::closeWhatsNew)
-                            }
-                            val lowMemory = state.lowMemoryNotice
-                            if (lowMemory != null && !state.onboarding && state.releaseNotes == null) {
-                                LowMemoryNoticeDialog(lowMemory, onClose = model::closeLowMemoryNotice)
-                            }
-                            if (!state.onboarding && state.releaseNotes == null) ShopWelcome(model)
-                            state.lowMemoryPlay?.let { pending ->
-                                LowMemoryPlayDialog(
-                                    pending.notice,
-                                    onPlay = model::confirmLowMemoryPlay,
-                                    onCancel = model::cancelLowMemoryPlay,
-                                )
-                            }
-                            if (state.millidaModOffer != null) {
-                                MillidaModOfferDialog(
-                                    onInstall = model::acceptMillidaModOffer,
-                                    onDecline = model::declineMillidaModOffer,
-                                    onCancel = model::cancelMillidaModOffer,
-                                )
-                            }
-                            val offered = (state.updateVerdict as? UpdateVerdict.Available)?.release
-                            if (state.updateOffer && offered != null && state.releaseNotes == null && !state.onboarding) {
-                                UpdateOfferSheet(
-                                    offered,
-                                    state.updateProgress,
-                                    onUpdate = model::downloadUpdate,
-                                    onLater = model::postponeUpdate,
-                                )
+            LookEffects(state, model)
+            // A new language rebuilds the whole tree: texts are read once per composition, not observed.
+            key(language) {
+                MillidaTheme(dark = dark, accentId = state.accentId, premium = premiumThemeOn()) {
+                    ProvideWideLayout {
+                        HideSystemBarsWhenWide()
+                        ProvideUiFeedback(player) {
+                            val modals = remember { ModalStack() }
+                            val overlay = remember(model) { toastOverlay(model) }
+                            val tour = remember { TourRegistry() }
+                            CompositionLocalProvider(
+                                LocalModalStack provides modals,
+                                LocalToastOverlay provides overlay,
+                                LocalTour provides tour,
+                            ) {
+                                ToastSounds(state.messages)
+                                Root(model, onLeave = { moveTaskToBack(true) })
+                                // One even dim over the whole window, edges and cutout included: the dialog
+                                // windows draw none of their own, so nothing of the scene shows through as colour.
+                                val dim by animateFloatAsState(if (modals.layers.isEmpty()) 0f else 1f, label = "modalDim")
+                                if (dim > 0f) {
+                                    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.7f * dim)))
+                                }
+                            ScreenWave(state.screen, state.accentId)
+                                if (!state.onboarding) CallLayer(state, model)
+                                AmbientLayer(state, model)
+                                if (state.onboarding) {
+                                    Onboarding(
+                                        state.bundledRuntime,
+                                        onDone = model::finishOnboarding,
+                                        onTour = {
+                                            model.finishOnboarding()
+                                            model.ambient.startTour()
+                                        },
+                                    )
+                                    if (modals.layers.isEmpty()) ToastHost(state, model, barShown = false, atTop = false)
+                                }
+                                if (state.loginGate && !state.onboarding) {
+                                    LoginScreen(state, model, onLeave = { moveTaskToBack(true) })
+                                    if (modals.layers.isEmpty()) ToastHost(state, model, barShown = false, atTop = false)
+                                }
+                                if (state.gameStep && !state.onboarding && !state.loginGate) {
+                                    GameAccountStep(state, model, onLeave = { moveTaskToBack(true) })
+                                    if (modals.layers.isEmpty()) ToastHost(state, model, barShown = false, atTop = false)
+                                }
+                                state.releaseNotes?.let { notes ->
+                                    WhatsNewDialog(state.appVersion, notes, onClose = model::closeWhatsNew)
+                                }
+                                val lowMemory = state.lowMemoryNotice
+                                if (lowMemory != null && !state.onboarding && state.releaseNotes == null) {
+                                    LowMemoryNoticeDialog(lowMemory, onClose = model::closeLowMemoryNotice)
+                                }
+                                if (!state.onboarding && state.releaseNotes == null) ShopWelcome(model)
+                                state.lowMemoryPlay?.let { pending ->
+                                    LowMemoryPlayDialog(
+                                        pending.notice,
+                                        onPlay = model::confirmLowMemoryPlay,
+                                        onCancel = model::cancelLowMemoryPlay,
+                                    )
+                                }
+                                if (state.millidaModOffer != null) {
+                                    MillidaModOfferDialog(
+                                        onInstall = model::acceptMillidaModOffer,
+                                        onDecline = model::declineMillidaModOffer,
+                                        onCancel = model::cancelMillidaModOffer,
+                                    )
+                                }
+                                packAsk?.let { ask ->
+                                    CellularPlayDialog(
+                                        name = ask.title.ifEmpty { tr("Сборка из каталога") },
+                                        bytes = ask.bytes,
+                                        onDownload = { cellularGate.answer(CellularGate.Choice.DOWNLOAD) },
+                                        onWait = {
+                                            cellularGate.answer(CellularGate.Choice.WAIT)
+                                            model.notice(tr("Установка продолжится, как только появится Wi-Fi"), tone = ToastTone.Info)
+                                        },
+                                        onCancel = { cellularGate.answer(CellularGate.Choice.CANCEL) },
+                                    )
+                                }
+                                state.cellularPlay?.let { pending ->
+                                    CellularPlayDialog(
+                                        name = pending.profile.name,
+                                        bytes = pending.bytes,
+                                        onDownload = model::playOverCellular,
+                                        onWait = model::waitForWifiThenPlay,
+                                        onCancel = model::cancelCellularPlay,
+                                    )
+                                }
+                                state.modProblems?.let { pending ->
+                                    ModProblemsDialog(
+                                        problems = pending.problems,
+                                        onDisable = model::disableProblemMods,
+                                        onPlay = model::playWithProblemMods,
+                                        onCancel = model::cancelModProblems,
+                                    )
+                                }
+                                val offered = (state.updateVerdict as? UpdateVerdict.Available)?.release
+                                if (state.updateOffer && offered != null && state.releaseNotes == null && !state.onboarding) {
+                                    UpdateOfferSheet(
+                                        offered,
+                                        state.updateProgress,
+                                        onUpdate = model::downloadUpdate,
+                                        onLater = model::postponeUpdate,
+                                    )
+                                }
+                                if (!consented) {
+                                    PersonalDataConsentDialog(
+                                        model = model,
+                                        onAccept = {
+                                            prefs.personalDataConsentAt = System.currentTimeMillis()
+                                            consented = true
+                                        },
+                                        onLeave = { finish() },
+                                    )
+                                }
                             }
                         }
                     }
@@ -269,6 +348,18 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun deliverLink(intent: Intent?) {
+        if (BuildConfig.TEST_HOOKS) intent?.getStringExtra("debugNick")?.let { model.debugSignInOffline(it) }
+        if (BuildConfig.TEST_HOOKS) intent?.getStringExtra("debugPack")?.let { pack ->
+            intent.removeExtra("debugPack")
+            model.debugPackTest(pack, intent.getStringExtra("debugNick").orEmpty())
+        }
+        val switchProfile = intent?.getStringExtra(GameActivity.EXTRA_SWITCH_PROFILE)
+        val switchVersion = intent?.getStringExtra(GameActivity.EXTRA_SWITCH_VERSION)
+        if (!switchProfile.isNullOrEmpty() && !switchVersion.isNullOrEmpty()) {
+            intent.removeExtra(GameActivity.EXTRA_SWITCH_PROFILE)
+            model.switchVersionAndPlay(switchProfile, switchVersion)
+            return
+        }
         FriendAlerts.openingOf(intent)?.let { opening ->
             model.openFromAlert(opening)
             return
@@ -306,12 +397,12 @@ class MainActivity : ComponentActivity() {
 
 private data class Tab(val screen: Screen, val label: String, val icon: MillidaIcon)
 
-private val tabs = listOf(
-    Tab(Screen.HOME, "Играть", MIcons.home),
-    Tab(Screen.CATALOG, "Каталог", MIcons.catalog),
-    Tab(Screen.SKINS, "Персонаж", MIcons.character),
-    Tab(Screen.SHOP, "Магазин", MIcons.shop),
-    Tab(Screen.MORE, "Ещё", MIcons.more),
+private val tabs get() = listOf(
+    Tab(Screen.HOME, tr("Играть"), MIcons.home),
+    Tab(Screen.CATALOG, tr("Каталог"), MIcons.catalog),
+    Tab(Screen.SKINS, tr("Персонаж"), MIcons.character),
+    Tab(Screen.SHOP, tr("Магазин"), MIcons.shop),
+    Tab(Screen.MORE, tr("Ещё"), MIcons.more),
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -364,9 +455,9 @@ private fun Root(model: LauncherViewModel, onLeave: () -> Unit) {
         MillidaDialogsHost(model)
         state.linkJoin?.let { ask ->
             MConfirmDialog(
-                title = "Зайти на сервер?",
+                title = tr("Зайти на сервер?"),
                 text = if (ask.name == ask.address) "«${ask.address}»" else "«${ask.name}» (${ask.address})",
-                confirm = "Запустить",
+                confirm = tr("Запустить"),
                 onConfirm = model::confirmLinkJoin,
                 onDismiss = model::dismissLinkJoin,
                 danger = false,
@@ -397,7 +488,7 @@ private fun WideShell(state: UiState, model: LauncherViewModel, hub: WideHub) {
     val hubScreen = state.screen == Screen.HOME || state.screen == Screen.CATALOG
     val toLobby = model.backLeadsHome() && (!hub.library || hubScreen)
     val back = WideBack(
-        label = if (toLobby) "Лобби" else "Назад",
+        label = if (toLobby) tr("Лобби") else tr("Назад"),
         badge = state.friendsBadge,
         onBack = { model.back() },
     )
@@ -507,12 +598,18 @@ private fun ScreenFor(screen: Screen, state: UiState, model: LauncherViewModel) 
         Screen.HOME -> HomeScreen(state, model)
         Screen.BUILD -> BuildScreen(state, model)
         Screen.SERVERS -> ServersScreen(state, model)
-        Screen.CATALOG -> CatalogScreen(state, model)
+        Screen.CATALOG ->
+            if (state.remoteUi && !state.nativeCatalog) {
+                RemoteScreen("catalog", model) { CatalogScreen(state, model) }
+            } else {
+                CatalogScreen(state, model)
+            }
         Screen.ACCOUNT -> AccountScreen(state, model)
         Screen.MORE -> MoreScreen(state, model)
         Screen.SETTINGS -> SettingsScreen(state, model)
         Screen.SKINS -> SkinsScreen(state, model)
-        Screen.HOSTING -> HostingScreen(state, model)
+        Screen.HOSTING ->
+            if (state.remoteUi) RemoteScreen("hosting-servers", model) { HostingScreen(state, model) } else HostingScreen(state, model)
         Screen.BEDROCK -> BedrockScreen(state, model)
         Screen.HOSTING_MANAGE -> HostingManageScreen(state, model)
         Screen.PACKS -> PacksScreen(state, model)
@@ -522,6 +619,7 @@ private fun ScreenFor(screen: Screen, state: UiState, model: LauncherViewModel) 
         Screen.SCREENSHOTS -> ScreenshotsScreen(state, model)
         Screen.SHOP -> ShopScreen(state, model)
         Screen.PREMIUM -> PremiumScreen(state, model)
+        Screen.PLUS -> PlusScreen(state, model)
     }
 }
 
@@ -695,7 +793,7 @@ private fun ToastHost(
     val edge = if (atTop) WindowInsets.statusBars else WindowInsets.navigationBars.union(WindowInsets.ime)
     val bottom = when {
         atTop -> 0.dp
-        overDock -> WIDE_LOBBY_DOCK_HEIGHT + 10.dp
+        overDock -> wideLobbyDockHeight() + 10.dp
         barShown -> BAR_HEIGHT + BAR_LIFT + 10.dp
         else -> 16.dp
     }

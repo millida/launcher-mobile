@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import net.millida.launcher.core.hub.Hub
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.rating.RatedServer
 import net.millida.launcher.core.rating.versionRangeLabel
 import net.millida.launcher.ui.MBottomSheet
@@ -38,7 +39,7 @@ internal fun ModeServersSheet(
                 MSkeletonRow()
                 Spacer(Modifier.height(8.dp))
             }
-            servers.isEmpty() -> MErrorCard("Серверов этого режима сейчас нет", onRetry = onRetry)
+            servers.isEmpty() -> MErrorCard(tr("Серверов этого режима сейчас нет"), onRetry = onRetry)
             else -> servers.forEach { server ->
                 MListRow(
                     title = server.name.ifBlank { server.joinAddress },
@@ -59,7 +60,7 @@ internal fun ModeServersSheet(
                     },
                     trailing = {
                         MButton(
-                            text = "Играть",
+                            text = tr("Играть"),
                             onClick = { onPlay(server) },
                             variant = MButtonVariant.Secondary,
                             size = MButtonSize.Small,

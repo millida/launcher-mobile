@@ -12,6 +12,17 @@ import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
+import android.text.InputType
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+
+import android.view.inputmethod.BaseInputConnection
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputMethodManager
+import net.millida.launcher.core.game.GameResolution
+import net.millida.launcher.core.input.GamepadMap
+
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -118,6 +129,97 @@ class GameSurfaceView @JvmOverloads constructor(
         isFocusableInTouchMode = true
     }
 
+    /**
+     * The direct keyboard mode: the system keyboard talks to the game view
+     * itself, so every key reaches the game the moment it is pressed, as hot
+     * keys of mods expect. Text the keyboard composes arrives as characters.
+     */
+    var directTyping: Boolean = false
+        private set
+
+    override fun onCheckIsTextEditor(): Boolean = directTyping
+
+    override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
+        if (!directTyping) return null
+        // A password-like field keeps the keyboard from holding words back for suggestions.
+        outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_ACTION_NONE
+        return object : BaseInputConnection(this, false) {
+            override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                typeText(text?.toString().orEmpty())
+                return true
+            }
+
+            override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                repeat(beforeLength.coerceIn(1, MAX_DELETE)) { tapKey(GlfwKeys.BACKSPACE) }
+                return true
+            }
+
+            override fun sendKeyEvent(event: KeyEvent): Boolean = dispatchKeyEvent(event)
+        }
+    }
+
+    fun showDirectKeyboard() {
+        directTyping = true
+        takeFocus()
+        val manager = context.getSystemService(InputMethodManager::class.java) ?: return
+        manager.restartInput(this)
+        manager.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    /** The keyboard may have been closed with Back, so the switch goes by what is on screen. */
+    fun toggleDirectKeyboard() {
+        val shown = ViewCompat.getRootWindowInsets(this)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+        if (directTyping && shown) hideDirectKeyboard() else showDirectKeyboard()
+    }
+
+    fun hideDirectKeyboard() {
+        if (!directTyping) return
+        directTyping = false
+        val manager = context.getSystemService(InputMethodManager::class.java) ?: return
+        manager.hideSoftInputFromWindow(windowToken, 0)
+        manager.restartInput(this)
+    }
+
+    private fun typeText(text: String) {
+        var index = 0
+        while (index < text.length) {
+            val codePoint = Character.codePointAt(text, index)
+            if (codePoint == '\n'.code) tapKey(GlfwKeys.ENTER) else sink.char(codePoint)
+            index += Character.charCount(codePoint)
+        }
+    }
+
+    private fun tapKey(code: Int) {
+        sink.key(code, code, true)
+        sink.key(code, code, false)
+    }
+
+    /** What the gamepad's buttons do; set from the player's settings when the game screen opens. */
+    var gamepad: GamepadMap = GamepadMap()
+
+    /** Below [GameResolution.FULL] the buffer is smaller than the view and the compositor stretches it. */
+    var resolutionPercent: Int = GameResolution.FULL
+        set(value) {
+            field = GameResolution.clamp(value)
+            applyResolution(width, height)
+        }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        applyResolution(w, h)
+    }
+
+    private fun applyResolution(w: Int, h: Int) {
+        if (w <= 0 || h <= 0) return
+        if (resolutionPercent >= GameResolution.FULL) {
+            holder.setSizeFromLayout()
+            return
+        }
+        val (bufferWidth, bufferHeight) = GameResolution.window(w, h, resolutionPercent)
+        holder.setFixedSize(bufferWidth, bufferHeight)
+    }
+
     override fun surfaceCreated(holder: SurfaceHolder) = Unit
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -182,14 +284,15 @@ class GameSurfaceView @JvmOverloads constructor(
     }
 
     private fun handleKey(event: KeyEvent, down: Boolean): Boolean {
-        val pad = KeyMap.gamepad(event.keyCode)
+        val pad = KeyMap.gamepad(event.keyCode, gamepad)
         if (pad != null) {
             if (!down || event.repeatCount == 0) padAction(pad, down)
             return true
         }
         val code = KeyMap.glfw(event.keyCode)
         if (code == KeyMap.UNKNOWN) return false
-        if (!event.isFromSource(InputDevice.SOURCE_GAMEPAD)) onDesktopInput?.invoke()
+        // The on-screen keyboard of the direct mode is not a desk keyboard: the touch controls stay.
+        if (!event.isFromSource(InputDevice.SOURCE_GAMEPAD) && event.deviceId != KeyCharacterMap.VIRTUAL_KEYBOARD) onDesktopInput?.invoke()
         if (!down) {
             if (heldKeys.remove(code)) sink.key(code, code, false)
             return true
@@ -375,7 +478,9 @@ class GameSurfaceView @JvmOverloads constructor(
         private const val TRIGGER_ON = 0.55f
         private const val TRIGGER_OFF = 0.35f
 
+        private const val MAX_DELETE = 64
         private const val LOOK_SPEED = 900f
+
         private const val MAX_LOOK_STEP_MS = 50L
 
         private fun curve(value: Float): Float = value * abs(value)

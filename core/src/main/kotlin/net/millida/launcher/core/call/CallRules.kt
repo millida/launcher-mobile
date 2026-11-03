@@ -4,6 +4,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trKey
 /** Timings of the desktop call state (src/state/call.ts), kept equal so both sides give up together. */
 object CallTimings {
     /** Ringing without an answer: longer than this nobody is at the phone. */
@@ -53,11 +55,13 @@ data class PeerFlags(
 
 data class PeerQuality(val rttMs: Long?, val lossPct: Double, val kbps: Double)
 
-enum class QualityLevel(val text: String) {
-    WAIT("Соединяемся"),
-    BAD("Плохая связь"),
-    MID("Связь так себе"),
-    OK("Связь хорошая"),
+enum class QualityLevel(private val textKey: String) {
+    WAIT(trKey("Соединяемся")),
+    BAD(trKey("Плохая связь")),
+    MID(trKey("Связь так себе")),
+    OK(trKey("Связь хорошая")),;
+
+    val text: String get() = tr(textKey)
 }
 
 object CallRules {
@@ -89,9 +93,9 @@ object CallRules {
     }
 
     fun endedText(kind: CallSignalKind): String = when (kind) {
-        CallSignalKind.DECLINE -> "Звонок отклонён"
-        CallSignalKind.BUSY -> "Собеседник уже разговаривает"
-        CallSignalKind.CANCEL -> "Звонок отменён"
-        else -> "Звонок завершён"
+        CallSignalKind.DECLINE -> tr("Звонок отклонён")
+        CallSignalKind.BUSY -> tr("Собеседник уже разговаривает")
+        CallSignalKind.CANCEL -> tr("Звонок отменён")
+        else -> tr("Звонок завершён")
     }
 }

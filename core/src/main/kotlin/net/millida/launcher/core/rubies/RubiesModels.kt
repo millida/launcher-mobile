@@ -145,6 +145,7 @@ data class ChestOdds(
     val shards: ShardRange? = null,
     val chances: List<RarityChance> = emptyList(),
     val wholePct: Double = 0.0,
+    val wholePayerPct: Double = 0.0,
     val rubies: RubyChance? = null,
 )
 
@@ -162,10 +163,14 @@ data class RubyPack(
     val rubies: Long = 0,
     val kopecks: Long = 0,
     val bonus: Long = 0,
+    val oneTime: Boolean = false,
 )
 
 @Serializable
-data class PackRules(val rubiesPerRuble: Int = 0, val items: List<RubyPack> = emptyList())
+data class PackRules(val rubiesPerRuble: Int = 0, val items: List<RubyPack> = emptyList(), val plus: PlusRule? = null)
+
+@Serializable
+data class PlusRule(val priceKopecks: Long = 0)
 
 @Serializable
 data class RubyRules(val chests: ChestRules = ChestRules(), val packs: PackRules = PackRules())
@@ -182,6 +187,7 @@ data class ShopCard(
     val owned: Boolean = false,
     val leavesAt: String = "",
     val fragments: FragmentProgress? = null,
+    val plusPrice: Long? = null,
 )
 
 @Serializable
@@ -216,6 +222,9 @@ data class ShopDay(
     val wishlist: List<String> = emptyList(),
     val gift: ShopGift? = null,
     val xray: XrayOffer? = null,
+    val monthOffer: MonthOffer? = null,
+    val plusTier: String? = null,
+    val plusPct: Int = 0,
 )
 
 /** Where a card was bought matters: the price is checked against that shelf. */
@@ -315,4 +324,14 @@ data class PlusStatus(
     val canceled: Boolean = false,
     val priceKopecks: Long = 0,
     val shardBoost: Double = 0.0,
-)
+    val tier: String? = null,
+    val rubiesOnPay: Long = 0,
+    val offers: List<PlusOffer> = emptyList(),
+) {
+    /** The paid level, PLUS or DIAMOND; null without a subscription. An older service sends no tier: then it is PLUS. */
+    val paidTier: String? get() = if (active) tier?.trim()?.uppercase()?.takeIf { it.isNotEmpty() } ?: "PLUS" else null
+
+    fun priceOf(tier: String): Long =
+        offers.firstOrNull { it.tier.equals(tier, ignoreCase = true) }?.priceKopecks?.takeIf { it > 0 }
+            ?: if (tier.equals("PLUS", ignoreCase = true)) priceKopecks else 0
+}

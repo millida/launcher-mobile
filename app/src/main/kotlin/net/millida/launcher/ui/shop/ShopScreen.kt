@@ -1,29 +1,53 @@
 package net.millida.launcher.ui.shop
 
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Box
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.ui.WIDE_ROOMY_HEIGHT_DP
+import net.millida.launcher.ui.WideTopBar
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.background
+import net.millida.launcher.core.i18n.trPlural
+import net.millida.launcher.ui.MButtonSize
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import net.millida.launcher.ui.shop.chest.ChestLive
+import net.millida.launcher.ui.Rarity
+import net.millida.launcher.ui.MillidaIcon
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.BoxScope
+import net.millida.launcher.ui.pixelSurface
+import net.millida.launcher.ui.MillidaCut
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -31,108 +55,72 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import net.millida.launcher.LauncherViewModel
-import net.millida.launcher.ui.character.WearRef
 import net.millida.launcher.Screen
 import net.millida.launcher.ShopSection
 import net.millida.launcher.ShopState
 import net.millida.launcher.UiState
+import net.millida.launcher.DailyTarget
+import net.millida.launcher.core.rubies.CaseMode
 import net.millida.launcher.core.rubies.RubiesClient
+import net.millida.launcher.core.rubies.QuestState
 import net.millida.launcher.core.rubies.RubyItem
 import net.millida.launcher.core.rubies.RubyPack
+import net.millida.launcher.core.rubies.SetColorway
 import net.millida.launcher.core.rubies.ShopCard
+import net.millida.launcher.core.rubies.ShopCase
+import net.millida.launcher.core.rubies.ShopSet
 import net.millida.launcher.core.rubies.ShopSource
 import net.millida.launcher.core.rubies.WeeklyAny
-import net.millida.launcher.core.rubies.WeeklyPath
-import net.millida.launcher.core.rubies.WishList
-import net.millida.launcher.core.rubies.Wishes
 import net.millida.launcher.core.rubies.WorkshopOffer
-import net.millida.launcher.core.rubies.XrayOffer
+import net.millida.launcher.core.rubies.questState
+import net.millida.launcher.ui.LocalWideLayout
+import net.millida.launcher.ui.effectiveScreenHeightDp
+import net.millida.launcher.ui.effectiveScreenWidthDp
+import net.millida.launcher.ui.MBalanceBadge
 import net.millida.launcher.ui.MBottomSheet
 import net.millida.launcher.ui.MConfirmDialog
 import net.millida.launcher.ui.MDialog
 import net.millida.launcher.ui.MEmptyState
 import net.millida.launcher.ui.MErrorCard
+import net.millida.launcher.ui.MIconButton
 import net.millida.launcher.ui.MIcons
+import net.millida.launcher.ui.MPlusChip
 import net.millida.launcher.ui.MPrimaryButton
-import net.millida.launcher.ui.LocalWideLayout
 import net.millida.launcher.ui.MScreen
 import net.millida.launcher.ui.MSecondaryButton
+import net.millida.launcher.ui.MSecHead
+import net.millida.launcher.ui.MShardBalance
 import net.millida.launcher.ui.MSkeleton
 import net.millida.launcher.ui.MTextButton
+import net.millida.launcher.ui.MTextLink
 import net.millida.launcher.ui.MillidaType
+import net.millida.launcher.ui.PlusTier
+import net.millida.launcher.ui.character.WearRef
 import net.millida.launcher.ui.groupDigits
 import net.millida.launcher.ui.millida
 import net.millida.launcher.ui.openLinkOrNotice
 import net.millida.launcher.ui.screenPadding
+import net.millida.launcher.ui.character.CharacterLook
+import net.millida.launcher.ui.character.characterLookOf
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
-private const val KEY_WALLET = "wallet"
-private const val KEY_DAILY = "daily"
-private const val KEY_PACKS = "packs"
-private const val SHELF_COLUMNS = 2
-private const val GRID_FULL = 8
-private const val GRID_HALF = 4
-private const val GRID_HALF_FIT_MAX = 5
-private const val GRID_HALF_FIT_MIN = 3
-private const val HERO_SIDE_SPAN = 2
-private const val XRAY_SPAN = 4
-private val GRID_FULL_FROM = 1080.dp
-private val GRID_CELL_MIN = 120.dp
-
-/**
- * The desktop shop's one grid: eight cells across, four once the page is no
- * wider than 1080dp, and every section takes the count that leaves its rows
- * full. A phone on its side never gets a cell narrower than a readable card.
- */
-@Immutable
-private class ShopGrid(private val across: Int, private val most: Int) {
-    val full: Boolean get() = across >= GRID_FULL
-    val columns: Int get() = minOf(across, most)
-
-    fun fit(count: Int): Int {
-        val fitted = when {
-            full -> bestColumns(count, GRID_FULL, GRID_HALF)
-            count <= GRID_HALF_FIT_MAX -> maxOf(1, count)
-            else -> bestColumns(count, GRID_HALF, GRID_HALF_FIT_MIN)
-        }
-        return fitted.coerceAtMost(most)
-    }
-
-    private fun bestColumns(count: Int, widest: Int, narrowest: Int): Int {
-        if (count <= narrowest) return maxOf(1, count)
-        if (count <= widest) return count
-        var best = widest
-        var waste = Int.MAX_VALUE
-        for (cells in widest downTo narrowest) {
-            val empty = (count + cells - 1) / cells * cells - count
-            if (empty < waste) {
-                waste = empty
-                best = cells
-            }
-        }
-        return best
-    }
-}
-
-@Composable
-@ReadOnlyComposable
-private fun shopGrid(): ShopGrid? {
-    if (!LocalWideLayout.current) return null
-    val room = LocalConfiguration.current.screenWidthDp.dp - screenPadding * 2
-    val across = if (room > GRID_FULL_FROM) GRID_FULL else GRID_HALF
-    return ShopGrid(across, maxOf(1, (room / GRID_CELL_MIN).toInt()))
-}
+private const val KEY_RUBIES = "rubies-head"
+private const val KEY_PASS = "pass-head"
+private const val SHARD_ITEMS = 6
+private val PACK_CELL = 150.dp
+private val CASE_CELL = 170.dp
+private val SHARD_CELL = 130.dp
+private val UNTIL: DateTimeFormatter = DateTimeFormatter.ofPattern("dd.MM").withZone(ZoneId.of("Europe/Moscow"))
 
 private sealed interface ShopPrompt {
     data class Buy(val card: ShopCard, val source: ShopSource) : ShopPrompt
-    data class Shortfall(val card: ShopCard, val missing: Long) : ShopPrompt
     data class Pack(val pack: RubyPack) : ShopPrompt
     data class PackShort(val pack: RubyPack, val missingKopecks: Long) : ShopPrompt
     data class Craft(val offer: WorkshopOffer) : ShopPrompt
-    data class Weekly(val item: RubyItem) : ShopPrompt
-    data class Xray(val offer: XrayOffer) : ShopPrompt
-    data class Fragments(val item: RubyItem, val price: Long, val celebrate: Boolean) : ShopPrompt
-    data class Boost(val path: WeeklyPath, val missing: Int, val price: Long) : ShopPrompt
-    data class TopUp(val rubies: Long) : ShopPrompt
+    data class Fragments(val item: RubyItem, val price: Long) : ShopPrompt
+    data class SetBuy(val set: ShopSet, val way: SetColorway) : ShopPrompt
+    data class CaseOpen(val case: ShopCase, val mode: CaseMode) : ShopPrompt
 }
 
 private class FeedIndex {
@@ -151,9 +139,48 @@ private fun LazyListScope.slot(feed: FeedIndex, key: String, content: @Composabl
     item(key = key, contentType = key.substringBefore('-'), content = content)
 }
 
+/** How many cells of at least [cell] fit across the page: never fewer than two, never more than [most]. */
+@Composable
+private fun columnsOf(cell: Dp, most: Int): Int {
+    val room = effectiveScreenWidthDp().dp - screenPadding * 2
+    return (room / cell).toInt().coerceIn(2, most)
+}
+
+internal fun untilText(iso: String?): String? = parseInstant(iso)?.let { UNTIL.format(it) }
+
+/** The cell list comes with the storefront; the bonus over the base rate comes with the rules. */
+internal fun packsOf(shop: ShopState): List<RubyPack>? {
+    val fromStore = shop.store.data?.packs.orEmpty()
+    if (fromStore.isNotEmpty()) return fromStore
+    return shop.rules?.packs?.items?.takeIf { it.isNotEmpty() }
+}
+
+/**
+ * The shop as the desktop's one feed (`ShopFeed`): «Пополнить рубины» with the
+ * PLUS bundle, «Пропуск», the month offer, «Скидки дня» with the night market
+ * and «Хочу», «Бонусы», Telegram and Discord, «Наборы», «Ящики», «За осколки»
+ * and the creator banners. Rubies, shards, «+» and the PLUS chip sit in the head.
+ */
 @Composable
 fun ShopScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Modifier) {
+    ShopPage(state, model, modifier, embedded = false)
+}
+
+/**
+ * The feed alone, for the wardrobe's «Магазин» tab (the desktop's `ShopFeed chip`):
+ * the wardrobe has no shop head, so the PLUS chip and the rubies move into the
+ * «Пополнить рубины» head instead.
+ */
+@Composable
+fun ShopFeed(state: UiState, model: LauncherViewModel, modifier: Modifier = Modifier) {
+    ShopPage(state, model, modifier, embedded = true)
+}
+
+@Composable
+private fun ShopPage(state: UiState, model: LauncherViewModel, modifier: Modifier, embedded: Boolean) {
     val shop by model.shop.state.collectAsStateWithLifecycle()
+    val licence by model.licence.state.collectAsStateWithLifecycle()
+    val look = characterLookOf(state, licence)
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -161,6 +188,9 @@ fun ShopScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
     var prompt by remember { mutableStateOf<ShopPrompt?>(null) }
     var oddsOpen by remember { mutableStateOf(false) }
     var plusOpen by remember { mutableStateOf(false) }
+    var setOpen by remember { mutableStateOf<String?>(null) }
+    var caseLook by remember { mutableStateOf<ShopCase?>(null) }
+    val setPicks = remember { mutableStateMapOf<String, String>() }
 
     LaunchedEffect(state.millidaSignedIn) { model.shop.open(state.millidaSignedIn) }
 
@@ -181,113 +211,171 @@ fun ShopScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
         }
     }
 
+    var stageTab by rememberSaveable { mutableStateOf("RUBIES") }
+    val staged = LocalWideLayout.current && !embedded && state.millidaSignedIn && shop.store.data != null &&
+        LocalConfiguration.current.screenHeightDp < WIDE_ROOMY_HEIGHT_DP
+
     fun scrollTo(key: String) {
+        if (staged) {
+            stageTab = if (key == KEY_PASS) "PASS" else "RUBIES"
+            return
+        }
         val index = feed.at[key] ?: return
         scope.launch { listState.animateScrollToItem(index) }
     }
 
-    val onBuy: (ShopCard, ShopSource) -> Unit = { card, source ->
-        val balance = shop.balance
-        prompt = if (balance != null && card.price > balance) {
-            ShopPrompt.Shortfall(card, card.price - balance)
-        } else {
-            ShopPrompt.Buy(card, source)
-        }
-    }
-    val onPack: (RubyPack) -> Unit = { pack ->
-        val wallet = shop.walletKopecks
-        val short = if (wallet != null) pack.kopecks - wallet else 0L
-        prompt = if (short > 0) ShopPrompt.PackShort(pack, (short + 99) / 100 * 100) else ShopPrompt.Pack(pack)
+    val toPacks = { scrollTo(KEY_RUBIES) }
+    val short: (Long) -> Unit = { missing ->
+        val count = groupDigits(missing)
+        model.shop.tellShort(trPlural(missing, tr("Не хватает {0} рубина", count), tr("Не хватает {0} рубинов", count), tr("Не хватает {0} рубинов", count)))
+        toPacks()
     }
     val rubyPrompt: (Long, ShopPrompt) -> Unit = { price, next ->
         val balance = shop.balance
         if (balance != null && price > balance) {
-            val missing = price - balance
-            model.shop.tellShort("Не хватает ${groupDigits(missing)} ${rubyWord(missing)}")
-            scrollTo(KEY_PACKS)
+            short(price - balance)
         } else {
             prompt = next
         }
     }
+    val wear: (List<WearRef>) -> Unit = { refs ->
+        model.cosmeticWardrobe.wearIntent(refs)
+        model.open(Screen.SKINS)
+    }
+    val onPlus: () -> Unit = { if (shop.tier != null) model.open(Screen.PLUS) else plusOpen = true }
+    val acts = ShopActs(
+        sale = SaleActs(
+            balance = shop.balance,
+            isBusy = shop::isBusy,
+            onBuy = { card, source -> rubyPrompt(card.price, ShopPrompt.Buy(card, source)) },
+            onWear = { item -> wear(listOf(WearRef(item.code, item.variant))) },
+        ),
+        sets = SetActs(
+            balance = shop.balance,
+            isBusy = shop::isBusy,
+            onBuy = { set, way -> rubyPrompt(way.price, ShopPrompt.SetBuy(set, way)) },
+            onWear = { way -> wear(way.items.map { WearRef(it.item.code, it.item.variant) }) },
+        ),
+        cases = CaseActs(
+            balance = shop.balance,
+            shards = shop.shards,
+            busy = shop.caseRun != null,
+            ofDayPct = shop.cases.data?.ofDayPct ?: 0,
+            refreshAt = shop.cases.data?.refreshAt.orEmpty(),
+            onOpen = { case, mode ->
+                val price = case.priceOf(mode)
+                when {
+                    mode == CaseMode.FREE -> model.shop.openCase(case, mode)
+                    case.paidInShards && (shop.shards ?: Long.MAX_VALUE) < price -> model.shop.tellShort(tr("Не хватает осколков"))
+                    case.paidInShards -> prompt = ShopPrompt.CaseOpen(case, mode)
+                    else -> rubyPrompt(price, ShopPrompt.CaseOpen(case, mode))
+                }
+            },
+            onLook = { caseLook = it },
+            onEnd = { model.shop.retry(ShopSection.CASES) },
+        ),
+        onPack = { pack ->
+            val wallet = shop.walletKopecks
+            val missing = if (wallet != null) pack.kopecks - wallet else 0L
+            prompt = if (missing > 0) ShopPrompt.PackShort(pack, (missing + 99) / 100 * 100) else ShopPrompt.Pack(pack)
+        },
+        onPlusSheet = { plusOpen = true },
+        onManage = { model.open(Screen.PLUS) },
+        onCraft = { offer -> prompt = ShopPrompt.Craft(offer) },
+        onSet = { set -> setOpen = set.id },
+        onScroll = ::scrollTo,
+        onOdds = { oddsOpen = true },
+        picks = setPicks,
+    )
 
     val wide = LocalWideLayout.current
-    val grid = shopGrid()
-    val night = rememberNightFlips(shop.store.data?.nightMarket?.endsAt.orEmpty())
-    val cosmetics by model.cosmeticWardrobe.state.collectAsStateWithLifecycle()
-    val wishes = remember(shop.store.data, shop.workshop.data, shop.balance, cosmetics.catalog) {
-        shop.store.data?.let { day ->
-            Wishes.of(day, shop.workshop.data, shop.balance ?: day.balance) { code ->
-                cosmetics.catalog.byId(code)?.let { RubyItem(code = it.id, name = it.name, slot = it.slot, rarity = it.rarity, preview = it.preview) }
-            }
+    val until = untilText(shop.plus.data?.paidUntil)
+    val rubiesAside: @Composable RowScope.() -> Unit = {
+        if (embedded) {
+            MPlusChip(shop.tier, onClick = onPlus, until = until)
+            MBalanceBadge(MIcons.ruby, shop.balance, tr("Рубины"))
         }
     }
-
-    MScreen(
-        modifier = modifier,
-        listState = listState,
-        spacing = 12.dp,
-        actions = {
-            if (wide && state.millidaSignedIn) {
-                StripWallet(
-                    balance = shop.balance,
-                    shards = shop.shards,
-                    onTopUp = { scrollTo(KEY_PACKS) },
+    val wardrobe = model.cosmeticWardrobe
+    LaunchedEffect(state.account?.id, state.millidaSignedIn, state.gameProfile?.uuid) {
+        val current = wardrobe.state.value
+        val accountId = state.account?.id.orEmpty()
+        if (current.accountId != accountId || current.signedIn != state.millidaSignedIn || !current.catalogReady) {
+            wardrobe.load(accountId, state.millidaSignedIn, state.gameProfile?.uuid)
+        }
+    }
+    val figure = remember(look.skinUrl, look.slim, wardrobe) { ShopFigure(look.skinUrl, look.slim, wardrobe) }
+    CompositionLocalProvider(LocalShopFigure provides figure) {
+        if (staged) {
+            Column(modifier.fillMaxSize().background(millida.bg)) {
+                WideTopBar(
+                    title = null,
+                    onBack = null,
+                    actions = { ShopWallet(shop, until, onTopUp = toPacks, onPlus = onPlus) },
                 )
+                ShopStage(shop, model, acts, look.nick.ifBlank { "Steve" }, stageTab, { stageTab = it }, Modifier.weight(1f))
             }
-        },
-    ) {
-        feed.reset(0)
-        if (!state.millidaSignedIn) {
-            slot(feed, "gate") {
-                MEmptyState(
-                    icon = MIcons.ruby,
-                    title = "Войди, чтобы покупать и копить",
-                    modifier = Modifier.animateItem(),
-                    actionText = "Войти",
-                    onAction = model::loginMillida,
-                    actionIcon = MIcons.login,
-                )
-            }
-            val guestPacks = shop.rules?.packs?.items.orEmpty()
-            slot(feed, KEY_PACKS) {
-                when {
-                    guestPacks.isNotEmpty() -> PacksCard(
-                        guestPacks,
-                        null,
-                        shop::isBusy,
-                        onBuy = { model.loginMillida() },
-                        modifier = Modifier.animateItem(),
-                        columns = grid?.fit(guestPacks.size) ?: SHELF_COLUMNS,
-                    )
-                    shop.rulesFailed -> MErrorCard(
-                        "Пакеты рубинов не загрузились — нажми «Повторить»",
-                        { model.shop.open(signedIn = false) },
-                        Modifier.animateItem(),
-                    )
-                    else -> MSkeleton(height = 220.dp, modifier = Modifier.animateItem())
+        } else MScreen(
+            modifier = modifier,
+            listState = listState,
+            spacing = 12.dp,
+            actions = {
+                if (wide && state.millidaSignedIn && !embedded) {
+                    ShopWallet(shop, until, onTopUp = toPacks, onPlus = onPlus)
                 }
+            },
+        ) {
+            feed.reset(0)
+            if (!state.millidaSignedIn) {
+                slot(feed, "gate") {
+                    MEmptyState(
+                        icon = MIcons.ruby,
+                        title = tr("Войди, чтобы покупать и копить"),
+                        modifier = Modifier.animateItem(),
+                        actionText = tr("Войти"),
+                        onAction = model::loginMillida,
+                        actionIcon = MIcons.login,
+                    )
+                }
+                slot(feed, KEY_RUBIES) {
+                    val packs = shop.rules?.packs?.items
+                    if (packs == null && shop.rulesFailed) {
+                        MErrorCard(tr("Пакеты рубинов не загрузились — нажми «Повторить»"), { model.shop.open(signedIn = false) }, Modifier.animateItem())
+                    } else {
+                        PackGrid(packs, columnsOf(PACK_CELL, 6), { false }, onBuy = { model.loginMillida() }, modifier = Modifier.animateItem())
+                    }
+                }
+            } else {
+                if (!wide && !embedded) {
+                    slot(feed, "wallet") {
+                        ShopWallet(shop, until, onTopUp = toPacks, onPlus = onPlus, modifier = Modifier.animateItem())
+                    }
+                }
+                shopFeed(feed, shop, model, acts, wide, rubiesAside, look.nick.ifBlank { "Steve" })
             }
-        } else {
-            shopFeed(
-                feed,
-                shop,
-                model,
-                onBuy,
-                onPack,
-                scrollTo = ::scrollTo,
-                onOdds = { oddsOpen = true },
-                onPlus = { plusOpen = true },
-                onPrompt = { prompt = it },
-                onRubyPrompt = rubyPrompt,
-                grid = grid,
-                night = night,
-                wishes = wishes,
-                walletInFeed = !wide,
-            )
         }
     }
 
-    ShopDialogs(prompt, shop, model, onScrollToPacks = { scrollTo(KEY_PACKS) }, onDismiss = { prompt = null })
+    ShopDialogs(prompt, shop, model, onDismiss = { prompt = null })
+
+    if (plusOpen) {
+        PlusSheet(shop, model, look, onDismiss = { plusOpen = false })
+    }
+
+    val openSet = shop.sets.data?.sets?.firstOrNull { it.id == setOpen }
+    if (openSet != null) {
+        SetSheet(
+            set = openSet,
+            picked = setPicks[openSet.id],
+            acts = acts.sets,
+            onPick = { setPicks[openSet.id] = it },
+            onDismiss = { setOpen = null },
+        )
+    }
+
+    caseLook?.let { case ->
+        CaseContentsSheet(case, load = model.shop::caseContents, onDismiss = { caseLook = null })
+    }
 
     if (oddsOpen) {
         OddsSheet(
@@ -299,30 +387,17 @@ fun ShopScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
         )
     }
 
-    if (plusOpen) {
-        MBottomSheet(onDismiss = { plusOpen = false }, title = "Подписка PLUS") {
-            PlusOffer(
-                plus = shop.plus.data,
-                daily = shop.daily.data,
-                busy = shop.isBusy("plus"),
-                onSubscribe = model.shop::subscribePlus,
-                onManage = model.shop::managePlus,
-            )
-        }
-    }
-
     val opening = shop.opening
     if (opening != null) {
-        val odds = shop.rules?.chests?.items?.firstOrNull { it.tier.equals(opening.chest.tier, ignoreCase = true) }
         ChestScene(
             opening = opening,
-            odds = odds,
-            oddsFailed = shop.rulesFailed,
-            pityAfter = shop.rules?.chests?.pityAfter ?: 0,
-            pityLegendAfter = shop.rules?.chests?.pityLegendAfter ?: 0,
             onStart = model.shop::startOpening,
             onNext = model.shop::nextChest,
             onClose = model.shop::closeOpening,
+            onFail = { text ->
+                model.shop.closeOpening()
+                model.shop.tellShort(text)
+            },
             onWardrobe = {
                 val fresh = opening.result?.drops.orEmpty().mapNotNull { drop ->
                     val item = drop.item ?: return@mapNotNull null
@@ -330,25 +405,44 @@ fun ShopScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
                     if (won) WearRef(item.code, drop.variant?.name.orEmpty()) else null
                 }
                 model.shop.closeOpening()
-                model.cosmeticWardrobe.wearIntent(fresh)
-                model.open(Screen.SKINS)
+                wear(fresh)
             },
-            onRetryOdds = { model.shop.retry(ShopSection.CHESTS) },
+            onRetry = model.shop::retryOpening,
             topUp = ChestTopUp(
                 done = shop.completedFragments,
                 busy = shop::isBusy,
-                onTopUp = { card -> card.item?.let { rubyPrompt(card.topUp, ShopPrompt.Fragments(it, card.topUp, celebrate = false)) } },
+                onTopUp = { card -> card.item?.let { rubyPrompt(card.topUp, ShopPrompt.Fragments(it, card.topUp)) } },
             ),
         )
     }
 
-    val xray = shop.xray
-    if (xray != null && opening == null) {
-        XrayScene(xray, onOpened = model.shop::finishXray)
+    val run = shop.caseRun
+    if (run != null && opening == null) {
+        CaseScene(
+            run = run,
+            balance = shop.balance,
+            shards = shop.shards,
+            onRetry = model.shop::retryCase,
+            onAgain = model.shop::againCase,
+            onShort = { missing ->
+                model.shop.closeCase()
+                if (run.case.paidInShards) model.shop.tellShort(tr("Не хватает осколков")) else short(missing)
+            },
+            onWardrobe = {
+                val fresh = run.fresh.map { WearRef(it.code, it.variant) }
+                model.shop.closeCase()
+                wear(fresh)
+            },
+            onFail = { text ->
+                model.shop.closeCase()
+                model.shop.tellShort(text)
+            },
+            onClose = model.shop::closeCase,
+        )
     }
 
     val reveal = shop.reveal
-    if (reveal != null && opening == null && xray == null) {
+    if (reveal != null && opening == null && run == null) {
         RewardScene(
             reveal = reveal,
             onDone = { model.shop.dismissReveal(reveal.serial) },
@@ -360,39 +454,214 @@ fun ShopScreen(state: UiState, model: LauncherViewModel, modifier: Modifier = Mo
     }
 }
 
+internal class ShopActs(
+    val sale: SaleActs,
+    val sets: SetActs,
+    val cases: CaseActs,
+    val onPack: (RubyPack) -> Unit,
+    val onPlusSheet: () -> Unit,
+    val onManage: () -> Unit,
+    val onCraft: (WorkshopOffer) -> Unit,
+    val onSet: (ShopSet) -> Unit,
+    val onScroll: (String) -> Unit,
+    val onOdds: () -> Unit,
+    val picks: Map<String, String>,
+)
+
+/** The desktop's shop head (`sh-wallet2`): rubies, shards, «+» to the packs and the PLUS chip with its end date. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ShopWallet(shop: ShopState, until: String?, onTopUp: () -> Unit, onPlus: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = millida
+    FlowRow(
+        modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        MBalanceBadge(MIcons.ruby, shop.balance, tr("Рубины"))
+        MShardBalance(shop.shards ?: shop.workshop.data?.shards)
+        MIconButton(MIcons.plus, onClick = onTopUp, tint = colors.onAccent, background = colors.accent, label = tr("Пополнить"))
+        MPlusChip(shop.tier, onClick = onPlus, until = until)
+    }
+}
+
 private fun LazyListScope.shopFeed(
     feed: FeedIndex,
     shop: ShopState,
     model: LauncherViewModel,
-    onBuy: (ShopCard, ShopSource) -> Unit,
-    onPack: (RubyPack) -> Unit,
-    scrollTo: (String) -> Unit,
-    onOdds: () -> Unit,
-    onPlus: () -> Unit,
-    onPrompt: (ShopPrompt) -> Unit,
-    onRubyPrompt: (Long, ShopPrompt) -> Unit,
-    grid: ShopGrid?,
-    night: NightFlipState,
-    wishes: WishList?,
-    walletInFeed: Boolean,
+    acts: ShopActs,
+    wide: Boolean,
+    rubiesAside: @Composable RowScope.() -> Unit,
+    nick: String,
 ) {
     val shopModel = model.shop
-    val isBusy: (String) -> Boolean = shop::isBusy
+    val store = shop.store
+    val day = store.data
+    if (day == null) {
+        slot(feed, "store-wait") {
+            if (store.error != null) {
+                MErrorCard(store.error, { shopModel.retry(ShopSection.STORE) }, Modifier.animateItem())
+            } else {
+                Column(Modifier.animateItem(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    MSkeleton(height = 520.dp)
+                    MSkeleton(height = 300.dp)
+                }
+            }
+        }
+        return
+    }
 
-    if (walletInFeed) {
-        slot(feed, KEY_WALLET) {
-            WalletHeader(
-                balance = shop.balance,
-                shards = shop.shards,
-                failed = shop.store.error != null,
-                onTopUp = { scrollTo(KEY_PACKS) },
+    slot(feed, KEY_RUBIES) {
+        MSecHead(tr("Пополнить рубины"), Modifier.animateItem(), icon = MIcons.ruby, aside = rubiesAside)
+    }
+    if (shop.plus.data != null) {
+        slot(feed, "plus-bundle") {
+            PlusBundle(
+                tier = shop.tier,
+                plus = shop.plus.data,
+                busy = shop.isBusy("plus"),
+                onBuy = { acts.onPlusSheet() },
+                onManage = acts.onManage,
+                modifier = Modifier.animateItem(),
+                nick = nick,
+            )
+        }
+    }
+    slot(feed, "packs") {
+        PackGrid(packsOf(shop), columnsOf(PACK_CELL, 6), shop::isBusy, onBuy = acts.onPack, modifier = Modifier.animateItem())
+    }
+
+    passFeed(feed, shop, model, acts)
+
+    day.monthOffer?.let { offer ->
+        slot(feed, "month-offer") {
+            MonthOfferCard(
+                offer = offer,
+                packs = day.packs,
+                busy = shop.isBusy("pack:" + offer.code),
+                onBuy = { acts.onPack(RubyPack(code = offer.code, title = offer.title, rubies = offer.rubies, kopecks = offer.kopecks, oneTime = true)) },
+                onEnd = { shopModel.retry(ShopSection.STORE) },
                 modifier = Modifier.animateItem(),
             )
         }
     }
 
+    val refresh = { shopModel.retry(ShopSection.STORE) }
+    val cards = dayCards(day)
+    slot(feed, "day-head") {
+        MSecHead(tr("Скидки дня"), Modifier.animateItem(), aside = { SecClock(day.day.refreshAt, refresh) })
+    }
+    if (cards.isNotEmpty()) {
+        slot(feed, "day-rail") { SaleRail(cards, tr("Скидки дня"), acts.sale, Modifier.animateItem(), auto = true) }
+    }
+    val night = day.nightMarket
+    if (night != null && night.cards.isNotEmpty()) {
+        slot(feed, "night-head") {
+            MSecHead(tr("Ночной рынок"), Modifier.animateItem(), aside = { SecClock(night.endsAt, refresh) })
+        }
+        slot(feed, "night-rail") { SaleRail(night.cards.map { it to ShopSource.NIGHT }, tr("Ночной рынок"), acts.sale, Modifier.animateItem()) }
+    }
+    val wishes = wishedCards(day)
+    if (wishes.isNotEmpty()) {
+        slot(feed, "wish-head") { MSecHead(tr("Хочу"), Modifier.animateItem(), icon = MIcons.heart) }
+        slot(feed, "wish-rail") { SaleRail(wishes, tr("Хочу"), acts.sale, Modifier.animateItem()) }
+    }
+
+    val play = shop.play.data
+    if (play != null && play.limit > 0) {
+        slot(feed, "bonus-head") { MSecHead(tr("Бонусы"), Modifier.animateItem()) }
+        slot(feed, "bonus") {
+            val status = shop.daily.data
+            val ready = status?.let { readyTargets(passColumns(it)) }.orEmpty()
+            BonusesBlock(
+                view = play,
+                viewAt = shop.playAt,
+                busy = shop.isBusy("play"),
+                giftReady = ready.size,
+                giftBusy = shop.isBusy("daily"),
+                passDay = status?.season?.day ?: 0,
+                onClaim = shopModel::claimPlayChest,
+                onGift = { if (ready.isNotEmpty()) shopModel.claimDaily(if (ready.size > 1) DailyTarget.All else ready.first()) },
+                onPass = { acts.onScroll(KEY_PASS) },
+                wide = wide,
+                modifier = Modifier.animateItem(),
+            )
+        }
+    }
+
+    shop.telegram?.let { telegram ->
+        slot(feed, "telegram") {
+            TelegramBlock(telegram, shop.isBusy("telegram"), onOpen = shopModel::openChecked, onClaim = shopModel::claimTelegram, modifier = Modifier.animateItem())
+        }
+    }
+    shop.discord?.let { discord ->
+        slot(feed, "discord") {
+            DiscordBlock(
+                discord,
+                busy = shop.isBusy("discord"),
+                linkBusy = shop.isBusy("discord-link"),
+                onLink = shopModel::linkDiscord,
+                onOpen = shopModel::openChecked,
+                onClaim = shopModel::claimDiscord,
+                modifier = Modifier.animateItem(),
+            )
+        }
+    }
+
+    val sets = shop.sets
+    if (sets.data?.sets?.isNotEmpty() != false && !(sets.data == null && sets.error != null)) {
+        slot(feed, "sets-head") { MSecHead(tr("Наборы"), Modifier.animateItem()) }
+        slot(feed, "sets") {
+            SetsRail(sets.data?.sets, acts.picks, acts.sets, onOpen = acts.onSet, modifier = Modifier.animateItem())
+        }
+    }
+
+    val cases = shop.cases
+    if (cases.data?.cases?.isNotEmpty() != false && !(cases.data == null && cases.error != null)) {
+        slot(feed, "cases-head") { MSecHead(tr("Ящики"), Modifier.animateItem()) }
+        slot(feed, "cases") { CasesGrid(cases.data, columnsOf(CASE_CELL, 4), acts.cases, Modifier.animateItem()) }
+    }
+
+    val workshop = shop.workshop.data
+    val offers = workshop?.workshop?.items.orEmpty().filterNot { it.owned }.take(SHARD_ITEMS)
+    if (workshop != null && offers.isNotEmpty()) {
+        slot(feed, "shards-head") { MSecHead(tr("За осколки"), Modifier.animateItem()) }
+        slot(feed, "shards") {
+            ShardsGrid(offers, workshop.shards, columnsOf(SHARD_CELL, 6), shop::isBusy, acts.onCraft, Modifier.animateItem())
+        }
+    }
+
+    slot(feed, "banners") {
+        val become: @Composable (Modifier) -> Unit = { bannerModifier -> CreatorBecomeBanner(onBecome = shopModel::becomeCreator, modifier = bannerModifier) }
+        val support: @Composable (Modifier) -> Unit = { bannerModifier ->
+            CreatorSupportBanner(
+                status = shop.creator.data,
+                busy = shop.isBusy("creator"),
+                onApply = shopModel::setCreator,
+                onRemove = shopModel::clearCreator,
+                modifier = bannerModifier,
+            )
+        }
+        if (wide) {
+            Row(Modifier.fillMaxWidth().animateItem(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                become(Modifier.weight(1f))
+                support(Modifier.weight(1f))
+            }
+        } else {
+            Column(Modifier.fillMaxWidth().animateItem(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                become(Modifier)
+                support(Modifier)
+            }
+        }
+    }
+}
+
+/** «Пропуск»: the season pass with one «Забрать», and «Мои сундуки» under it while there are any. */
+private fun LazyListScope.passFeed(feed: FeedIndex, shop: ShopState, model: LauncherViewModel, acts: ShopActs) {
+    val shopModel = model.shop
     val daily = shop.daily
-    slot(feed, KEY_DAILY) {
+    slot(feed, KEY_PASS) { MSecHead(tr("Пропуск"), Modifier.animateItem()) }
+    slot(feed, "pass") {
         val status = daily.data
         when {
             status != null -> DailyPassCard(
@@ -400,597 +669,276 @@ private fun LazyListScope.shopFeed(
                 plusPriceKopecks = shop.plus.data?.priceKopecks,
                 claiming = shop.isBusy("daily"),
                 onClaim = shopModel::claimDaily,
-                onPlus = onPlus,
+                onPlus = { if (shop.tier != null) acts.onManage() else acts.onPlusSheet() },
                 onElapsed = { shopModel.retry(ShopSection.DAILY) },
                 modifier = Modifier.animateItem(),
+                extra = passExtra(shop, model),
             )
             daily.error != null -> MErrorCard(daily.error, { shopModel.retry(ShopSection.DAILY) }, Modifier.animateItem())
             else -> MSkeleton(height = 300.dp, modifier = Modifier.animateItem())
         }
     }
-    if (daily.data != null && daily.error != null) {
-        slot(feed, "daily-error") {
-            MErrorCard(daily.error, { shopModel.retry(ShopSection.DAILY) }, Modifier.animateItem())
-        }
-    }
-
-    slot(feed, "chests") {
-        MyChestsCard(
-            chests = shop.pendingChests,
-            loading = shop.chests.loading || daily.loading,
-            error = shop.chests.error,
-            busy = shop.opening != null,
-            onRetry = { shopModel.retry(ShopSection.CHESTS) },
-            onOpen = shopModel::openChests,
-            onOdds = onOdds,
-            onHowTo = { scrollTo(KEY_DAILY) },
-            modifier = Modifier.animateItem(),
-        )
-    }
-
-    storeFeed(feed, shop, model, onBuy, onXray = { offer -> onRubyPrompt(offer.price, ShopPrompt.Xray(offer)) }, grid = grid, flips = night)
-
-    when (val weekly = shop.weekly.data) {
-        is WeeklyAny.Parcel -> slot(feed, "weekly") {
-            WeeklyCard(weekly.parcel, busy = shop.isBusy("weekly"), onPick = { onPrompt(ShopPrompt.Weekly(it)) }, modifier = Modifier.animateItem())
-        }
-        is WeeklyAny.Path -> slot(feed, "weekly-path") {
-            WeeklyPathCard(
-                path = weekly.path,
-                claimBusy = shop.isBusy("weekly"),
-                boostBusy = shop.isBusy("weekly-boost"),
-                onClaim = shopModel::claimWeeklyStep,
-                onBoost = { weekly.path.boost?.let { boost -> onRubyPrompt(boost.price, ShopPrompt.Boost(weekly.path, boost.missing, boost.price)) } },
-                onElapsed = { shopModel.retry(ShopSection.WEEKLY) },
+    if (shop.pendingChests.isNotEmpty() || shop.chests.error != null) {
+        slot(feed, "chests") {
+            MyChestsCard(
+                chests = shop.pendingChests,
+                loading = shop.chests.loading,
+                error = shop.chests.error,
+                busy = shop.opening != null,
+                onRetry = { shopModel.retry(ShopSection.CHESTS) },
+                onOpen = shopModel::openChests,
+                onOdds = acts.onOdds,
+                onHowTo = { acts.onScroll(KEY_PASS) },
                 modifier = Modifier.animateItem(),
             )
         }
-        WeeklyAny.Unknown -> Unit
-        null -> if (shop.weekly.error == null) {
-            slot(feed, "weekly-skeleton") { MSkeleton(height = 140.dp, modifier = Modifier.animateItem()) }
-        }
     }
-    shop.weekly.error?.let { error ->
-        slot(feed, "weekly-error") {
-            MErrorCard(error, { shopModel.retry(ShopSection.WEEKLY) }, Modifier.animateItem())
-        }
-    }
+}
 
-    val quests = shop.quests.data.orEmpty()
-    if (quests.isNotEmpty()) {
-        slot(feed, "quests") {
-            QuestsCard(quests, isBusy, onClaim = shopModel::claimQuest, modifier = Modifier.animateItem())
-        }
-    }
-    shop.quests.error?.let { error ->
-        slot(feed, "quests-error") {
-            MErrorCard(error, { shopModel.retry(ShopSection.QUESTS) }, Modifier.animateItem())
-        }
-    }
+/** The pass's gift takes a ready week star first, then a pack quest, when no pass cell is ready. */
+internal fun passExtra(shop: ShopState, model: LauncherViewModel): PassExtra? {
+    val path = (shop.weekly.data as? WeeklyAny.Path)?.path
+    val step = path?.steps?.firstOrNull { !it.claimed && path.stars >= it.at }
+    if (step != null) return PassExtra(shop.isBusy("weekly")) { model.shop.claimWeeklyStep(step.at) }
+    val quest = shop.quests.data.orEmpty().firstOrNull { questState(it) == QuestState.Claim } ?: return null
+    return PassExtra(shop.isBusy("quest:" + quest.code)) { model.shop.claimQuest(quest) }
+}
 
-    val workshop = shop.workshop.data
-    if (workshop != null) {
-        if (workshop.workshop.items.isNotEmpty() || workshop.fragments.isNotEmpty()) {
-            slot(feed, "workshop") {
-                WorkshopCard(
-                    workshop,
-                    isBusy,
-                    onCraft = { onPrompt(ShopPrompt.Craft(it)) },
-                    modifier = Modifier.animateItem(),
-                    onTopUp = { started -> onRubyPrompt(started.topUp, ShopPrompt.Fragments(started.item, started.topUp, celebrate = true)) },
-                    columns = grid?.fit(workshop.workshop.items.size) ?: SHELF_COLUMNS,
-                )
+@Composable
+private fun ShardsGrid(
+    offers: List<WorkshopOffer>,
+    shards: Long,
+    columns: Int,
+    isBusy: (String) -> Boolean,
+    onCraft: (WorkshopOffer) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        offers.chunked(columns).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { offer ->
+                    ShardTile(offer, shards, isBusy("craft:" + offer.item.code), onCraft = { onCraft(offer) }, modifier = Modifier.weight(1f))
+                }
+                repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
-    } else if (shop.workshop.error == null) {
-        slot(feed, "workshop-skeleton") { MSkeleton(height = 220.dp, modifier = Modifier.animateItem()) }
     }
-    shop.workshop.error?.let { error ->
-        slot(feed, "workshop-error") {
-            MErrorCard(error, { shopModel.retry(ShopSection.WORKSHOP) }, Modifier.animateItem())
-        }
-    }
+}
 
-    val progress = shop.progress.data
-    if (progress != null) {
-        if (progress.items.isNotEmpty() || progress.hourItems.isNotEmpty()) {
-            slot(feed, "progress") {
-                ProgressCard(progress, isBusy, onClaim = shopModel::claimProgress, modifier = Modifier.animateItem())
+@Composable
+internal fun ShardTile(offer: WorkshopOffer, shards: Long, busy: Boolean, onCraft: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = millida
+    val rarity = net.millida.launcher.ui.Rarity.of(offer.item.rarity)
+    net.millida.launcher.ui.MRarityFrame(rarity = rarity, modifier = modifier, onClick = if (busy) null else onCraft, contentPadding = 10.dp) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            PlayerShot(listOf(offer.item), rarity?.color ?: colors.accent, Modifier.fillMaxWidth().aspectRatio(0.75f).pixelSurface(colors.inset, MillidaCut.control)) {
+                ItemArt(offer.item, side = 84.dp)
             }
-        }
-    } else if (shop.progress.error == null) {
-        slot(feed, "progress-skeleton") { MSkeleton(height = 180.dp, modifier = Modifier.animateItem()) }
-    }
-    shop.progress.error?.let { error ->
-        slot(feed, "progress-error") {
-            MErrorCard(error, { shopModel.retry(ShopSection.PROGRESS) }, Modifier.animateItem())
+            Text(offer.item.name, style = MillidaType.small.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold), color = colors.fg, maxLines = 1)
+            PriceButton(offer.cost, 0, shards, busy, onClick = onCraft, shards = true)
         }
     }
+}
 
-    val packs = packsOf(shop)
-    val packsFailed = !shop.store.loading && (shop.store.error != null || shop.rulesFailed)
-    slot(feed, KEY_PACKS) {
-        when {
-            packs.isNotEmpty() -> PacksCard(
-                packs,
-                shop.walletKopecks,
-                isBusy,
-                onBuy = onPack,
-                modifier = Modifier.animateItem(),
-                columns = grid?.fit(packs.size) ?: SHELF_COLUMNS,
-            )
-            packsFailed -> MErrorCard(
-                "Пакеты рубинов не загрузились — нажми «Повторить»",
-                { shopModel.retry(ShopSection.STORE) },
-                Modifier.animateItem(),
-            )
-            else -> MSkeleton(height = 220.dp, modifier = Modifier.animateItem())
-        }
-    }
-
-    slot(feed, "plus") {
-        val plus = shop.plus
-        when {
-            plus.data != null -> PlusCard(
-                plus = plus.data,
-                daily = shop.daily.data,
+@Composable
+private fun PlusSheet(shop: ShopState, model: LauncherViewModel, look: CharacterLook, onDismiss: () -> Unit) {
+    val wide = LocalWideLayout.current
+    MBottomSheet(onDismiss = onDismiss, title = "Millida PLUS") {
+        StatusCompare(look.nick.ifBlank { "Steve" }, look.skinUrl, look.slim)
+        Spacer(Modifier.height(12.dp))
+        val plan: @Composable (PlusTier, Modifier) -> Unit = { tier, planModifier ->
+            PlanCard(
+                tier = tier,
+                price = plusPriceText(shop.plus.data, tier),
+                waiting = model.shop.paymentWaiting(tier),
                 busy = shop.isBusy("plus"),
-                onSubscribe = shopModel::subscribePlus,
-                onManage = shopModel::managePlus,
-                modifier = Modifier.animateItem(),
-            )
-            plus.error != null -> MErrorCard(plus.error, { shopModel.retry(ShopSection.PLUS) }, Modifier.animateItem())
-            else -> MSkeleton(height = 200.dp, modifier = Modifier.animateItem())
-        }
-    }
-
-    if (wishes != null && wishes.items.isNotEmpty()) {
-        val wishlist = shop.store.data?.wishlist.orEmpty()
-        val wishColumns = grid?.fit(wishes.items.size) ?: SHELF_COLUMNS
-        slot(feed, "wish-head") {
-            WishlistHead(
-                list = wishes,
-                busy = shop.isBusy("topup"),
-                onTopUp = { rubies -> onPrompt(ShopPrompt.TopUp(rubies)) },
-                modifier = Modifier.animateItem(),
+                onBuy = {
+                    model.shop.subscribePlus(tier)
+                    onDismiss()
+                },
+                modifier = planModifier,
             )
         }
-        wishes.items.chunked(wishColumns).forEachIndexed { index, row ->
-            slot(feed, "wish-row-$index") {
-                WishRow(
-                    entries = row,
-                    wishlist = wishlist,
-                    balance = shop.balance,
-                    shards = shop.shards,
-                    isBusy = isBusy,
-                    onBuy = onBuy,
-                    onCraft = { entry -> onPrompt(ShopPrompt.Craft(WorkshopOffer(entry.item, entry.cost))) },
-                    onWish = shopModel::wish,
-                    modifier = Modifier.animateItem(),
-                    columns = wishColumns,
-                )
+        if (wide) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                plan(PlusTier.PLUS, Modifier.weight(1f))
+                plan(PlusTier.DIAMOND, Modifier.weight(1f))
             }
-        }
-    }
-
-    slot(feed, "creator") {
-        val creator = shop.creator
-        when {
-            creator.data != null -> CreatorCodeCard(
-                status = creator.data,
-                busy = shop.isBusy("creator"),
-                onApply = shopModel::setCreator,
-                onRemove = shopModel::clearCreator,
-                onBecome = shopModel::becomeCreator,
-                modifier = Modifier.animateItem(),
-            )
-            creator.error != null -> MErrorCard(creator.error, { shopModel.retry(ShopSection.CREATOR) }, Modifier.animateItem())
-            else -> MSkeleton(height = 180.dp, modifier = Modifier.animateItem())
-        }
-    }
-}
-
-/** The pack list comes with the storefront; the bonus over the base rate comes with the rules. */
-private fun packsOf(shop: ShopState): List<RubyPack> {
-    val fromRules = shop.rules?.packs?.items.orEmpty()
-    val fromStore = shop.store.data?.packs.orEmpty()
-    if (fromStore.isEmpty()) return fromRules
-    val bonus = fromRules.associate { it.code to it.bonus }
-    return fromStore.map { pack -> if (pack.bonus > 0) pack else pack.copy(bonus = bonus[pack.code] ?: 0) }
-}
-
-private fun LazyListScope.storeFeed(
-    feed: FeedIndex,
-    shop: ShopState,
-    model: LauncherViewModel,
-    onBuy: (ShopCard, ShopSource) -> Unit,
-    onXray: (XrayOffer) -> Unit,
-    grid: ShopGrid?,
-    flips: NightFlipState,
-) {
-    val columns = SHELF_COLUMNS
-    val shopModel = model.shop
-    val store = shop.store
-    val day = store.data
-    val isBusy: (String) -> Boolean = shop::isBusy
-    val refresh = { shopModel.retry(ShopSection.STORE) }
-    if (day == null) {
-        slot(feed, "store-head") {
-            ShelfHeader("Витрина дня", null, null, onElapsed = {}, modifier = Modifier.animateItem())
-        }
-        slot(feed, "store-body") {
-            if (store.error != null) {
-                MErrorCard(store.error, refresh, Modifier.animateItem())
-            } else {
-                StoreSkeleton(Modifier.animateItem())
-            }
-        }
-        return
-    }
-    val plan = day.day
-    val wishlist = day.wishlist
-    val onWish: (String, Boolean) -> Unit = shopModel::wish
-    slot(feed, "store-head") {
-        ShelfHeader("Витрина дня", "Новая через", plan.refreshAt, onElapsed = refresh, modifier = Modifier.animateItem())
-    }
-    if (store.error != null) {
-        slot(feed, "store-error") { MErrorCard(store.error, refresh, Modifier.animateItem()) }
-    }
-    val featured = plan.featured
-    val gift = day.gift
-    val deal = plan.deal
-    val balance = shop.balance
-    val giftTile: @Composable (Modifier) -> Unit = { tileModifier ->
-        if (gift != null) {
-            GiftTile(
-                gift = gift,
-                busy = shop.isBusy("gift"),
-                onClaim = shopModel::claimGift,
-                onElapsed = refresh,
-                modifier = tileModifier,
-            )
-        }
-    }
-    val items = plan.items.sortedByDescending { net.millida.launcher.ui.Rarity.of(it.item.rarity)?.ordinal ?: -1 }
-    if (grid != null) {
-        wideShowcase(
-            feed = feed,
-            grid = grid,
-            featured = featured,
-            deal = deal,
-            items = items,
-            hasGift = gift != null,
-            giftTile = giftTile,
-            wishlist = wishlist,
-            balance = balance,
-            isBusy = isBusy,
-            onBuy = onBuy,
-            onWish = onWish,
-            onTry = { card ->
-                model.cosmeticWardrobe.wearIntent(listOf(WearRef(card.item.code, card.item.variant)))
-                model.open(Screen.SKINS)
-            },
-        )
-    } else {
-        if (gift != null && (featured != null || deal == null)) {
-            slot(feed, "store-gift") {
-                giftTile(Modifier.fillMaxWidth().animateItem())
-            }
-        }
-        if (featured != null) {
-            slot(feed, "store-featured") {
-                FeaturedCard(
-                    card = featured,
-                    wished = featured.item.code in wishlist,
-                    busy = shop.isBusy("buy:" + featured.item.code),
-                    balance = balance,
-                    onBuy = { onBuy(featured, ShopSource.FEATURED) },
-                    onTry = {
-                        model.cosmeticWardrobe.wearIntent(listOf(WearRef(featured.item.code, featured.item.variant)))
-                        model.open(Screen.SKINS)
-                    },
-                    onWish = { on -> onWish(featured.item.code, on) },
-                    modifier = Modifier.animateItem(),
-                )
-            }
-        }
-        if (gift != null && featured == null && deal != null) {
-            slot(feed, "store-deal") {
-                Row(
-                    Modifier.fillMaxWidth().height(IntrinsicSize.Min).animateItem(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    giftTile(Modifier.weight(1f).fillMaxHeight())
-                    ItemTile(
-                        card = deal,
-                        wished = deal.item.code in wishlist,
-                        busy = shop.isBusy("buy:" + deal.item.code),
-                        balance = balance,
-                        onBuy = { onBuy(deal, ShopSource.DEAL) },
-                        onWish = { on -> onWish(deal.item.code, on) },
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                    )
-                }
-            }
-        }
-        val dealLeads = deal != null && !(gift != null && featured == null)
-        val shelf = (if (dealLeads && deal != null) listOf(deal to ShopSource.DEAL) else emptyList()) + items.map { it to ShopSource.DAY }
-        shelf.chunked(columns).forEachIndexed { index, row ->
-            slot(feed, "store-day-$index") {
-                ShelfRow(row, balance, wishlist, isBusy, onBuy, onWish, Modifier.animateItem(), columns)
-            }
-        }
-    }
-    if (featured == null && deal == null && items.isEmpty() && gift == null) {
-        slot(feed, "store-empty") {
-            MEmptyState(
-                icon = MIcons.shop,
-                title = "Витрина обновляется",
-                modifier = Modifier.animateItem(),
-                actionText = "Обновить",
-                onAction = refresh,
-                actionIcon = MIcons.refresh,
-                primary = false,
-            )
-        }
-    }
-    val xray = day.xray?.takeIf { it.id.isNotBlank() }
-    if (xray != null || plan.forYou.isNotEmpty()) {
-        slot(feed, "foryou-head") {
-            ShelfHeader("Для тебя", "Новые через", plan.refreshAt, onElapsed = {}, modifier = Modifier.animateItem())
-        }
-        val xrayTile: @Composable (Modifier) -> Unit = { tileModifier ->
-            if (xray != null) {
-                XrayCard(
-                    offer = xray,
-                    balance = shop.balance,
-                    busy = shop.isBusy("xray:" + xray.id) || shop.xray != null,
-                    onBuy = { onXray(xray) },
-                    onElapsed = refresh,
-                    modifier = tileModifier,
-                )
-            }
-        }
-        val forYou = plan.forYou.sortedByDescending { net.millida.launcher.ui.Rarity.of(it.item.rarity)?.ordinal ?: -1 }
-        if (grid != null) {
-            wideForYou(feed, grid, xray != null, xrayTile, forYou, wishlist, balance, isBusy, onBuy, onWish)
         } else {
-            if (xray != null) {
-                slot(feed, "foryou-xray") {
-                    xrayTile(Modifier.animateItem())
-                }
-            }
-            forYou.map { it to ShopSource.FOR_YOU }.chunked(columns).forEachIndexed { index, row ->
-                slot(feed, "foryou-row-$index") {
-                    ShelfRow(row, balance, wishlist, isBusy, onBuy, onWish, Modifier.animateItem(), columns)
-                }
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                plan(PlusTier.PLUS, Modifier.fillMaxWidth())
+                plan(PlusTier.DIAMOND, Modifier.fillMaxWidth())
             }
         }
-    }
-    val night = day.nightMarket
-    if (night != null && night.cards.isNotEmpty() && grid != null) {
-        val head: @Composable (Modifier) -> Unit = { tileModifier ->
-            NightMarketHead(
-                endsAt = night.endsAt,
-                closed = night.cards.count { it.item.code !in flips.codes },
-                onOpenAll = { flips.open(night.cards.map { it.item.code }) },
-                onElapsed = refresh,
-                modifier = tileModifier,
-                stackedClock = true,
-            )
-        }
-        wideNight(feed, grid, night.cards, flips, head, balance, isBusy, onBuy)
-    } else if (night != null && night.cards.isNotEmpty()) {
-        slot(feed, "night-head") {
-            NightMarketHead(
-                endsAt = night.endsAt,
-                closed = night.cards.count { it.item.code !in flips.codes },
-                onOpenAll = { flips.open(night.cards.map { it.item.code }) },
-                onElapsed = refresh,
-                modifier = Modifier.animateItem(),
-            )
-        }
-        night.cards.chunked(columns).forEachIndexed { index, row ->
-            slot(feed, "night-row-$index") {
-                NightRow(
-                    cards = row,
-                    flipped = flips.codes,
-                    balance = balance,
-                    isBusy = isBusy,
-                    onFlip = { card -> flips.open(listOf(card.item.code)) },
-                    onBuy = { card -> onBuy(card, ShopSource.NIGHT) },
-                    modifier = Modifier.animateItem(),
-                    columns = columns,
-                )
-            }
-        }
+        Spacer(Modifier.height(4.dp))
+        MTextLink(tr("Что даёт PLUS"), onClick = {
+            onDismiss()
+            model.open(Screen.PLUS)
+        }, modifier = Modifier.align(Alignment.CenterHorizontally))
     }
 }
 
 /**
- * The desktop showcase: on a full row the free gift, the item of the day and
- * the deal sit side by side as 2 + 4 + 2 cells; on a half row the item of the
- * day takes a row of its own and the gift and the deal share the next one.
+ * One confirmation for every purchase, the desktop's BuySheet: a big picture
+ * of what comes, its name, the price on the main button and «Отмена».
  */
-private fun LazyListScope.wideShowcase(
-    feed: FeedIndex,
-    grid: ShopGrid,
-    featured: ShopCard?,
-    deal: ShopCard?,
-    items: List<ShopCard>,
-    hasGift: Boolean,
-    giftTile: @Composable (Modifier) -> Unit,
-    wishlist: List<String>,
-    balance: Long?,
-    isBusy: (String) -> Boolean,
-    onBuy: (ShopCard, ShopSource) -> Unit,
-    onWish: (String, Boolean) -> Unit,
-    onTry: (ShopCard) -> Unit,
+@Composable
+private fun BuySheet(
+    name: String,
+    confirm: String,
+    icon: MillidaIcon?,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    art: @Composable BoxScope.() -> Unit,
 ) {
-    val featuredTile: @Composable (Modifier) -> Unit = { tileModifier ->
-        if (featured != null) {
-            FeaturedCard(
-                card = featured,
-                wished = featured.item.code in wishlist,
-                busy = isBusy("buy:" + featured.item.code),
-                balance = balance,
-                onBuy = { onBuy(featured, ShopSource.FEATURED) },
-                onTry = { onTry(featured) },
-                onWish = { on -> onWish(featured.item.code, on) },
-                modifier = tileModifier,
+    val colors = millida
+    MBottomSheet(onDismiss = onDismiss) {
+        BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            val height = minOf(280.dp, maxWidth * 4f / 3f, (effectiveScreenHeightDp() * 0.45f).dp)
+            Box(
+                Modifier
+                    .height(height)
+                    .aspectRatio(0.75f)
+                    .pixelSurface(colors.inset, MillidaCut.plate),
+                contentAlignment = Alignment.Center,
+                content = art,
             )
         }
-    }
-    val dealTile: @Composable (Modifier) -> Unit = { tileModifier ->
-        if (deal != null) {
-            ItemTile(
-                card = deal,
-                wished = deal.item.code in wishlist,
-                busy = isBusy("buy:" + deal.item.code),
-                balance = balance,
-                onBuy = { onBuy(deal, ShopSource.DEAL) },
-                onWish = { on -> onWish(deal.item.code, on) },
-                modifier = tileModifier,
-            )
-        }
-    }
-    if (grid.full) {
-        val giftSpan = if (hasGift) HERO_SIDE_SPAN else 0
-        val dealSpan = if (deal != null) HERO_SIDE_SPAN else 0
-        val featuredSpan = if (featured != null) GRID_FULL - giftSpan - dealSpan else 0
-        val restSpan = GRID_FULL - giftSpan - dealSpan - featuredSpan
-        if (giftSpan + dealSpan + featuredSpan > 0) {
-            slot(feed, "store-hero") {
-                Row(
-                    Modifier.fillMaxWidth().height(IntrinsicSize.Min).animateItem(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    if (giftSpan > 0) giftTile(Modifier.weight(giftSpan.toFloat()).fillMaxHeight())
-                    if (featuredSpan > 0) featuredTile(Modifier.weight(featuredSpan.toFloat()).fillMaxHeight())
-                    if (dealSpan > 0) dealTile(Modifier.weight(dealSpan.toFloat()).fillMaxHeight())
-                    if (restSpan > 0) Spacer(Modifier.weight(restSpan.toFloat()))
-                }
-            }
-        }
-    } else {
-        if (featured != null) {
-            slot(feed, "store-featured") {
-                featuredTile(Modifier.animateItem())
-            }
-        }
-        if (hasGift || deal != null) {
-            slot(feed, "store-deal") {
-                Row(
-                    Modifier.fillMaxWidth().height(IntrinsicSize.Min).animateItem(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    if (hasGift) giftTile(Modifier.weight(1f).fillMaxHeight())
-                    if (deal != null) dealTile(Modifier.weight(1f).fillMaxHeight())
-                }
-            }
-        }
-    }
-    val across = grid.fit(items.size)
-    items.map { it to ShopSource.DAY }.chunked(across).forEachIndexed { index, row ->
-        slot(feed, "store-day-$index") {
-            ShelfRow(row, balance, wishlist, isBusy, onBuy, onWish, Modifier.animateItem(), across)
-        }
-    }
-}
-
-/**
- * «Для тебя» as on the desktop: on a full row the X-ray case is half the row
- * with the first four cards beside it; on a half row it takes a row of its own.
- */
-private fun LazyListScope.wideForYou(
-    feed: FeedIndex,
-    grid: ShopGrid,
-    hasXray: Boolean,
-    xrayTile: @Composable (Modifier) -> Unit,
-    forYou: List<ShopCard>,
-    wishlist: List<String>,
-    balance: Long?,
-    isBusy: (String) -> Boolean,
-    onBuy: (ShopCard, ShopSource) -> Unit,
-    onWish: (String, Boolean) -> Unit,
-) {
-    val cards = forYou.map { it to ShopSource.FOR_YOU }
-    val across = if (hasXray) grid.columns else grid.fit(cards.size)
-    val beside = if (hasXray && grid.full) cards.take(GRID_FULL - XRAY_SPAN) else emptyList()
-    if (hasXray) {
-        slot(feed, "foryou-xray") {
-            if (grid.full) {
-                Row(Modifier.fillMaxWidth().animateItem(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    xrayTile(Modifier.weight(XRAY_SPAN.toFloat()))
-                    for ((card, source) in beside) {
-                        ItemTile(
-                            card = card,
-                            wished = card.item.code in wishlist,
-                            busy = isBusy("buy:" + card.item.code),
-                            balance = balance,
-                            onBuy = { onBuy(card, source) },
-                            onWish = { on -> onWish(card.item.code, on) },
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    repeat(GRID_FULL - XRAY_SPAN - beside.size) { Spacer(Modifier.weight(1f)) }
-                }
-            } else {
-                xrayTile(Modifier.animateItem())
-            }
-        }
-    }
-    cards.drop(beside.size).chunked(across).forEachIndexed { index, row ->
-        slot(feed, "foryou-row-$index") {
-            ShelfRow(row, balance, wishlist, isBusy, onBuy, onWish, Modifier.animateItem(), across)
-        }
-    }
-}
-
-/**
- * The night market as one grid, the desktop's night block: the head is a lead
- * cell that fills what the first row of cards leaves free.
- */
-private fun LazyListScope.wideNight(
-    feed: FeedIndex,
-    grid: ShopGrid,
-    cards: List<ShopCard>,
-    flips: NightFlipState,
-    head: @Composable (Modifier) -> Unit,
-    balance: Long?,
-    isBusy: (String) -> Boolean,
-    onBuy: (ShopCard, ShopSource) -> Unit,
-) {
-    val across = grid.columns
-    val leadSpan = if (cards.size % across == 0) across else across - cards.size % across
-    val first = cards.take(across - leadSpan)
-    slot(feed, "night-head") {
-        NightRow(
-            cards = first,
-            flipped = flips.codes,
-            balance = balance,
-            isBusy = isBusy,
-            onFlip = { card -> flips.open(listOf(card.item.code)) },
-            onBuy = { card -> onBuy(card, ShopSource.NIGHT) },
-            modifier = Modifier.animateItem(),
-            columns = across,
-            lead = head,
-            leadSpan = leadSpan,
+        Spacer(Modifier.height(12.dp))
+        Text(
+            name,
+            modifier = Modifier.fillMaxWidth(),
+            style = MillidaType.sectionTitle.copy(fontSize = 22.sp, fontWeight = FontWeight.Black),
+            color = colors.fg,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
         )
-    }
-    cards.drop(first.size).chunked(across).forEachIndexed { index, row ->
-        slot(feed, "night-row-$index") {
-            NightRow(
-                cards = row,
-                flipped = flips.codes,
-                balance = balance,
-                isBusy = isBusy,
-                onFlip = { card -> flips.open(listOf(card.item.code)) },
-                onBuy = { card -> onBuy(card, ShopSource.NIGHT) },
-                modifier = Modifier.animateItem(),
-                columns = across,
-            )
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            MPrimaryButton(confirm, onClick = onConfirm, modifier = Modifier.weight(1.6f), icon = icon, size = MButtonSize.Large)
+            MSecondaryButton(tr("Отмена"), onClick = onDismiss, modifier = Modifier.weight(1f), size = MButtonSize.Large)
         }
+    }
+}
+
+@Composable
+private fun ShopDialogs(prompt: ShopPrompt?, shop: ShopState, model: LauncherViewModel, onDismiss: () -> Unit) {
+    when (prompt) {
+        null -> Unit
+        is ShopPrompt.Buy -> {
+            val item = prompt.card.item
+            val tone = Rarity.of(item.rarity)?.color ?: millida.accent
+            BuySheet(
+                name = item.name,
+                confirm = tr("Купить · {it}", groupDigits(prompt.card.price)),
+                icon = MIcons.ruby,
+                onConfirm = {
+                    model.shop.buy(prompt.card, prompt.source)
+                    onDismiss()
+                },
+                onDismiss = onDismiss,
+            ) {
+                PlayerShot(listOf(item), tone, Modifier.fillMaxSize()) { ItemArt(item, side = 160.dp) }
+            }
+        }
+        is ShopPrompt.Pack -> {
+            val packs = packsOf(shop).orEmpty()
+            val (list, _) = sortPacks(packs.filterNot { it.oneTime })
+            val art = if (prompt.pack.oneTime) STARTER_ART else packArtAt(list.indexOfFirst { it.code == prompt.pack.code }.coerceAtLeast(0), list.size)
+            BuySheet(
+                name = "${groupDigits(prompt.pack.rubies)} ${rubyWord(prompt.pack.rubies)}",
+                confirm = rubles(prompt.pack.kopecks),
+                icon = null,
+                onConfirm = {
+                    model.shop.buyPack(prompt.pack)
+                    onDismiss()
+                },
+                onDismiss = onDismiss,
+            ) {
+                ShopAsset(art, 200.dp)
+            }
+        }
+        is ShopPrompt.PackShort -> WalletShortDialog(
+            text = tr("На счёте Millida не хватает {0}. Пополни на сайте и вернись за пакетом.", rubles(prompt.missingKopecks)),
+            onTopUp = {
+                model.shop.openWalletTopUp()
+                onDismiss()
+            },
+            onDismiss = onDismiss,
+        )
+        is ShopPrompt.Craft -> MConfirmDialog(
+            title = tr("Обменять осколки"),
+            text = groupDigits(prompt.offer.cost).let { cost ->
+                trPlural(
+                    prompt.offer.cost,
+                    tr("{0} осколок → половина фрагментов: {name}. Остаток докупается за рубины", cost, prompt.offer.item.name),
+                    tr("{0} осколка → половина фрагментов: {name}. Остаток докупается за рубины", cost, prompt.offer.item.name),
+                    tr("{0} осколков → половина фрагментов: {name}. Остаток докупается за рубины", cost, prompt.offer.item.name),
+                )
+            },
+            confirm = tr("Обменять"),
+            onConfirm = {
+                model.shop.craft(prompt.offer)
+                onDismiss()
+            },
+            onDismiss = onDismiss,
+            danger = false,
+        )
+        is ShopPrompt.Fragments -> MConfirmDialog(
+            title = tr("Докупить фрагменты"),
+            text = groupDigits(prompt.price).let { price ->
+                trPlural(
+                    prompt.price,
+                    tr("{name}: докупить недостающие фрагменты за {0} рубин", prompt.item.name, price),
+                    tr("{name}: докупить недостающие фрагменты за {0} рубина", prompt.item.name, price),
+                    tr("{name}: докупить недостающие фрагменты за {0} рубинов", prompt.item.name, price),
+                )
+            },
+            confirm = tr("Докупить"),
+            onConfirm = {
+                model.shop.completeFragments(prompt.item, celebrate = false)
+                onDismiss()
+            },
+            onDismiss = onDismiss,
+            danger = false,
+        )
+        is ShopPrompt.SetBuy -> BuySheet(
+            name = prompt.set.title,
+            confirm = tr("Купить · {it}", groupDigits(prompt.way.price)),
+            icon = MIcons.ruby,
+            onConfirm = {
+                model.shop.buySet(prompt.set, prompt.way)
+                onDismiss()
+            },
+            onDismiss = onDismiss,
+        ) {
+            PlayerShot(prompt.way.items.map { it.item }, themeTone(prompt.set.theme), Modifier.fillMaxSize()) {
+                ItemArt(prompt.way.items.maxByOrNull { it.price }?.item ?: return@PlayerShot, side = 160.dp)
+            }
+        }
+        is ShopPrompt.CaseOpen -> {
+            val look = caseChest(prompt.case.id)
+            BuySheet(
+                name = prompt.case.title + if (prompt.mode == CaseMode.TEN) " ×10" else "",
+                confirm = groupDigits(prompt.case.priceOf(prompt.mode)).let { if (prompt.mode == CaseMode.TEN) tr("Открыть ×10 · {0}", it) else tr("Открыть · {0}", it) },
+                icon = if (prompt.case.paidInShards) MIcons.shard else MIcons.ruby,
+                onConfirm = {
+                    model.shop.openCase(prompt.case, prompt.mode)
+                    onDismiss()
+                },
+                onDismiss = onDismiss,
+            ) {
+                ShotScene(caseTone(prompt.case), Modifier.fillMaxSize())
+                ChestLive(look.tier, side = 170.dp, tint = look.tint)
+            }
+        }
+    }
+    if (shop.walletShort) {
+        WalletShortDialog(
+            text = tr("На счёте Millida не хватает денег. Пополни на сайте и вернись — покупка подождёт."),
+            onTopUp = model.shop::openWalletTopUp,
+            onDismiss = model.shop::dismissWalletShort,
+        )
     }
 }
 
@@ -1006,27 +954,29 @@ internal fun RubyShortfallDialog(
     val colors = millida
     val rubies = maxOf(missing, RubiesClient.EXACT_MIN_RUBIES.toLong())
     MDialog(
-        title = "Не хватает рубинов",
+        title = tr("Не хватает рубинов"),
         onDismiss = onDismiss,
         body = {
             Text(
-                "На $subject не хватает ${groupDigits(missing)} ${rubyWord(missing)}.",
+                groupDigits(missing).let { count ->
+                    trPlural(missing, tr("На {subject} не хватает {0} рубина.", subject, count), tr("На {subject} не хватает {0} рубинов.", subject, count), tr("На {subject} не хватает {0} рубинов.", subject, count))
+                },
                 style = MillidaType.body,
                 color = colors.fgMuted,
             )
             Text(
-                "Докупить ровно ${groupDigits(rubies)} за ${rubles(kopecksForRubies(rubies))} со счёта Millida.",
+                tr("Докупить ровно {0} за {1} со счёта Millida.", groupDigits(rubies), rubles(kopecksForRubies(rubies))),
                 style = MillidaType.small,
                 color = colors.fgSubtle,
             )
         },
         actions = {
-            MTextButton("Отмена", onClick = onDismiss)
-            MSecondaryButton("Пакеты", onClick = {
+            MTextButton(tr("Отмена"), onClick = onDismiss)
+            MSecondaryButton(tr("Пакеты"), onClick = {
                 onDismiss()
                 onPacks()
             })
-            MPrimaryButton("Докупить", onClick = {
+            MPrimaryButton(tr("Докупить"), onClick = {
                 onTopUp(rubies.toInt())
                 onDismiss()
             })
@@ -1035,137 +985,14 @@ internal fun RubyShortfallDialog(
 }
 
 @Composable
-private fun ShopDialogs(
-    prompt: ShopPrompt?,
-    shop: ShopState,
-    model: LauncherViewModel,
-    onScrollToPacks: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    when (prompt) {
-        null -> Unit
-        is ShopPrompt.Buy -> MConfirmDialog(
-            title = "Купить вещь",
-            text = "«${prompt.card.item.name}» за ${groupDigits(prompt.card.price)} ${rubyWord(prompt.card.price)}",
-            confirm = "Купить",
-            onConfirm = {
-                model.shop.buy(prompt.card, prompt.source)
-                onDismiss()
-            },
-            onDismiss = onDismiss,
-            danger = false,
-        )
-        is ShopPrompt.Shortfall -> RubyShortfallDialog(
-            subject = "«${prompt.card.item.name}»",
-            missing = prompt.missing,
-            onTopUp = model.shop::topUp,
-            onPacks = onScrollToPacks,
-            onDismiss = onDismiss,
-        )
-        is ShopPrompt.Pack -> MConfirmDialog(
-            title = "Оплатить «${prompt.pack.title}»",
-            text = "${groupDigits(prompt.pack.rubies)} ${rubyWord(prompt.pack.rubies)} за ${rubles(prompt.pack.kopecks)} со счёта Millida",
-            confirm = "Оплатить",
-            onConfirm = {
-                model.shop.buyPack(prompt.pack)
-                onDismiss()
-            },
-            onDismiss = onDismiss,
-            danger = false,
-        )
-        is ShopPrompt.PackShort -> WalletShortDialog(
-            text = "На счёте Millida не хватает ${rubles(prompt.missingKopecks)}. Пополни на сайте и вернись за пакетом.",
-            onTopUp = {
-                model.shop.openWalletTopUp()
-                onDismiss()
-            },
-            onDismiss = onDismiss,
-        )
-        is ShopPrompt.Craft -> MConfirmDialog(
-            title = "Обменять осколки",
-            text = "${groupDigits(prompt.offer.cost)} ${shardWord(prompt.offer.cost)} → половина фрагментов: ${prompt.offer.item.name}. Остаток докупается за рубины",
-            confirm = "Обменять",
-            onConfirm = {
-                model.shop.craft(prompt.offer)
-                onDismiss()
-            },
-            onDismiss = onDismiss,
-            danger = false,
-        )
-        is ShopPrompt.Xray -> MConfirmDialog(
-            title = "Открыть кейс",
-            text = "«${prompt.offer.item.name}» за ${groupDigits(prompt.offer.price)} ${rubyWord(prompt.offer.price)}",
-            confirm = "Купить и открыть",
-            onConfirm = {
-                model.shop.buyXray(prompt.offer)
-                onDismiss()
-            },
-            onDismiss = onDismiss,
-            danger = false,
-        )
-        is ShopPrompt.Fragments -> MConfirmDialog(
-            title = "Докупить фрагменты",
-            text = "${prompt.item.name}: докупить недостающие фрагменты за ${groupDigits(prompt.price)} ${rubyWord(prompt.price)}",
-            confirm = "Докупить",
-            onConfirm = {
-                model.shop.completeFragments(prompt.item, prompt.celebrate)
-                onDismiss()
-            },
-            onDismiss = onDismiss,
-            danger = false,
-        )
-        is ShopPrompt.Boost -> MConfirmDialog(
-            title = "Докупить звёзды",
-            text = "${prompt.missing} зв. за ${groupDigits(prompt.price)} ${rubyWord(prompt.price)}",
-            confirm = "Докупить",
-            onConfirm = {
-                model.shop.boostWeekly(prompt.path)
-                onDismiss()
-            },
-            onDismiss = onDismiss,
-            danger = false,
-        )
-        is ShopPrompt.TopUp -> MConfirmDialog(
-            title = "Докупить недостающее",
-            text = "${groupDigits(prompt.rubies)} ${rubyWord(prompt.rubies)} за ${rubles(kopecksForRubies(prompt.rubies))}",
-            confirm = "Оплатить",
-            onConfirm = {
-                model.shop.topUp(prompt.rubies.toInt())
-                onDismiss()
-            },
-            onDismiss = onDismiss,
-            danger = false,
-        )
-        is ShopPrompt.Weekly -> MConfirmDialog(
-            title = "Забрать посылку",
-            text = "«${prompt.item.name}» — навсегда. Две другие вещи уйдут.",
-            confirm = "Забрать",
-            onConfirm = {
-                model.shop.claimWeekly(prompt.item)
-                onDismiss()
-            },
-            onDismiss = onDismiss,
-            danger = false,
-        )
-    }
-    if (shop.walletShort) {
-        WalletShortDialog(
-            text = "На счёте Millida не хватает денег. Пополни на сайте и вернись — покупка подождёт.",
-            onTopUp = model.shop::openWalletTopUp,
-            onDismiss = model.shop::dismissWalletShort,
-        )
-    }
-}
-
-@Composable
 private fun WalletShortDialog(text: String, onTopUp: () -> Unit, onDismiss: () -> Unit) {
     MDialog(
-        title = "Пополни счёт",
+        title = tr("Пополни счёт"),
         onDismiss = onDismiss,
         body = { Text(text, style = MillidaType.body, color = millida.fgMuted) },
         actions = {
-            MTextButton("Отмена", onClick = onDismiss)
-            MPrimaryButton("Пополнить", onClick = onTopUp, icon = MIcons.externalLink)
+            MTextButton(tr("Отмена"), onClick = onDismiss)
+            MPrimaryButton(tr("Пополнить"), onClick = onTopUp, icon = MIcons.externalLink)
         },
     )
 }

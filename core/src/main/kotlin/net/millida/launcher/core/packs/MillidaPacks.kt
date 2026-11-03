@@ -14,6 +14,7 @@ import kotlinx.serialization.json.longOrNull
 import net.millida.launcher.core.account.MILLIDA_API
 import net.millida.launcher.core.account.MillidaAuth
 import net.millida.launcher.core.http.Downloader
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.IOException
 
@@ -125,21 +126,21 @@ class MillidaPacks(
 
     @Throws(IOException::class)
     override suspend fun access(slug: String): PackAccess? {
-        if (!catalogSlugValid(slug)) throw IOException("некорректный адрес сборки: $slug")
+        if (!catalogSlugValid(slug)) throw IOException(tr("некорректный адрес сборки: {slug}", slug))
         return PackAccess.from(authorized("/catalog/packs/$slug/access", "POST", buildJsonObject { }))
     }
 
     @Throws(IOException::class)
     override suspend fun launchToken(slug: String): List<String> {
-        if (!catalogSlugValid(slug)) throw IOException("некорректный адрес сборки: $slug")
+        if (!catalogSlugValid(slug)) throw IOException(tr("некорректный адрес сборки: {slug}", slug))
         return PackLaunchToken.args(authorized("/catalog/packs/$slug/launch-token", "POST", buildJsonObject { }))
     }
 
     @Throws(IOException::class)
     suspend fun catalogPack(slug: String): CatalogPackCard {
-        if (!catalogSlugValid(slug)) throw IOException("некорректный адрес сборки: $slug")
+        if (!catalogSlugValid(slug)) throw IOException(tr("некорректный адрес сборки: {slug}", slug))
         val body = downloader.text("$apiBase/catalog/packs/$slug")
-        return packJson("карточка сборки пришла повреждённой — попробуй позже") { catalogCard(slug, body) }
+        return packJson(tr("карточка сборки пришла повреждённой — попробуй позже")) { catalogCard(slug, body) }
     }
 
     private fun catalogCard(slug: String, body: String): CatalogPackCard {
@@ -147,7 +148,7 @@ class MillidaPacks(
         val client = (card["files"] as? JsonArray)
             ?.map { it.jsonObject }
             ?.firstOrNull { it.text("side") == "client" }
-            ?: throw IOException("у этой сборки нет клиентской части — её ставят только на сервер")
+            ?: throw IOException(tr("у этой сборки нет клиентской части — её ставят только на сервер"))
         return CatalogPackCard(
             slug = slug,
             title = card.text("title").ifEmpty { slug },
@@ -185,11 +186,11 @@ class MillidaPacks(
      */
     @Throws(IOException::class)
     suspend fun mirrorFileLink(article: String, fileId: String): MirrorFileLink {
-        if (!catalogSlugValid(article) || !fileIdValid(fileId)) throw IOException("у карточки нет файла для скачивания")
+        if (!catalogSlugValid(article) || !fileIdValid(fileId)) throw IOException(tr("у карточки нет файла для скачивания"))
         val response = client().publicCall("/forum/articles/$article/download?file=$fileId", "GET", null) as? JsonObject
-            ?: throw IOException("сервер вернул не тот ответ, что ожидался")
+            ?: throw IOException(tr("сервер вернул не тот ответ, что ожидался"))
         val url = response.text("url")
-        if (url.isEmpty()) throw IOException("сервер не выдал ссылку на файл — попробуй позже")
+        if (url.isEmpty()) throw IOException(tr("сервер не выдал ссылку на файл — попробуй позже"))
         return MirrorFileLink(url = url, name = response.text("name"))
     }
 
@@ -202,10 +203,10 @@ class MillidaPacks(
      */
     @Throws(IOException::class)
     suspend fun catalogPackLink(fileId: String): PackDownloadLink {
-        if (fileId.isEmpty()) throw IOException("ответ сервера не содержит файла сборки")
+        if (fileId.isEmpty()) throw IOException(tr("ответ сервера не содержит файла сборки"))
         val response = authorized("/catalog/packs/files/$fileId/link", "POST", buildJsonObject { })
         val url = response.text("url")
-        if (url.isEmpty()) throw IOException("сервер не выдал ссылку на сборку — попробуй позже")
+        if (url.isEmpty()) throw IOException(tr("сервер не выдал ссылку на сборку — попробуй позже"))
         return PackDownloadLink(
             url = url,
             sha512 = response.text("sha512"),
@@ -216,9 +217,9 @@ class MillidaPacks(
     @Throws(IOException::class)
     suspend fun sharedPack(code: String): Pair<SharedPackView, PackManifest> {
         val plain = PackCodes.normalize(code)
-        if (!PackCodes.valid(plain)) throw IOException("такого кода не бывает — проверь, что ввёл")
+        if (!PackCodes.valid(plain)) throw IOException(tr("такого кода не бывает — проверь, что ввёл"))
         val body = downloader.text("$apiBase/launcher/packs/$plain")
-        val response = packJson("сборка друга пришла повреждённой — попробуй позже") { MojangJson.parseToJsonElement(body).jsonObject }
+        val response = packJson(tr("сборка друга пришла повреждённой — попробуй позже")) { MojangJson.parseToJsonElement(body).jsonObject }
         val manifest = PackManifest.parse(response["manifest"] as? JsonObject, hosts)
         val view = SharedPackView(
             code = plain,
@@ -278,14 +279,14 @@ class MillidaPacks(
     suspend fun publish(manifest: PackManifest): String {
         val response = client().authorized("/launcher/packs", "POST", manifest.toJson())
         val code = PackCodes.normalize(response.text("code"))
-        if (!PackCodes.valid(code)) throw IOException("сервер не выдал код сборки — попробуй поделиться ещё раз")
+        if (!PackCodes.valid(code)) throw IOException(tr("сервер не выдал код сборки — попробуй поделиться ещё раз"))
         return code
     }
 
     @Throws(IOException::class)
     suspend fun unshare(code: String) {
         val plain = PackCodes.normalize(code)
-        if (!PackCodes.valid(plain)) throw IOException("некорректный код сборки")
+        if (!PackCodes.valid(plain)) throw IOException(tr("некорректный код сборки"))
         client().authorized("/launcher/packs/$plain", "DELETE", null)
     }
 
@@ -314,12 +315,12 @@ class MillidaPacks(
         val versions = MojangJson.parseToJsonElement(body).jsonArray.map { it.jsonObject }
         val picked = if (versionId.isNullOrEmpty()) {
             versions.firstOrNull { mrpackFile(it) != null }
-                ?: throw IOException("у сборки $slug нет ни одного файла .mrpack")
+                ?: throw IOException(tr("у сборки {slug} нет ни одного файла .mrpack", slug))
         } else {
             versions.firstOrNull { it.text("id") == versionId }
-                ?: throw IOException("версия сборки не найдена — обнови список версий")
+                ?: throw IOException(tr("версия сборки не найдена — обнови список версий"))
         }
-        val url = mrpackFile(picked) ?: throw IOException("в этой версии сборки нет файла .mrpack")
+        val url = mrpackFile(picked) ?: throw IOException(tr("в этой версии сборки нет файла .mrpack"))
         return ModpackVersion(
             id = picked.text("id"),
             name = picked.text("name"),
@@ -368,7 +369,7 @@ class MillidaPacks(
 
     @Throws(IOException::class)
     private fun client(): MillidaAuth =
-        auth ?: throw IOException("войди в аккаунт Millida — без него сборки аккаунта недоступны")
+        auth ?: throw IOException(tr("войди в аккаунт Millida — без него сборки аккаунта недоступны"))
 
     private fun JsonObject.text(key: String): String =
         this[key]?.jsonPrimitive?.content?.takeIf { it != "null" }.orEmpty()

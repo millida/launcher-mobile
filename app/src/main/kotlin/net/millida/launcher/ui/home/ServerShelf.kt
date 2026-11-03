@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.millida.launcher.JoinPlan
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.UiState
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.rating.RatedServer
 import net.millida.launcher.core.rating.versionRangeLabel
 import net.millida.launcher.core.servers.OwnServers
@@ -62,7 +63,7 @@ internal fun LazyListScope.serverShelf(
     if (servers.isEmpty() && !loading && error == null) return
     item(key = "shelf:servers", contentType = "shelf") {
         Column(Modifier.fillMaxWidth()) {
-            MSectionHeader("Куда пойти играть", action = "Все", onAction = onAll)
+            MSectionHeader(tr("Куда пойти играть"), action = tr("Все"), onAction = onAll)
             Spacer(Modifier.height(4.dp))
             when {
                 servers.isNotEmpty() -> LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -122,7 +123,7 @@ private fun ServerTile(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        if (server.up) "${groupDigits(server.online.toLong())} онлайн" else "Не в сети",
+                        if (server.up) tr("{0} онлайн", groupDigits(server.online.toLong())) else tr("Не в сети"),
                         style = MillidaType.small,
                         color = colors.fgSubtle,
                         maxLines = 1,
@@ -133,7 +134,7 @@ private fun ServerTile(
         Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                versionRangeLabel(server.versionMajors) ?: "Любая версия",
+                versionRangeLabel(server.versionMajors) ?: tr("Любая версия"),
                 modifier = Modifier.weight(1f),
                 style = MillidaType.pixelSmall,
                 color = colors.fgSubtle,
@@ -143,7 +144,7 @@ private fun ServerTile(
             Spacer(Modifier.width(8.dp))
             if (server.joinAddress.isBlank() && OwnServers.of(server.slug, null) == null) {
                 MButton(
-                    text = "Открыть",
+                    text = tr("Открыть"),
                     onClick = onOpen,
                     variant = MButtonVariant.Secondary,
                     size = MButtonSize.Small,
@@ -151,7 +152,7 @@ private fun ServerTile(
                 )
             } else {
                 MButton(
-                    text = "Играть",
+                    text = tr("Играть"),
                     onClick = onPlay,
                     variant = MButtonVariant.Secondary,
                     size = MButtonSize.Small,
@@ -177,16 +178,16 @@ fun JoinServerSheet(state: UiState, model: LauncherViewModel, onCreateBuild: (St
             MBottomSheet(
                 onDismiss = model.lobby::dismissJoin,
                 title = when {
-                    current != null -> "Версия не совпадает"
-                    prompt.version.isNotEmpty() -> "Нужна сборка ${prompt.version}"
-                    else -> "Сначала создай сборку"
+                    current != null -> tr("Версия не совпадает")
+                    prompt.version.isNotEmpty() -> tr("Нужна сборка {version}", prompt.version)
+                    else -> tr("Сначала создай сборку")
                 },
             ) {
                 Text(
                     when {
-                        current != null -> "«$server» на $wanted, а «${current.name}» — ${current.gameVersion}"
-                        wanted.isNotEmpty() -> "«$server» работает на $wanted"
-                        else -> "«$server» не сказал свою версию"
+                        current != null -> tr("«{server}» на {wanted}, а «{name}» — {gameVersion}", server, wanted, current.name, current.gameVersion)
+                        wanted.isNotEmpty() -> tr("«{server}» работает на {wanted}", server, wanted)
+                        else -> tr("«{server}» не сказал свою версию", server)
                     },
                     style = MillidaType.body,
                     color = colors.fgMuted,
@@ -194,7 +195,7 @@ fun JoinServerSheet(state: UiState, model: LauncherViewModel, onCreateBuild: (St
                 Spacer(Modifier.height(18.dp))
                 if (prompt.version.isNotEmpty()) {
                     MPrimaryButton(
-                        text = if (current != null) "Создать ${prompt.version}" else "Создать и играть",
+                        text = if (current != null) tr("Создать {version}", prompt.version) else tr("Создать и играть"),
                         onClick = { model.createBuildAndJoin(prompt.version, prompt.address, prompt.serverName) },
                         modifier = Modifier.fillMaxWidth(),
                         icon = MIcons.play,
@@ -202,7 +203,7 @@ fun JoinServerSheet(state: UiState, model: LauncherViewModel, onCreateBuild: (St
                     )
                 } else {
                     MPrimaryButton(
-                        text = "Создать сборку",
+                        text = tr("Создать сборку"),
                         onClick = {
                             model.lobby.dismissJoin()
                             onCreateBuild(prompt.wanted.firstOrNull())
@@ -215,7 +216,7 @@ fun JoinServerSheet(state: UiState, model: LauncherViewModel, onCreateBuild: (St
                 if (current != null) {
                     Spacer(Modifier.height(10.dp))
                     MSecondaryButton(
-                        text = "Всё равно зайти",
+                        text = tr("Всё равно зайти"),
                         onClick = { model.joinServer(current, prompt.address, prompt.serverName) },
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -224,9 +225,9 @@ fun JoinServerSheet(state: UiState, model: LauncherViewModel, onCreateBuild: (St
         }
         is JoinPlan.Unknown -> {
             val builds = joinableBuilds(state.profiles).sortedByDescending { it.id == plan.build.id }
-            MBottomSheet(onDismiss = model.lobby::dismissJoin, title = "Какой сборкой заходим?") {
+            MBottomSheet(onDismiss = model.lobby::dismissJoin, title = tr("Какой сборкой заходим?")) {
                 Text(
-                    "«$server» не сказал свою версию",
+                    tr("«{server}» не сказал свою версию", server),
                     style = MillidaType.body,
                     color = colors.fgMuted,
                 )

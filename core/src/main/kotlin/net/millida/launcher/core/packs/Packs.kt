@@ -12,7 +12,10 @@ import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.account.MILLIDA_API
 import net.millida.launcher.core.account.Unauthorized
 import net.millida.launcher.core.http.Downloader
+import net.millida.launcher.core.http.HttpError
 import net.millida.launcher.core.http.RemoteFile
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trSource
 import net.millida.launcher.core.mojang.MojangJson
 import net.millida.launcher.core.profile.DISABLED_SUFFIX
 import net.millida.launcher.core.profile.Profile
@@ -34,7 +37,9 @@ class Packs(
     private val reader: PackReader = PackReader(downloader),
     private val hosts: PackHostPolicy = PackHostPolicy(),
     private val curseForgeBase: String = "$MILLIDA_API/launcher/cf",
-    private val catalogPackHosts: PackHostPolicy = PackHostPolicy(setOf(CATALOG_PACK_HOST)),
+    // A catalogue entry copied from Modrinth may still point at Modrinth's CDN; its sha512 proves the bytes.
+    private val catalogPackHosts: PackHostPolicy = PackHostPolicy(),
+    private val gate: PackDownloadGate = PackDownloadGate.OPEN,
 ) {
 
     fun info(profileDir: File): PackOrigin? = PackOriginStore.read(profileDir)
@@ -54,14 +59,14 @@ class Packs(
         target: Profile? = null,
         onProgress: (PackProgress) -> Unit = {},
     ): Profile {
-        onProgress(PackProgress("Распаковываем сборку"))
+        onProgress(PackProgress(tr("Распаковываем сборку")))
         val work = newWorkDir("file")
         val content = try {
             reader.read(PackArchive.unpack(archive, work), archive.nameWithoutExtension).also { read ->
                 PhoneFit.require(read.plan.loader.id, read.plan.gameVersion, read.plan.name.ifEmpty { archive.nameWithoutExtension })
             }
         } catch (failure: Exception) {
-            work.deleteRecursively()
+            abandon(work, failure)
             throw failure
         }
         return installer.install(content.copy(workDir = work), target, onProgress)
@@ -75,12 +80,12 @@ class Packs(
         target: Profile? = null,
         onProgress: (PackProgress) -> Unit = {},
     ): Profile {
-        onProgress(PackProgress("Читаем сборку"))
+        onProgress(PackProgress(tr("Читаем сборку")))
         val (version, url) = api.modpackFile(slug, versionId)
         val work = newWorkDir("mr-$slug")
         val content = try {
-            onProgress(PackProgress("Скачиваем сборку"))
-            val archive = fetchArchive(url, File(work, "pack.mrpack"))
+            onProgress(PackProgress(tr("Скачиваем сборку")))
+            val archive = fetchArchive(url, File(work, "pack.mrpack"), onProgress = onProgress)
             val read = reader.read(PackArchive.unpack(archive, File(work, "unpacked")), slug)
             PhoneFit.require(read.plan.loader.id, read.plan.gameVersion, read.plan.name.ifEmpty { slug })
             read.copy(
@@ -93,7 +98,7 @@ class Packs(
                 workDir = work,
             )
         } catch (failure: Exception) {
-            work.deleteRecursively()
+            abandon(work, failure)
             throw failure
         }
         return installer.install(content, target, onProgress)
@@ -107,12 +112,12 @@ class Packs(
         target: Profile? = null,
         onProgress: (PackProgress) -> Unit = {},
     ): Profile {
-        onProgress(PackProgress("Читаем сборку"))
+        onProgress(PackProgress(tr("Читаем сборку")))
         val file = curseForgeModpackFile(projectId, fileId)
         val work = newWorkDir("cf-$projectId")
         val content = try {
-            onProgress(PackProgress("Скачиваем сборку"))
-            val archive = fetchModpackArchive(file, File(work, SafePath.fileName(file.name)))
+            onProgress(PackProgress(tr("Скачиваем сборку")))
+            val archive = fetchModpackArchive(file, File(work, SafePath.fileName(file.name)), onProgress)
             val read = reader.read(PackArchive.unpack(archive, File(work, "unpacked")), file.name)
             PhoneFit.require(read.plan.loader.id, read.plan.gameVersion, read.plan.name.ifEmpty { file.name })
             read.copy(
@@ -124,7 +129,7 @@ class Packs(
                 workDir = work,
             )
         } catch (failure: Exception) {
-            work.deleteRecursively()
+            abandon(work, failure)
             throw failure
         }
         return installer.install(content, target, onProgress)
@@ -142,7 +147,7 @@ class Packs(
         target: Profile? = null,
         onProgress: (PackProgress) -> Unit = {},
     ): Profile {
-        onProgress(PackProgress("Читаем сборку"))
+        onProgress(PackProgress(tr("Читаем сборку")))
         val card = api.catalogPack(slug)
         val title = card.title.ifEmpty { slug }
         val index = try {
@@ -170,20 +175,25 @@ class Packs(
         }
         catalogPackHosts.check(link.url)
         val digest = link.sha512.ifEmpty { card.sha512 }
-        if (digest.length != 128 || !digest.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' }) {
-            throw IOException("у сборки нет контрольной суммы — такой архив ставить нельзя, напиши в поддержку")
+        // Packs the catalogue copied from Modrinth/CurseForge sit on our CDN without a stored hash
+        // (RLCraft, Fabulously Optimized…); the size check still guards the download there.
+        val mirrored = PackHosts.hostOf(link.url)?.second in CATALOG_MIRROR_HOSTS
+        if (!(mirrored && digest.isEmpty()) && (digest.length != 128 || !digest.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' })) {
+            throw IOException(tr("у сборки нет контрольной суммы — такой архив ставить нельзя, напиши в поддержку"))
         }
         val work = newWorkDir("catalog-$slug")
         val content = try {
-            onProgress(PackProgress("Скачиваем сборку"))
+            onProgress(PackProgress(tr("Скачиваем сборку")))
             val archive = fetchArchive(
                 link.url,
                 File(work, "pack.zip"),
                 digest,
                 if (link.sizeBytes > 0) link.sizeBytes else card.sizeBytes,
                 catalogPackHosts,
+                freshLink = { api.catalogPackLink(card.clientFileId).url },
+                onProgress = onProgress,
             )
-            onProgress(PackProgress("Распаковываем сборку"))
+            onProgress(PackProgress(tr("Распаковываем сборку")))
             val unpacked = PackArchive.unpack(archive, File(work, "unpacked"))
             archive.delete()
             val launchRoot = PackLaunches.launchRoot(unpacked)
@@ -191,7 +201,7 @@ class Packs(
             PhoneFit.require(card.loader, card.gameVersion, title, shape)
             val ownLaunch = launchRoot != null && shape != LaunchShape.PLAIN
             if (launchPaths != null && !ownLaunch) {
-                throw IOException("архив «$title» распаковался без описания запуска — повтори установку, а если не поможет, напиши в поддержку")
+                throw IOException(tr("архив «{title}» распаковался без описания запуска — повтори установку, а если не поможет, напиши в поддержку", title))
             }
             if (launchRoot != null && ownLaunch) {
                 val tree = launchRoot.walkTopDown().filter { it.isFile }.map { it.relativeTo(launchRoot).invariantSeparatorsPath }.toList()
@@ -219,7 +229,7 @@ class Packs(
                 ownLaunch = ownLaunch,
             )
         } catch (failure: Exception) {
-            work.deleteRecursively()
+            abandon(work, failure)
             throw failure
         }
         return installer.install(content, target, onProgress)
@@ -269,7 +279,7 @@ class Packs(
             error !is java.io.InterruptedIOException &&
             error !is java.net.UnknownHostException &&
             error !is java.net.SocketException &&
-            error.message?.contains("войди", ignoreCase = true) != true
+            error.message?.let(::trSource)?.contains("войди", ignoreCase = true) != true
 
     /**
      * A catalogue archive is often the game folder itself, with no manifest of
@@ -279,7 +289,7 @@ class Packs(
     private fun catalogTree(card: CatalogPackCard, unpacked: File, gameFallback: String = ""): PackContent {
         val gameVersion = card.gameVersion.ifBlank { gameFallback }
         if (gameVersion.isBlank()) {
-            throw IOException("сборка не сказала, под какую версию Minecraft она собрана — напиши в поддержку")
+            throw IOException(tr("сборка не сказала, под какую версию Minecraft она собрана — напиши в поддержку"))
         }
         val (loader, loaderVersion) = PackLoaders.fromId(card.loader)
         return PackContent(
@@ -310,21 +320,25 @@ class Packs(
     ): Profile {
         val name = file.fileName.lowercase()
         if (!name.endsWith(".mrpack") && !name.endsWith(".zip")) {
-            throw IOException("файл сборки не в формате zip или mrpack — поставь её через лаунчер на компьютере")
+            throw IOException(tr("файл сборки не в формате zip или mrpack — поставь её через лаунчер на компьютере"))
         }
         val sha1 = file.sha1.trim().lowercase()
         if (sha1.length != 40 || !sha1.all { it.isDigit() || it in 'a'..'f' }) {
-            throw IOException("у файла сборки нет контрольной суммы — установка остановлена, напиши в поддержку")
+            throw IOException(tr("у файла сборки нет контрольной суммы — установка остановлена, напиши в поддержку"))
         }
         PhoneFit.require(file.loader, file.gameVersion, file.title)
-        onProgress(PackProgress("Читаем сборку"))
+        onProgress(PackProgress(tr("Читаем сборку")))
         val link = api.mirrorFileLink(file.article, file.fileId)
         hosts.check(link.url)
         val work = newWorkDir("mirror-${file.slug}")
         val content = try {
-            onProgress(PackProgress("Скачиваем сборку"))
+            onProgress(PackProgress(tr("Скачиваем сборку")))
             val archiveName = SafePath.fileName(link.name.ifBlank { file.fileName })
-            val archive = fetchArchive(link.url, File(work, archiveName), sha1, file.size)
+            val archive = fetchArchive(
+                link.url, File(work, archiveName), sha1, file.size,
+                freshLink = { api.mirrorFileLink(file.article, file.fileId).url },
+                onProgress = onProgress,
+            )
             val read = reader.read(PackArchive.unpack(archive, File(work, "unpacked")), file.title)
             PhoneFit.require(read.plan.loader.id, read.plan.gameVersion, file.title)
             read.copy(
@@ -339,7 +353,7 @@ class Packs(
                 workDir = work,
             )
         } catch (failure: Exception) {
-            work.deleteRecursively()
+            abandon(work, failure)
             throw failure
         }
         return installer.install(content, target, onProgress)
@@ -352,10 +366,10 @@ class Packs(
         target: Profile? = null,
         onProgress: (PackProgress) -> Unit = {},
     ): Profile {
-        onProgress(PackProgress("Читаем сборку"))
+        onProgress(PackProgress(tr("Читаем сборку")))
         val (view, manifest) = api.sharedPack(code)
         if (manifest.files.isEmpty()) {
-            throw IOException("в этой сборке не осталось файлов, которые можно скачать — попроси автора поделиться заново")
+            throw IOException(tr("в этой сборке не осталось файлов, которые можно скачать — попроси автора поделиться заново"))
         }
         val plan = manifest.toPlan(view.code)
         PhoneFit.require(plan.loader.id, plan.gameVersion, plan.name)
@@ -385,7 +399,7 @@ class Packs(
             }
         }
         if (known.isEmpty()) {
-            throw IOException("в сборке нет файлов из Modrinth или CurseForge — передавать нечего, поставь моды из каталога")
+            throw IOException(tr("в сборке нет файлов из Modrinth или CurseForge — передавать нечего, поставь моды из каталога"))
         }
         val manifest = PackManifest(
             name = profile.name,
@@ -413,6 +427,24 @@ class Packs(
         return PackExport.exportMrpack(profile, directory, out, name, version, summary, known, hosts)
     }
 
+    /** The same build as a CurseForge zip; only mods a CurseForge pack brought keep their ids. */
+    @Throws(IOException::class)
+    fun exportCurseForge(profile: Profile, out: File, name: String = "", version: String = ""): File {
+        val directory = profiles.directory(profile)
+        val origin = PackOriginStore.read(directory)
+        val known = if (origin?.source == PackSource.CURSEFORGE.id) {
+            origin.files.mapNotNull { file ->
+                val project = file.projectId.toLongOrNull() ?: return@mapNotNull null
+                val fileId = file.versionId.toLongOrNull() ?: return@mapNotNull null
+                file.path to PackExport.CurseForgeRef(project, fileId)
+            }.toMap()
+        } else {
+            emptyMap()
+        }
+        return PackExport.exportCurseForge(profile, directory, out, name, version, known)
+    }
+
+
     /**
      * Moves a build to another version of the same pack. Nothing of the old one
      * is removed until the new files are on the disk: an update that fails
@@ -427,7 +459,7 @@ class Packs(
         onProgress: (PackProgress) -> Unit = {},
     ): Profile {
         val origin = PackOriginStore.read(profiles.directory(profile))
-            ?: throw IOException("эта сборка создана не из готовой сборки — обновлять её нечем")
+            ?: throw IOException(tr("эта сборка создана не из готовой сборки — обновлять её нечем"))
         return when (PackUpdates.routeOf(origin)) {
             PackUpdateRoute.MODRINTH -> installModrinthModpack(origin.id, versionId, profile, onProgress)
             PackUpdateRoute.CURSEFORGE -> installCurseForgeModpack(origin.id, versionId, profile, onProgress)
@@ -435,10 +467,10 @@ class Packs(
             PackUpdateRoute.MILLIDA_CODE -> installByCode(origin.id, profile, onProgress)
             PackUpdateRoute.MILLIDA_MIRROR -> {
                 val file = mirror?.takeIf { it.slug == origin.id }
-                    ?: throw IOException("не удалось прочитать карточку сборки в каталоге Millida — попробуй позже")
+                    ?: throw IOException(tr("не удалось прочитать карточку сборки в каталоге Millida — попробуй позже"))
                 installMirroredPack(file, profile, onProgress)
             }
-            null -> throw IOException("эта сборка поставлена из файла — обнови её, выбрав новый файл сборки")
+            null -> throw IOException(tr("эта сборка поставлена из файла — обнови её, выбрав новый файл сборки"))
         }
     }
 
@@ -480,7 +512,7 @@ class Packs(
         loader: net.millida.launcher.core.loader.LoaderKind,
         onProgress: (PackProgress) -> Unit = {},
     ): Profile {
-        val title = name.trim().ifEmpty { "Сборка $gameVersion" }
+        val title = name.trim().ifEmpty { tr("Сборка {gameVersion}", gameVersion) }
         PhoneFit.require(loader.id, gameVersion, title)
         return installer.install(
             PackContent(PackPlan(name = title, gameVersion = gameVersion, loader = loader, source = PackSource.FILE)),
@@ -515,10 +547,44 @@ class Packs(
         digest: String? = null,
         size: Long = 0,
         policy: PackHostPolicy = hosts,
+        freshLink: (suspend () -> String)? = null,
+        onProgress: (PackProgress) -> Unit = {},
     ): File {
         policy.check(url)
+        if (size > 0 && !gate.allow(size, "")) throw PackDownloadDeclined()
         target.parentFile?.mkdirs()
-        downloader.fetch(RemoteFile(url = url, target = target, sha1 = digest?.takeIf { it.isNotEmpty() }, size = size))
+
+        var got = 0L
+        var shown = -1
+        val tick: (Long) -> Unit = { chunk ->
+            if (chunk < 0) got = 0 else got += chunk
+            if (size > 0) {
+                val percent = (got * 100 / size).toInt().coerceIn(0, 100)
+                if (percent != shown) {
+                    shown = percent
+                    onProgress(PackProgress(tr("Скачиваем сборку: {0}%", percent), percent, 100))
+                }
+            } else if ((got shr 20).toInt() != shown) {
+                shown = (got shr 20).toInt()
+                onProgress(PackProgress(tr("Скачиваем сборку: {0} МБ", shown)))
+            }
+        }
+        try {
+            try {
+                downloader.fetch(RemoteFile(url = url, target = target, sha1 = digest?.takeIf { it.isNotEmpty() }, size = size), tick)
+            } catch (error: IOException) {
+                // The signed link is one-time: a 401 from the CDN means it went stale, so ask for a new one once.
+                val stale = generateSequence<Throwable>(error) { it.cause }.any { it is HttpError && it.code == 401 }
+                if (!stale || freshLink == null) throw error
+                val renewed = freshLink()
+                policy.check(renewed)
+                downloader.fetch(RemoteFile(url = renewed, target = target, sha1 = digest?.takeIf { it.isNotEmpty() }, size = size), tick)
+            }
+        } catch (error: PackDownloadDeclined) {
+            throw error
+        } catch (error: IOException) {
+            throw FetchFailed(error)
+        }
         return target
     }
 
@@ -532,7 +598,7 @@ class Packs(
         if (fileId != null) {
             val body = downloader.text("$curseForgeBase/v1/mods/$projectId/files/$fileId")
             val data = MojangJson.parseToJsonElement(body).jsonObject["data"]?.jsonObject
-                ?: throw IOException("CurseForge не отдал файл сборки — попробуй позже")
+                ?: throw IOException(tr("CurseForge не отдал файл сборки — попробуй позже"))
             return archiveOf(data, projectId)
         }
         val body = downloader.text("$curseForgeBase/v1/mods/$projectId/files?pageSize=30")
@@ -548,7 +614,7 @@ class Packs(
         val pool = clientOnly.ifEmpty { list }
         val picked = pool.firstOrNull { it["releaseType"]?.jsonPrimitive?.longOrNull == 1L }
             ?: pool.firstOrNull()
-            ?: throw IOException("у сборки на CurseForge нет ни одного файла — выбери другую сборку")
+            ?: throw IOException(tr("у сборки на CurseForge нет ни одного файла — выбери другую сборку"))
         return archiveOf(picked, projectId)
     }
 
@@ -575,7 +641,7 @@ class Packs(
                 val body = downloader.text("$curseForgeBase/v1/mods/$projectId/files/$id/download-url")
                 val link = MojangJson.parseToJsonElement(body).jsonObject["data"]?.jsonPrimitive?.content
                     ?.takeIf { it.isNotEmpty() && it != "null" }
-                    ?: throw IOException("автор сборки запретил скачивание — поставь её вручную с сайта CurseForge")
+                    ?: throw IOException(tr("автор сборки запретил скачивание — поставь её вручную с сайта CurseForge"))
                 listOf(link)
             }
         }
@@ -583,26 +649,44 @@ class Packs(
     }
 
     @Throws(IOException::class)
-    private suspend fun fetchModpackArchive(file: ModpackArchive, target: File): File {
+    private suspend fun fetchModpackArchive(file: ModpackArchive, target: File, onProgress: (PackProgress) -> Unit = {}): File {
         var lastError: IOException? = null
         for (url in file.urls) {
             try {
-                return fetchArchive(url, target, file.sha1, file.size)
+                return fetchArchive(url, target, file.sha1, file.size, onProgress = onProgress)
             } catch (error: IOException) {
                 lastError = error
             }
         }
-        throw lastError ?: IOException("у сборки на CurseForge нет адреса для скачивания — попробуй позже")
+        throw lastError ?: IOException(tr("у сборки на CurseForge нет адреса для скачивания — попробуй позже"))
     }
 
+    /** The same folder for the same pack: the archive broken off by the network is continued, not fetched again. */
     private fun newWorkDir(tag: String): File {
         val root = File(layout.caches, "packs")
         root.mkdirs()
-        val work = File(root, SafePath.fileName("work-$tag-" + System.nanoTime()))
-        work.deleteRecursively()
+        val now = System.currentTimeMillis()
+        root.listFiles { f -> f.isDirectory && f.name.startsWith("work-") }.orEmpty()
+            .filter { now - it.lastModified() > 2 * 24 * 3_600_000L }
+            .forEach { it.deleteRecursively() }
+        val work = File(root, SafePath.fileName("work-$tag"))
+        File(work, "unpacked").deleteRecursively()
         work.mkdirs()
+        work.setLastModified(now)
         return work
     }
+
+    /** A network failure keeps the downloaded archive for the next try; any other one clears the folder. */
+    private fun abandon(work: File, failure: Exception) {
+        if (failure is FetchFailed) {
+            File(work, "unpacked").deleteRecursively()
+        } else {
+            work.deleteRecursively()
+        }
+    }
+
+    /** The archive itself did not come down: what is already on disk is worth keeping. */
+    private class FetchFailed(cause: IOException) : IOException(cause.message, cause)
 
     private data class ModpackArchive(
         val id: String,
@@ -619,6 +703,7 @@ class Packs(
  * is unpacked into a game folder at anything else.
  */
 const val CATALOG_PACK_HOST = "garage.millida.net"
+val CATALOG_MIRROR_HOSTS: Set<String> = setOf("cdn.millida.net", "cdn.millida.trade")
 
 /** A catalogue card's modpack file on our mirror, as the card describes it. */
 data class MirroredPackFile(

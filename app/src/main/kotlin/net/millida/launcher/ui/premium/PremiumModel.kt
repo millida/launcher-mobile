@@ -17,6 +17,7 @@ import net.millida.launcher.core.catalog.MillidaPaid
 import net.millida.launcher.core.hub.HealthLine
 import net.millida.launcher.core.hub.Hub
 import net.millida.launcher.core.hub.HubClient
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.premium.PackView
 import net.millida.launcher.core.premium.Premium
 import net.millida.launcher.core.premium.PremiumAction
@@ -193,18 +194,18 @@ class PremiumModel(
     fun manage(sub: PremiumSubscription) {
         val url = sub.manageUrl ?: return
         if (!MillidaPaid.isPaymentUrl(url) || !host.openExternal(url)) {
-            host.notice("Управление подпиской — на millida.net в кошельке", true)
+            host.notice(tr("Управление подпиской — на millida.net в кошельке"), true)
         }
     }
 
     fun openVideo(url: String) {
-        if (!PackView.isHttps(url) || !host.openExternal(url)) host.notice("Видео не открылось — посмотри его на сайте", true)
+        if (!PackView.isHttps(url) || !host.openExternal(url)) host.notice(tr("Видео не открылось — посмотри его на сайте"), true)
     }
 
     private fun pay(pack: PremiumPack, ask: suspend () -> String) {
         if (mutable.value.asking != null || pack.id in mutable.value.waiting) return
         if (!host.signedIn) {
-            host.notice("Войди в аккаунт Millida — покупки хранятся в нём", true)
+            host.notice(tr("Войди в аккаунт Millida — покупки хранятся в нём"), true)
             host.signIn()
             return
         }
@@ -214,11 +215,11 @@ class PremiumModel(
                 val url = withContext(Dispatchers.IO) { ask() }
                 mutable.update { it.copy(asking = null) }
                 if (!MillidaPaid.isPaymentUrl(url)) {
-                    host.notice("Ссылка на оплату не прошла проверку — оплати на millida.net", true)
+                    host.notice(tr("Ссылка на оплату не прошла проверку — оплати на millida.net"), true)
                     return@launch
                 }
                 if (!host.openExternal(url)) {
-                    host.notice("Не открылась страница оплаты — оплати на millida.net", true)
+                    host.notice(tr("Не открылась страница оплаты — оплати на millida.net"), true)
                     return@launch
                 }
                 mutable.update { it.copy(waiting = it.waiting + pack.id) }
@@ -227,11 +228,11 @@ class PremiumModel(
                 throw cancelled
             } catch (expired: Unauthorized) {
                 mutable.update { it.copy(asking = null) }
-                host.notice("Войди в аккаунт Millida — покупки хранятся в нём", true)
+                host.notice(tr("Войди в аккаунт Millida — покупки хранятся в нём"), true)
                 host.signIn()
             } catch (error: Throwable) {
                 mutable.update { it.copy(asking = null) }
-                host.notice("Оплата не открылась: ${host.errorText(error).replaceFirstChar { it.lowercase() }}", true)
+                host.notice(tr("Оплата не открылась: {0}", host.errorText(error).replaceFirstChar { it.lowercase() }), true)
             }
         }
     }
@@ -273,7 +274,7 @@ class PremiumModel(
                 page = state.page?.takeIf { it.pack.id == id }?.copy(detail = detail) ?: state.page,
             )
         }
-        host.notice(if (detail.pack.owned) "Куплено" else "Подписка оформлена", false)
+        host.notice(if (detail.pack.owned) tr("Куплено") else tr("Подписка оформлена"), false)
         reload()
     }
 

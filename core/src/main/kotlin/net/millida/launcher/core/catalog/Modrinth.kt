@@ -6,6 +6,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import net.millida.launcher.core.SafePath
 import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.http.RemoteFile
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.LoaderKind
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
@@ -201,7 +202,7 @@ class ModrinthCatalog(
         profileDir: File,
         onProgress: (Float) -> Unit = {},
     ): File {
-        val file = version.primaryFile() ?: throw IOException("у версии нет файла для скачивания")
+        val file = version.primaryFile() ?: throw IOException(tr("у версии нет файла для скачивания"))
         val folder = File(profileDir, kind.folder).also { it.mkdirs() }
         val target = SafePath.join(folder, SafePath.fileName(file.filename))
         var received = 0L

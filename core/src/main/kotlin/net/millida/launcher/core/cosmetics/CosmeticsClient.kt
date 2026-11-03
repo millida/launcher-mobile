@@ -14,6 +14,7 @@ import net.millida.launcher.core.account.MillidaAuth
 import java.io.IOException
 import java.net.URLEncoder
 
+import net.millida.launcher.core.i18n.tr
 /** Geometry is served to signed-in players only and under a daily cap, so it is asked for what is worn or tried on. */
 class CosmeticModelFile(
     val geometry: JsonElement,
@@ -47,7 +48,7 @@ class CosmeticsClient(private val auth: MillidaAuth) {
             "/cosmetics/equipped",
             "POST",
             buildJsonObject { putJsonArray("players") { add(uuid) } },
-        ) as? JsonObject ?: throw IOException("сервер вернул не тот ответ — обнови гардероб")
+        ) as? JsonObject ?: throw IOException(tr("сервер вернул не тот ответ — обнови гардероб"))
         val players = answer["players"] as? JsonObject ?: return emptyList()
         val wanted = uuid.replace("-", "")
         val key = players.keys.firstOrNull { it.replace("-", "") == wanted } ?: return emptyList()
@@ -77,7 +78,7 @@ class CosmeticsClient(private val auth: MillidaAuth) {
             },
         )
         if ((answer["ok"] as? JsonPrimitive)?.content == "false") {
-            throw IOException("сервер не принял набор — обнови гардероб и попробуй ещё раз")
+            throw IOException(tr("сервер не принял набор — обнови гардероб и попробуй ещё раз"))
         }
     }
 
@@ -85,7 +86,7 @@ class CosmeticsClient(private val auth: MillidaAuth) {
         val path = "/cosmetics/models/" + URLEncoder.encode(modelId, "UTF-8").replace("+", "%20")
         val answer = auth.authorized(path, "GET", null)
         val geometry = answer["geometry"]?.takeIf { it !is JsonNull }
-            ?: throw IOException("у вещи нет модели — обнови гардероб")
+            ?: throw IOException(tr("у вещи нет модели — обнови гардероб"))
         return CosmeticModelFile(
             geometry = geometry,
             geometrySlim = answer["geometrySlim"]?.takeIf { it !is JsonNull },

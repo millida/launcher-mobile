@@ -3,9 +3,11 @@ package net.millida.launcher.ui.hosting
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -13,10 +15,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import net.millida.launcher.HostingBackupsState
 import net.millida.launcher.HostingToolsModel
 import net.millida.launcher.copyFailed
 import net.millida.launcher.copyPending
 import net.millida.launcher.core.hosting.HostingBackup
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.forServer
 import net.millida.launcher.ui.MBadge
 import net.millida.launcher.ui.MBottomSheet
@@ -32,152 +36,180 @@ import net.millida.launcher.ui.MPrimaryButton
 import net.millida.launcher.ui.MSkeletonRow
 import net.millida.launcher.ui.millida
 
+internal data class HostingBackupsView(
+    val state: HostingBackupsState?,
+    val allowed: Boolean,
+    val creating: Boolean,
+    val restoringNow: Boolean,
+)
+
+@Stable
+internal class HostingBackupsPicks {
+    var menuFor by mutableStateOf<HostingBackup?>(null)
+    var restoring by mutableStateOf<HostingBackup?>(null)
+    var deleting by mutableStateOf<HostingBackup?>(null)
+}
+
+/** The desktop panel keeps backups under «Мир», so the world tab carries this section instead of a tab of its own. */
 @Composable
-fun HostingBackupsTab(serverId: String, tools: HostingToolsModel) {
+internal fun rememberHostingBackups(serverId: String, tools: HostingToolsModel): HostingBackupsView {
     LaunchedEffect(serverId) { tools.openBackups(serverId) }
-    val colors = millida
     val all by tools.backups.collectAsState()
     val busy by tools.busy.collectAsState()
     val rights by tools.rights.collectAsState()
     val access = rights.forServer(serverId)
-    val state = all.takeIf { it.serverId == serverId }
-    val creating = tools.key(serverId, "backups:create") in busy
-    val restoringNow = tools.key(serverId, "backups:restore") in busy
+    return HostingBackupsView(
+        state = all.takeIf { it.serverId == serverId },
+        allowed = access == null || access.can("backups"),
+        creating = tools.key(serverId, "backups:create") in busy,
+        restoringNow = tools.key(serverId, "backups:restore") in busy,
+    )
+}
 
-    var menuFor by remember { mutableStateOf<HostingBackup?>(null) }
-    var restoring by remember { mutableStateOf<HostingBackup?>(null) }
-    var deleting by remember { mutableStateOf<HostingBackup?>(null) }
-
-    if (access != null && !access.can("backups")) {
-        ToolsList { item(key = "no-rights") { ToolsNoRights() } }
-    } else {
-        ToolsList {
-            item(key = "head") {
-                MCard {
-                    ToolsHead(
-                        title = "Резервные копии",
-                        subtitle = state?.items?.let { list -> if (list.isEmpty()) "Пока ни одной" else "Всего: ${list.size}" },
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    MPrimaryButton(
-                        "Создать копию",
-                        onClick = { tools.createBackup(serverId) },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !restoringNow,
-                        icon = MIcons.plus,
-                        loading = creating,
-                    )
-                }
+internal fun LazyListScope.hostingBackupItems(
+    serverId: String,
+    tools: HostingToolsModel,
+    view: HostingBackupsView,
+    picks: HostingBackupsPicks,
+) {
+    if (!view.allowed) return
+    val state = view.state
+    item(key = "backups-head") {
+        MCard {
+            ToolsHead(
+                title = tr("Резервные копии"),
+                subtitle = state?.items?.let { list -> if (list.isEmpty()) tr("Пока ни одной") else tr("Всего: {size}", list.size) },
+            )
+            Spacer(Modifier.height(12.dp))
+            MPrimaryButton(
+                tr("Создать копию"),
+                onClick = { tools.createBackup(serverId) },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !view.restoringNow,
+                icon = MIcons.plus,
+                loading = view.creating,
+            )
+        }
+    }
+    state?.restoring?.let { job ->
+        item(key = "backups-restoring") { ToolsJobCard(tr("Восстанавливаем из копии"), job) }
+    }
+    val list = state?.items
+    val error = state?.error
+    when {
+        error != null && list == null -> item(key = "backups-error") {
+            MErrorCard(error, onRetry = { tools.loadBackups(serverId) })
+        }
+        list == null -> items(3, key = { "backups-skeleton-$it" }) { MSkeletonRow() }
+        list.isEmpty() -> item(key = "backups-empty") {
+            MEmptyState(icon = MIcons.chest, title = tr("Копий пока нет"))
+        }
+        else -> {
+            if (error != null) {
+                item(key = "backups-error") { MErrorCard(error, onRetry = { tools.loadBackups(serverId) }) }
             }
-            state?.restoring?.let { job ->
-                item(key = "restoring") { ToolsJobCard("Восстанавливаем из копии", job) }
-            }
-            val list = state?.items
-            val error = state?.error
-            when {
-                error != null && list == null -> item(key = "error") {
-                    MErrorCard(error, onRetry = { tools.loadBackups(serverId) })
-                }
-                list == null -> items(3, key = { "skeleton-$it" }) { MSkeletonRow() }
-                list.isEmpty() -> item(key = "empty") {
-                    MEmptyState(icon = MIcons.chest, title = "Копий пока нет")
-                }
-                else -> {
-                    if (error != null) {
-                        item(key = "error") { MErrorCard(error, onRetry = { tools.loadBackups(serverId) }) }
-                    }
-                    items(list, key = { "backup:" + it.id }) { backup ->
-                        MListRow(
-                            title = backupTitle(backup),
-                            modifier = Modifier.animateItem(),
-                            subtitle = backupSubtitle(backup),
-                            icon = MIcons.chest,
-                            onClick = { menuFor = backup },
-                            trailing = when {
-                                backup.copyPending -> {
-                                    { MPixelLoader() }
-                                }
-                                backup.copyFailed -> {
-                                    { MBadge("не собралась", colors.danger, colors.dangerSoft) }
-                                }
-                                backup.locked -> {
-                                    { MIcon(MIcons.lock, size = 18.dp, color = colors.fgFaint) }
-                                }
-                                else -> null
-                            },
-                        )
-                    }
-                }
+            items(list, key = { "backup:" + it.id }) { backup ->
+                val colors = millida
+                MListRow(
+                    title = backupTitle(backup),
+                    modifier = Modifier.animateItem(),
+                    subtitle = backupSubtitle(backup),
+                    icon = MIcons.chest,
+                    onClick = { picks.menuFor = backup },
+                    trailing = when {
+                        backup.copyPending -> {
+                            { MPixelLoader() }
+                        }
+                        backup.copyFailed -> {
+                            { MBadge(tr("не собралась"), colors.danger, colors.dangerSoft) }
+                        }
+                        backup.locked -> {
+                            { MIcon(MIcons.lock, size = 18.dp, color = colors.fgFaint) }
+                        }
+                        else -> null
+                    },
+                )
             }
         }
     }
+}
 
-    menuFor?.let { backup ->
-        MBottomSheet(onDismiss = { menuFor = null }, title = backupTitle(backup)) {
+@Composable
+internal fun HostingBackupDialogs(
+    serverId: String,
+    tools: HostingToolsModel,
+    view: HostingBackupsView,
+    picks: HostingBackupsPicks,
+) {
+    picks.menuFor?.let { backup ->
+        MBottomSheet(onDismiss = { picks.menuFor = null }, title = backupTitle(backup)) {
             ToolsSheetAction(
-                "Восстановить",
+                tr("Восстановить"),
                 MIcons.refresh,
-                enabled = !backup.copyPending && !backup.copyFailed && state?.restoring == null,
+                enabled = !backup.copyPending && !backup.copyFailed && view.state?.restoring == null,
                 onClick = {
-                    menuFor = null
-                    restoring = backup
+                    picks.menuFor = null
+                    picks.restoring = backup
                 },
             )
             if (!backup.locked) {
                 ToolsSheetAction(
-                    "Удалить",
+                    tr("Удалить"),
                     MIcons.trash,
                     enabled = !backup.copyPending,
                     onClick = {
-                        menuFor = null
-                        deleting = backup
+                        picks.menuFor = null
+                        picks.deleting = backup
                     },
                 )
             }
         }
     }
 
-    restoring?.let { backup ->
+    picks.restoring?.let { backup ->
         MConfirmDialog(
-            title = "Восстановить копию?",
-            text = "Мир и файлы заменятся копией от ${backupTitle(backup)}. Сервер должен быть выключен",
-            confirm = "Восстановить",
+            title = tr("Восстановить копию?"),
+            text = tr("Мир и файлы заменятся копией от {0}. Сервер должен быть выключен", backupTitle(backup)),
+            confirm = tr("Восстановить"),
             onConfirm = {
-                restoring = null
+                picks.restoring = null
                 tools.restoreBackup(serverId, backup)
             },
-            onDismiss = { restoring = null },
+            onDismiss = { picks.restoring = null },
         )
     }
 
-    deleting?.let { backup ->
+    picks.deleting?.let { backup ->
         MConfirmDialog(
-            title = "Удалить копию?",
-            text = "Копию от ${backupTitle(backup)} не вернуть",
-            confirm = "Удалить",
+            title = tr("Удалить копию?"),
+            text = tr("Копию от {0} не вернуть", backupTitle(backup)),
+            confirm = tr("Удалить"),
             onConfirm = {
-                deleting = null
+                picks.deleting = null
                 tools.deleteBackup(serverId, backup)
             },
-            onDismiss = { deleting = null },
+            onDismiss = { picks.deleting = null },
         )
     }
 }
 
-private fun backupTitle(backup: HostingBackup): String = toolsMoment(backup.createdAt).ifEmpty { "Копия" }
+@Composable
+internal fun rememberHostingBackupPicks(serverId: String): HostingBackupsPicks = remember(serverId) { HostingBackupsPicks() }
+
+private fun backupTitle(backup: HostingBackup): String = toolsMoment(backup.createdAt).ifEmpty { tr("Копия") }
 
 private fun backupSubtitle(backup: HostingBackup): String {
     val size = if (backup.sizeMb > 0) toolsBytes(backup.sizeMb * 1024 * 1024) else ""
     val kind = when (backup.kind.lowercase()) {
-        "manual" -> "вручную"
-        "auto", "daily", "scheduled", "schedule" -> "автоматически"
+        "manual" -> tr("вручную")
+        "auto", "daily", "scheduled", "schedule" -> tr("автоматически")
         else -> ""
     }
     val status = when {
-        backup.copyPending -> "собирается"
-        backup.copyFailed -> "не собралась"
+        backup.copyPending -> tr("собирается")
+        backup.copyFailed -> tr("не собралась")
         else -> ""
     }
-    val guard = if (backup.locked) "защищена" else ""
-    return listOf(size, kind, status, guard).filter { it.isNotEmpty() }.joinToString(" · ").ifEmpty { "копия сервера" }
+    val guard = if (backup.locked) tr("защищена") else ""
+    return listOf(size, kind, status, guard).filter { it.isNotEmpty() }.joinToString(" · ").ifEmpty { tr("копия сервера") }
 }

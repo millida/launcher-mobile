@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -13,18 +14,28 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import net.millida.launcher.UiState
+import net.millida.launcher.core.account.Account
+import net.millida.launcher.core.account.AccountKind
 import net.millida.launcher.core.catalog.CatalogItem
 import net.millida.launcher.core.catalog.CatalogSource
 import net.millida.launcher.core.friends.Friend
 import net.millida.launcher.core.friends.FriendPlace
 import net.millida.launcher.core.mojang.VersionManifest
 import net.millida.launcher.core.hosting.HostingServerState
+import net.millida.launcher.core.premium.PremiumPack
+import net.millida.launcher.core.profile.Profile
 import net.millida.launcher.core.rating.RatedServer
+import net.millida.launcher.ui.character.CharacterLook
+import net.millida.launcher.ui.home.LobbyBanner
+import net.millida.launcher.ui.home.LobbyState
+import net.millida.launcher.ui.home.WideLobby
+import net.millida.launcher.ui.home.WideLobbyActions
 
 /**
  * The shapes the launcher actually breaks on: a 1080x2400 phone at 395 dpi is
@@ -148,13 +159,7 @@ private fun FriendCardPreview() = PreviewFrame {
 @Composable
 private fun AccountEntryPreview() = PreviewFrame {
     ScreenTitle("Аккаунт", "Вход не выполнен")
-    AccountEntrySection(
-        offlineNick = "",
-        onOfflineNick = {},
-        onMillida = {},
-        onMicrosoft = {},
-        onOffline = {},
-    )
+    AccountChoice(onPick = {}, onBuy = {})
 }
 
 @NarrowPreviews
@@ -326,3 +331,109 @@ private fun KitGalleryLightPreview() = KitGallery(dark = false)
 @Preview(name = "Кит, 320 dp", widthDp = 320, heightDp = 3000, showBackground = true)
 @Composable
 private fun KitGalleryNarrowPreview() = KitGallery(dark = true)
+
+/**
+ * The landscape lobby on the shapes it has to survive: the owner's 2400x1080
+ * phone, a 360 dp tall Samsung with the system font at 1.3, and a tablet.
+ * Each shows the desktop's scene, the tiles with their characters over the
+ * top edge, the figure filling the height and the banner on the right.
+ */
+@Preview(name = "Лобби, телефон 2400x1080", device = "spec:width=2400px,height=1080px,dpi=440,orientation=landscape")
+@Preview(name = "Лобби, 360 dp, крупный шрифт", device = "spec:width=800dp,height=360dp,dpi=480,orientation=landscape", fontScale = 1.3f)
+@Preview(name = "Лобби, планшет", device = "spec:width=1280dp,height=800dp,dpi=240,orientation=landscape")
+private annotation class WideLobbyPreviews
+
+private val previewBuild = Profile(id = "vanilla", name = "Майнкрафт", gameVersion = "26.2")
+
+private val previewPack = PremiumPack(id = "arcania", title = "Arcania 1.4.3", loader = "Fabric", mcVersion = "1.20.1", downloads = 11_000)
+
+private val previewSignedIn = UiState(
+    account = Account(id = "yuk", kind = AccountKind.MILLIDA, nick = "Yuk_50", uuid = ""),
+    millidaSignedIn = true,
+)
+
+private val previewBanners = listOf(
+    LobbyBanner.Discord,
+    LobbyBanner.Telegram,
+    LobbyBanner.OwnEvent(online = 214),
+    LobbyBanner.Pack(previewPack),
+    LobbyBanner.Invite(plusDays = 2),
+)
+
+private val previewPlayed = LobbyState(totalSeconds = 9_360L)
+
+@Composable
+private fun WideLobbyFrame(
+    state: UiState,
+    lobby: LobbyState = LobbyState(),
+    banners: List<LobbyBanner> = previewBanners,
+    bannerStart: Int = 0,
+) {
+    MillidaTheme(dark = true) {
+        CompositionLocalProvider(LocalWideLayout provides true) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(millida.bg),
+            ) {
+                WideLobby(
+                    state = state,
+                    lobby = lobby,
+                    look = CharacterLook(nick = "Yuk_50", skinUrl = null, slim = false, capeUrl = null),
+                    active = previewBuild,
+                    hostedCount = 0,
+                    shopAlert = true,
+                    bonusReady = true,
+                    recommend = previewPack,
+                    banners = banners,
+                    bannerStart = bannerStart,
+                    actions = WideLobbyActions(
+                        onPick = {},
+                        onPlay = {},
+                        onCancel = {},
+                        onCharacter = {},
+                        onShop = {},
+                        onHosting = {},
+                        onFriends = {},
+                        onSettings = {},
+                        onRecommend = {},
+                        onBanner = {},
+                        onChest = {},
+                        onParty = {},
+                        onInvite = {},
+                        onHelp = {},
+                        onFeedback = {},
+                    ),
+                    accountMenu = { _, _, _ -> },
+                )
+            }
+        }
+    }
+}
+
+@WideLobbyPreviews
+@Composable
+private fun WideLobbyPreview() = WideLobbyFrame(previewSignedIn)
+
+@WideLobbyPreviews
+@Composable
+private fun WideLobbyHoursPreview() = WideLobbyFrame(previewSignedIn, lobby = previewPlayed, bannerStart = 3)
+
+@WideLobbyPreviews
+@Composable
+private fun WideLobbyInvitePreview() = WideLobbyFrame(previewSignedIn, lobby = previewPlayed, bannerStart = 4)
+
+@WideLobbyPreviews
+@Composable
+private fun WideLobbyNoBannerPreview() = WideLobbyFrame(previewSignedIn, lobby = previewPlayed, banners = emptyList())
+
+@WideLobbyPreviews
+@Composable
+private fun WideLobbyDownloadPreview() = WideLobbyFrame(
+    previewSignedIn.copy(
+        tasks = listOf("Готовим игру"),
+        progress = 0.65f,
+        progressNote = "Ресурсы: 31 из 3350",
+        preparingGame = true,
+    ),
+)

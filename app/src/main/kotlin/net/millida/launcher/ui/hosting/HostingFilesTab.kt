@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import net.millida.launcher.HostingEditorState
 import net.millida.launcher.HostingToolsModel
 import net.millida.launcher.core.hosting.HostingFileEntry
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.forServer
 import net.millida.launcher.ui.MButtonRow
 import net.millida.launcher.ui.MButtonSize
@@ -106,7 +107,7 @@ private fun FileBrowser(serverId: String, tools: HostingToolsModel) {
             uploadDir = dir
             pickUpload.launch(arrayOf("*/*"))
         } else {
-            locked = "Загрузка своих файлов"
+            locked = tr("Загрузка своих файлов")
         }
     }
     val openEntry: (HostingFileEntry) -> Unit = { entry ->
@@ -114,7 +115,7 @@ private fun FileBrowser(serverId: String, tools: HostingToolsModel) {
         when {
             entry.dir -> tools.loadFiles(serverId, path)
             toolsIsText(entry.name) && entry.size <= TOOLS_EDIT_LIMIT -> tools.openEditor(serverId, path)
-            toolsIsText(entry.name) -> tools.tell("Файл больше 512 КБ — скачай его, чтобы открыть", true)
+            toolsIsText(entry.name) -> tools.tell(tr("Файл больше 512 КБ — скачай его, чтобы открыть"), true)
             else -> {
                 menuFor = entry
             }
@@ -136,21 +137,21 @@ private fun FileBrowser(serverId: String, tools: HostingToolsModel) {
                 MButtonRow {
                     if (full) {
                         MSecondaryButton(
-                            "Папка",
+                            tr("Папка"),
                             onClick = { naming = NameAsk.Folder },
                             icon = MIcons.plus,
                             size = MButtonSize.Small,
                         )
                         MSecondaryButton(
-                            "Загрузить",
+                            tr("Загрузить"),
                             onClick = startUpload,
                             icon = MIcons.upload,
                             size = MButtonSize.Small,
                             enabled = ownTransfer == null,
                         )
                     } else {
-                        ToolsLockButton("Папка") { locked = "Свои папки" }
-                        ToolsLockButton("Загрузить") { locked = "Загрузка своих файлов" }
+                        ToolsLockButton(tr("Папка")) { locked = tr("Свои папки") }
+                        ToolsLockButton(tr("Загрузить")) { locked = tr("Загрузка своих файлов") }
                     }
                 }
             }
@@ -158,7 +159,7 @@ private fun FileBrowser(serverId: String, tools: HostingToolsModel) {
                 item(key = "transfer") { ToolsTransferCard(ownTransfer, onCancel = { tools.cancelTransfer() }) }
             }
             state?.extracting?.let { job ->
-                item(key = "extract") { ToolsJobCard("Распаковываем ${job.name}", job) }
+                item(key = "extract") { ToolsJobCard(tr("Распаковываем {name}", job.name), job) }
             }
             val entries = state?.entries
             val error = state?.error
@@ -170,8 +171,8 @@ private fun FileBrowser(serverId: String, tools: HostingToolsModel) {
                 entries.isEmpty() -> item(key = "empty") {
                     MEmptyState(
                         icon = MIcons.inbox,
-                        title = "Папка пуста",
-                        actionText = if (full) "Загрузить" else null,
+                        title = tr("Папка пуста"),
+                        actionText = if (full) tr("Загрузить") else null,
                         onAction = if (full) startUpload else null,
                         actionIcon = MIcons.upload,
                         primary = false,
@@ -199,42 +200,42 @@ private fun FileBrowser(serverId: String, tools: HostingToolsModel) {
     menuFor?.let { entry ->
         MBottomSheet(onDismiss = { menuFor = null }, title = entry.name) {
             if (!entry.dir && toolsIsText(entry.name)) {
-                ToolsSheetAction("Открыть", MIcons.edit, onClick = {
+                ToolsSheetAction(tr("Открыть"), MIcons.edit, onClick = {
                     menuFor = null
                     openEntry(entry)
                 })
             }
             if (!entry.dir) {
-                ToolsSheetAction("Скачать", MIcons.download, locked = !full, enabled = ownTransfer == null, onClick = {
+                ToolsSheetAction(tr("Скачать"), MIcons.download, locked = !full, enabled = ownTransfer == null, onClick = {
                     menuFor = null
                     if (full) {
                         downloadDir = dir
                         downloadName = entry.name
                         pickTarget.launch(entry.name)
                     } else {
-                        locked = "Скачивание файлов"
+                        locked = tr("Скачивание файлов")
                     }
                 })
             }
             if (!entry.dir && toolsIsArchive(entry.name)) {
-                ToolsSheetAction("Распаковать", MIcons.chest, locked = !full, onClick = {
+                ToolsSheetAction(tr("Распаковать"), MIcons.chest, locked = !full, onClick = {
                     menuFor = null
                     if (full) {
                         unpacking = entry
                     } else {
-                        locked = "Распаковка архивов"
+                        locked = tr("Распаковка архивов")
                     }
                 })
             }
-            ToolsSheetAction("Переименовать", MIcons.brush, locked = !full, onClick = {
+            ToolsSheetAction(tr("Переименовать"), MIcons.brush, locked = !full, onClick = {
                 menuFor = null
                 if (full) {
                     naming = NameAsk.Rename(entry.name)
                 } else {
-                    locked = "Переименование файлов"
+                    locked = tr("Переименование файлов")
                 }
             })
-            ToolsSheetAction("Удалить", MIcons.trash, onClick = {
+            ToolsSheetAction(tr("Удалить"), MIcons.trash, onClick = {
                 menuFor = null
                 deleting = entry
             })
@@ -258,9 +259,9 @@ private fun FileBrowser(serverId: String, tools: HostingToolsModel) {
 
     deleting?.let { entry ->
         MConfirmDialog(
-            title = "Удалить «${entry.name}»?",
-            text = if (entry.dir) "Папка удалится со всем содержимым" else "Файл не вернуть",
-            confirm = "Удалить",
+            title = tr("Удалить «{name}»?", entry.name),
+            text = if (entry.dir) tr("Папка удалится со всем содержимым") else tr("Файл не вернуть"),
+            confirm = tr("Удалить"),
             onConfirm = {
                 deleting = null
                 tools.deleteEntry(serverId, dir, entry)
@@ -271,9 +272,9 @@ private fun FileBrowser(serverId: String, tools: HostingToolsModel) {
 
     unpacking?.let { entry ->
         MConfirmDialog(
-            title = "Распаковать «${entry.name}»?",
-            text = "Файлы лягут в эту папку",
-            confirm = "Распаковать",
+            title = tr("Распаковать «{name}»?", entry.name),
+            text = tr("Файлы лягут в эту папку"),
+            confirm = tr("Распаковать"),
             danger = false,
             onConfirm = {
                 unpacking = null
@@ -298,7 +299,7 @@ private fun PathBar(dir: String, onOpen: (String) -> Unit, onRefresh: () -> Unit
             MIcons.arrowUp,
             onClick = { onOpen(parts.dropLast(1).joinToString("/")) },
             enabled = parts.isNotEmpty(),
-            label = "Наверх",
+            label = tr("Наверх"),
         )
         Spacer(Modifier.width(8.dp))
         Row(
@@ -308,7 +309,7 @@ private fun PathBar(dir: String, onOpen: (String) -> Unit, onRefresh: () -> Unit
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MChip(text = "сервер", selected = parts.isEmpty(), onClick = { onOpen("") }, icon = MIcons.server)
+            MChip(text = tr("сервер"), selected = parts.isEmpty(), onClick = { onOpen("") }, icon = MIcons.server)
             parts.forEachIndexed { index, part ->
                 MChip(
                     text = part,
@@ -318,7 +319,7 @@ private fun PathBar(dir: String, onOpen: (String) -> Unit, onRefresh: () -> Unit
             }
         }
         Spacer(Modifier.width(8.dp))
-        MIconButton(MIcons.refresh, onClick = onRefresh, label = "Обновить папку")
+        MIconButton(MIcons.refresh, onClick = onRefresh, label = tr("Обновить папку"))
     }
 }
 
@@ -332,7 +333,7 @@ private fun FileRow(
 ) {
     val moment = toolsMoment(entry.modTime)
     val subtitle = if (entry.dir) {
-        "папка"
+        tr("папка")
     } else {
         listOf(toolsBytes(entry.size), moment).filter { it.isNotEmpty() }.joinToString(" · ")
     }
@@ -349,7 +350,7 @@ private fun FileRow(
         onClick = onOpen,
         trailing = {
             if (working) MPixelLoader()
-            MIconButton(MIcons.more, onClick = onMenu, label = "Действия: ${entry.name}")
+            MIconButton(MIcons.more, onClick = onMenu, label = tr("Действия: {name}", entry.name))
         },
     )
 }
@@ -360,20 +361,20 @@ private fun NameDialog(ask: NameAsk, working: Boolean, onDismiss: () -> Unit, on
     val rename = ask is NameAsk.Rename
     val ready = value.isNotBlank() && !working
     MDialog(
-        title = if (rename) "Новое имя" else "Новая папка",
+        title = if (rename) tr("Новое имя") else tr("Новая папка"),
         onDismiss = onDismiss,
         body = {
             MField(
                 value = value,
                 onValueChange = { value = it },
-                placeholder = if (rename) "Имя файла" else "Название папки",
+                placeholder = if (rename) tr("Имя файла") else tr("Название папки"),
                 onImeAction = { if (ready) onSubmit(value) },
             )
         },
         actions = {
-            MTextButton("Отмена", onClick = onDismiss)
+            MTextButton(tr("Отмена"), onClick = onDismiss)
             MPrimaryButton(
-                if (rename) "Переименовать" else "Создать",
+                if (rename) tr("Переименовать") else tr("Создать"),
                 onClick = { onSubmit(value) },
                 enabled = value.isNotBlank(),
                 loading = working,
@@ -401,7 +402,7 @@ private fun FileEditor(state: HostingEditorState, tools: HostingToolsModel) {
             .padding(start = screenPadding, end = screenPadding, top = 6.dp, bottom = 16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            MIconButton(MIcons.back, onClick = close, label = "К файлам")
+            MIconButton(MIcons.back, onClick = close, label = tr("К файлам"))
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -412,7 +413,7 @@ private fun FileEditor(state: HostingEditorState, tools: HostingToolsModel) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    if (state.dirty) "есть несохранённые правки" else state.path,
+                    if (state.dirty) tr("есть несохранённые правки") else state.path,
                     style = MillidaType.small,
                     color = if (state.dirty) colors.warning else colors.fgFaint,
                     maxLines = 1,
@@ -421,7 +422,7 @@ private fun FileEditor(state: HostingEditorState, tools: HostingToolsModel) {
             }
             Spacer(Modifier.width(10.dp))
             MPrimaryButton(
-                "Сохранить",
+                tr("Сохранить"),
                 onClick = { tools.saveEditor() },
                 enabled = state.dirty,
                 icon = MIcons.check,
@@ -444,9 +445,9 @@ private fun FileEditor(state: HostingEditorState, tools: HostingToolsModel) {
     }
     if (leaving) {
         MConfirmDialog(
-            title = "Выйти без сохранения?",
-            text = "Правки в «${state.name}» пропадут",
-            confirm = "Выйти",
+            title = tr("Выйти без сохранения?"),
+            text = tr("Правки в «{name}» пропадут", state.name),
+            confirm = tr("Выйти"),
             onConfirm = {
                 leaving = false
                 tools.closeEditor()

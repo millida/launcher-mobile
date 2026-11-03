@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import net.millida.launcher.core.cabinet.CabinetWalletClient
+import net.millida.launcher.core.hosting.HostingActionResult
 import net.millida.launcher.core.hosting.HostingClient
 import net.millida.launcher.core.hosting.HostingCrash
 import net.millida.launcher.core.hosting.HostingError
@@ -25,6 +26,8 @@ import net.millida.launcher.core.hosting.HostingUsage
 import net.millida.launcher.core.hosting.HOSTING_NAME_MAX
 import net.millida.launcher.core.hosting.HOSTING_NAME_MIN
 
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trSource
 enum class ConsoleLink { Idle, Connecting, Live, Waiting, Failed }
 
 enum class ConsoleTone { Command, Error, Warning, Good, Plain }
@@ -53,6 +56,7 @@ data class HostingPanel(
     val online: List<HostingOnlinePlayer>? = null,
     val onlineError: Boolean = false,
     val playerBusy: String? = null,
+    val rosterBusy: String? = null,
     val crash: HostingCrash? = null,
     val usage: HostingUsage? = null,
     val usageDays: Int = 30,
@@ -105,6 +109,7 @@ class HostingModel(
                 online = null,
                 onlineError = false,
                 playerBusy = null,
+                rosterBusy = null,
                 crash = null,
                 usage = null,
                 usageLoading = false,
@@ -199,22 +204,22 @@ class HostingModel(
             val warnings = ArrayList<String>()
             if (plan.free) {
                 hostingAttempt { client.updateSetting(server.id, "onlineMode", false) }
-                    .onFailure { warnings += "вход без лицензии не включился — включи его в веб-панели" }
+                    .onFailure { warnings += tr("вход по нику не включился — включи его в веб-панели") }
             }
             if (map != null) {
                 val version = hostingAttempt { client.mapGameVersion(map.id) }.getOrNull()
                 if (version != null) {
                     hostingAttempt { client.setServerVersion(server.id, version) }
-                        .onFailure { warnings += "версия под карту не выставилась" }
+                        .onFailure { warnings += tr("версия под карту не выставилась") }
                 }
                 hostingAttempt { client.installFromCatalog(server.id, map.id.toString(), "curseforge") }
-                    .onFailure { warnings += "карта «${map.name}» не поставилась — поставь её в веб-панели" }
+                    .onFailure { warnings += tr("карта «{name}» не поставилась — поставь её в веб-панели", map.name) }
             }
             panel.update { it.copy(buying = null) }
             if (warnings.isEmpty()) {
-                notice("Сервер создаётся — через минуту он будет готов", false)
+                notice(tr("Сервер создаётся — через минуту он будет готов"), false)
             } else {
-                notice("Сервер создан, но " + warnings.joinToString("; "), true)
+                notice(tr("Сервер создан, но {0}", warnings.joinToString("; ")), true)
             }
             onListChanged()
             onCreated(server)
@@ -257,9 +262,9 @@ class HostingModel(
                     panel.update { it.copy(freeGate = gate) }
                     notice(
                         if (gate.botStarted) {
-                            "Подписки пока не видно — подпишись на канал и нажми «Проверить»"
+                            tr("Подписки пока не видно — подпишись на канал и нажми «Проверить»")
                         } else {
-                            "Бот ещё не запущен — открой его и нажми «Старт»"
+                            tr("Бот ещё не запущен — открой его и нажми «Старт»")
                         },
                         true,
                     )
@@ -283,7 +288,7 @@ class HostingModel(
                     STOP -> client.stop(serverId)
                     RESTART -> client.restart(serverId)
                     KILL -> client.kill(serverId)
-                    else -> throw HostingError("Такой команды у сервера нет")
+                    else -> throw HostingError(tr("Такой команды у сервера нет"))
                 }
             }
             panel.update { it.copy(powering = it.powering - serverId) }
@@ -338,6 +343,43 @@ class HostingModel(
         scope.launch {
             hostingAttempt { client.crash(serverId) }
                 .onSuccess { crash -> writeFor(serverId) { it.copy(crash = crash) } }
+        }
+    }
+
+    fun addRosterPlayer(serverId: String, nickname: String, onAdded: () -> Unit) {
+        roster(serverId, "add", onAdded) { client.addPlayer(serverId, nickname) }
+    }
+
+    fun changeRosterRole(serverId: String, playerId: String, role: String) {
+        roster(serverId, "role:$playerId") { client.changeRole(serverId, playerId, role) }
+    }
+
+    fun banRosterPlayer(serverId: String, playerId: String, banned: Boolean) {
+        roster(serverId, "ban:$playerId") { client.banPlayer(serverId, playerId, banned) }
+    }
+
+    fun removeRosterPlayer(serverId: String, playerId: String) {
+        roster(serverId, "remove:$playerId") { client.removePlayer(serverId, playerId) }
+    }
+
+    private fun roster(
+        serverId: String,
+        key: String,
+        onDone: () -> Unit = {},
+        call: suspend () -> HostingActionResult,
+    ) {
+        if (panel.value.rosterBusy != null) return
+        panel.update { it.copy(rosterBusy = key) }
+        scope.launch {
+            val result = hostingAttempt { call() }
+            panel.update { it.copy(rosterBusy = null) }
+            result
+                .onSuccess { done ->
+                    notice(done.message, false)
+                    onDone()
+                    onServerChanged(serverId)
+                }
+                .onFailure { error -> notice(loadErrorText(error), true) }
         }
     }
 
@@ -437,7 +479,7 @@ class HostingModel(
                 .onSuccess { onSent() }
                 .onFailure { error ->
                     val reason = loadErrorText(error)
-                    appendLocal(serverId, "Ошибка: команда не ушла — $reason", ConsoleTone.Error)
+                    appendLocal(serverId, tr("Ошибка: команда не ушла — {reason}", reason), ConsoleTone.Error)
                     notice(reason, true)
                 }
         }
@@ -465,7 +507,7 @@ class HostingModel(
         scope.launch {
             hostingAttempt { client.setAutoRenew(serverId, enabled) }
                 .onSuccess {
-                    notice(if (enabled) "Продление включено" else "Продление выключено — оплаченный срок остаётся", false)
+                    notice(if (enabled) tr("Продление включено") else tr("Продление выключено — оплаченный срок остаётся"), false)
                     onServerChanged(serverId)
                 }
                 .onFailure { error ->
@@ -479,7 +521,7 @@ class HostingModel(
     fun rename(serverId: String, name: String, onDone: () -> Unit) {
         val title = name.trim()
         if (title.length !in NAME_RANGE) {
-            notice("Имя сервера — от ${NAME_RANGE.first} до ${NAME_RANGE.last} символов", true)
+            notice(tr("Имя сервера — от {first} до {last} символов", NAME_RANGE.first, NAME_RANGE.last), true)
             return
         }
         if (panel.value.renaming) return
@@ -503,10 +545,10 @@ class HostingModel(
         scope.launch {
             hostingAttempt { client.updateSettings(serverId, buildJsonObject { put(key, value) }) }
                 .onSuccess {
-                    notice(if (running) "Сохранено — применится после перезапуска" else "Настройки сохранены", false)
+                    notice(if (running) tr("Сохранено — применится после перезапуска") else tr("Настройки сохранены"), false)
                     onServerChanged(serverId)
                 }
-                .onFailure { error -> notice("Не удалось сохранить: " + loadErrorText(error), true) }
+                .onFailure { error -> notice(tr("Не удалось сохранить: {0}", loadErrorText(error)), true) }
             panel.update { it.copy(savingSetting = null) }
         }
     }
@@ -581,9 +623,9 @@ class HostingModel(
         const val RESTART = "restart"
         const val KILL = "kill"
 
-        private const val NO_FUNDS_TEXT = "Не хватает средств на балансе Millida — пополни и повтори"
+        private val NO_FUNDS_TEXT: String get() = tr("Не хватает средств на балансе Millida — пополни и повтори")
         private const val FUNDS_LEAD = "Не хватает"
-        private const val CONSOLE_SILENT_TEXT = "Консоль не отвечает — проверь, что сервер запущен, и подключись снова"
+        private val CONSOLE_SILENT_TEXT: String get() = tr("Консоль не отвечает — проверь, что сервер запущен, и подключись снова")
         private const val MAP_DEBOUNCE_MS = 350L
         private const val FOLLOW_UP_MS = 2_500L
         private const val LIVE_PERIOD_MS = 5_000L
@@ -605,7 +647,7 @@ class HostingModel(
 
         fun consoleTone(text: String): ConsoleTone = when {
             text.startsWith("> ") -> ConsoleTone.Command
-            text.startsWith("Ошибка: ") || ERROR_LINE.containsMatchIn(text) -> ConsoleTone.Error
+            text.startsWith("Ошибка: ") || trSource(text).startsWith("Ошибка: ") || ERROR_LINE.containsMatchIn(text) -> ConsoleTone.Error
             WARN_LINE.containsMatchIn(text) -> ConsoleTone.Warning
             GOOD_LINE.containsMatchIn(text) -> ConsoleTone.Good
             else -> ConsoleTone.Plain

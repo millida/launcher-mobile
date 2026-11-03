@@ -36,6 +36,7 @@ import net.millida.launcher.core.call.CallLogs
 import net.millida.launcher.core.call.CallOutcome
 import net.millida.launcher.core.friends.ChatAttachment
 import net.millida.launcher.core.friends.VoiceNotes
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.ui.MIcon
 import net.millida.launcher.ui.MIconButton
 import net.millida.launcher.ui.MIcons
@@ -98,7 +99,7 @@ internal fun VoiceNote(attachment: ChatAttachment, mine: Boolean) {
 
     fun toggle() {
         if (!isOwnMediaUrl(attachment.url)) {
-            failed = "Файл не из хранилища Millida"
+            failed = tr("Файл не из хранилища Millida")
             return
         }
         val ready = player
@@ -140,14 +141,14 @@ internal fun VoiceNote(attachment: ChatAttachment, mine: Boolean) {
                 Log.w("millida-voice", "голосовое не играет: $what/$extra")
                 preparing = false
                 playing = false
-                failed = if (what == MediaPlayer.MEDIA_ERROR_SERVER_DIED) "плеер упал" else "не открылся"
+                failed = if (what == MediaPlayer.MEDIA_ERROR_SERVER_DIED) tr("плеер упал") else tr("не открылся")
                 true
             }
             player = created
             created.prepareAsync()
         } catch (broken: Exception) {
             preparing = false
-            failed = "не открылся"
+            failed = tr("не открылся")
             runCatching { created.release() }
             Log.w("millida-voice", "голосовое не открылось: ${broken.message}")
         }
@@ -162,7 +163,7 @@ internal fun VoiceNote(attachment: ChatAttachment, mine: Boolean) {
             onClick = ::toggle,
             tint = if (mine) colors.onAccent else colors.accentText,
             background = if (mine) colors.accent else colors.surface2,
-            label = if (playing) "Пауза" else "Слушать",
+            label = if (playing) tr("Пауза") else tr("Слушать"),
         )
         Spacer(Modifier.width(10.dp))
         Row(

@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.rating.RatedServer
 import net.millida.launcher.core.rating.versionRangeLabel
 import net.millida.launcher.core.servers.OwnServers
@@ -74,7 +75,7 @@ fun ServerDetailSheet(
     val extra = about.takeIf { it.isNotEmpty() && it.replace('\n', ' ') != server.summary }
     var expanded by remember(server.slug) { mutableStateOf(false) }
     val links = listOfNotNull(
-        webLink(server.websiteUrl)?.let { "Сайт" to it },
+        webLink(server.websiteUrl)?.let { tr("Сайт") to it },
         webLink(server.discordInviteUrl)?.let { "Discord" to it },
     )
 
@@ -112,9 +113,9 @@ fun ServerDetailSheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (server.up) {
-                        MBadge("${onlineText(server)} онлайн", colors.accentText, colors.accentSoft, icon = MIcons.users)
+                        MBadge(tr("{0} онлайн", onlineText(server)), colors.accentText, colors.accentSoft, icon = MIcons.users)
                     } else {
-                        MBadge("офлайн", colors.fgSubtle, colors.surface2)
+                        MBadge(tr("офлайн"), colors.fgSubtle, colors.surface2)
                     }
                     ServerTags(server, withVersions = false)
                 }
@@ -125,7 +126,7 @@ fun ServerDetailSheet(
             WideActions(server, address.isNotEmpty() || launcherOnly, links, onPlay, onOpenLink, joining)
         } else if (address.isNotEmpty() || launcherOnly) {
             MPrimaryButton(
-                text = if (server.up) "Играть" else "Сервер не отвечает",
+                text = if (server.up) tr("Играть") else tr("Сервер не отвечает"),
                 onClick = onPlay,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = server.up,
@@ -134,7 +135,7 @@ fun ServerDetailSheet(
                 loading = joining,
             )
         } else {
-            MBadge("Вход по заявке — смотри сайт сервера", colors.fgMuted, colors.surface2, icon = MIcons.lock)
+            MBadge(tr("Вход по заявке — смотри сайт сервера"), colors.fgMuted, colors.surface2, icon = MIcons.lock)
         }
         if (server.summary.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
@@ -156,7 +157,7 @@ fun ServerDetailSheet(
                 overflow = TextOverflow.Ellipsis,
             )
             MTextButton(
-                text = if (expanded) "Свернуть" else "Читать дальше",
+                text = if (expanded) tr("Свернуть") else tr("Читать дальше"),
                 onClick = { expanded = !expanded },
                 color = colors.accentText,
             )
@@ -166,7 +167,7 @@ fun ServerDetailSheet(
             if (address.isNotEmpty()) {
                 MListRow(
                     title = address,
-                    subtitle = "Скопировать адрес",
+                    subtitle = tr("Скопировать адрес"),
                     icon = MIcons.link,
                     onClick = onCopy,
                     plate = false,
@@ -175,25 +176,25 @@ fun ServerDetailSheet(
                 MDivider()
             }
             Column(Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) {
-                versionRangeLabel(server.versionMajors)?.let { MInfoRow("Версии", it, mono = true) }
+                versionRangeLabel(server.versionMajors)?.let { MInfoRow(tr("Версии"), it, mono = true) }
                 MInfoRow(
-                    label = "Сейчас играют",
+                    label = tr("Сейчас играют"),
                     value = if (server.up) onlineText(server) else "—",
                     valueColor = if (server.up) colors.accentText else colors.fgFaint,
                     mono = true,
                 )
                 if (server.avgOnline > 0) {
-                    MInfoRow("В среднем за сутки", groupDigits(server.avgOnline.toLong()), mono = true)
+                    MInfoRow(tr("В среднем за сутки"), groupDigits(server.avgOnline.toLong()), mono = true)
                 }
                 if (server.votes30d > 0) {
-                    MInfoRow("Голоса за месяц", groupDigits(server.votes30d.toLong()), mono = true)
+                    MInfoRow(tr("Голоса за месяц"), groupDigits(server.votes30d.toLong()), mono = true)
                 }
                 server.bedrockAddress?.takeIf { it.isNotBlank() }?.let { MInfoRow("Bedrock", it, mono = true) }
             }
         }
         if (server.screenshots.isNotEmpty()) {
             Spacer(Modifier.height(18.dp))
-            MSectionTitle("СКРИНШОТЫ")
+            MSectionTitle(tr("СКРИНШОТЫ"))
             Spacer(Modifier.height(8.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(server.screenshots.filter { it.isNotBlank() }.take(12)) { shot ->
@@ -243,7 +244,7 @@ private fun WideActions(
     ) {
         if (joinable) {
             MPrimaryButton(
-                text = if (server.up) "Играть" else "Сервер не отвечает",
+                text = if (server.up) tr("Играть") else tr("Сервер не отвечает"),
                 onClick = onPlay,
                 modifier = Modifier.weight(1f),
                 enabled = server.up,
@@ -252,7 +253,7 @@ private fun WideActions(
             )
         } else {
             Box(Modifier.weight(1f)) {
-                MBadge("Вход по заявке — смотри сайт сервера", colors.fgMuted, colors.surface2, icon = MIcons.lock)
+                MBadge(tr("Вход по заявке — смотри сайт сервера"), colors.fgMuted, colors.surface2, icon = MIcons.lock)
             }
         }
         links.forEach { (label, url) ->

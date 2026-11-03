@@ -44,8 +44,9 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
+import net.millida.launcher.core.i18n.I18n
+import net.millida.launcher.core.i18n.tr
 private const val OPERATIONS_SHOWN = 10
 private const val AWARDS_SHOWN = 6
 private const val NEWS_SHOWN = 5
@@ -75,7 +76,7 @@ fun CabinetScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
 
     MScreen(
         modifier = modifier,
-        title = "Кабинет",
+        title = tr("Кабинет"),
         subtitle = (state.portal?.nickname?.takeIf { it.isNotBlank() } ?: state.details?.nickname?.takeIf { it.isNotBlank() })
             ?.takeIf { state.millidaSignedIn },
         onBack = { model.back() },
@@ -85,13 +86,13 @@ fun CabinetScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                     MIcons.refresh,
                     onClick = { model.retry(Area.CABINET) },
                     enabled = !refreshing,
-                    label = "Обновить",
+                    label = tr("Обновить"),
                 )
             }
         },
     ) {
         if (!state.millidaSignedIn) {
-            item(key = "gate") { MSignInGate(onSignIn = model::loginMillida, title = "Кошелёк и награды — после входа") }
+            item(key = "gate") { MSignInGate(onSignIn = model::loginMillida, title = tr("Кошелёк и награды — после входа")) }
             return@MScreen
         }
 
@@ -116,15 +117,15 @@ fun CabinetScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
 
         item(key = "operations-head") {
             MSectionHeader(
-                "Операции",
-                action = if (!allOperations && operations.size > OPERATIONS_SHOWN) "Все ${operations.size}" else null,
+                tr("Операции"),
+                action = if (!allOperations && operations.size > OPERATIONS_SHOWN) tr("Все {size}", operations.size) else null,
                 onAction = { allOperations = true },
             )
         }
         when {
             operations.isEmpty() && loading -> items(2, key = { "operation-skeleton:$it" }) { MSkeletonRow() }
             operations.isEmpty() && failure == null -> item(key = "operations-empty") {
-                MListRow(title = "Операций пока нет", icon = MIcons.wallet)
+                MListRow(title = tr("Операций пока нет"), icon = MIcons.wallet)
             }
             operations.isNotEmpty() -> item(key = "operations") {
                 OperationsCard(
@@ -136,8 +137,8 @@ fun CabinetScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
 
         item(key = "awards-head") {
             MSectionHeader(
-                "Достижения",
-                action = if (!allAwards && awards.size > AWARDS_SHOWN) "Все ${awards.size}" else null,
+                tr("Достижения"),
+                action = if (!allAwards && awards.size > AWARDS_SHOWN) tr("Все {size}", awards.size) else null,
                 onAction = { allAwards = true },
             )
         }
@@ -145,7 +146,7 @@ fun CabinetScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
         when {
             page == null && loading -> items(2, key = { "award-skeleton:$it" }) { MSkeleton(height = 120.dp) }
             awards.isEmpty() && failure == null -> item(key = "awards-empty") {
-                MListRow(title = "Достижений пока нет", icon = MIcons.trophy)
+                MListRow(title = tr("Достижений пока нет"), icon = MIcons.trophy)
             }
         }
         if (page != null && awards.isNotEmpty()) {
@@ -174,15 +175,15 @@ fun CabinetScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
 
         item(key = "news-head") {
             MSectionHeader(
-                "Новости",
-                action = if (!allNews && news.size > NEWS_SHOWN) "Все ${news.size}" else null,
+                tr("Новости"),
+                action = if (!allNews && news.size > NEWS_SHOWN) tr("Все {size}", news.size) else null,
                 onAction = { allNews = true },
             )
         }
         when {
             news.isEmpty() && loading -> items(2, key = { "news-skeleton:$it" }) { MSkeletonRow() }
             news.isEmpty() && failure == null -> item(key = "news-empty") {
-                MListRow(title = "Новостей пока нет", icon = MIcons.book)
+                MListRow(title = tr("Новостей пока нет"), icon = MIcons.book)
             }
         }
         items(
@@ -213,7 +214,7 @@ private fun WalletPlate(wallet: WalletBalance, onTopUp: () -> Unit, modifier: Mo
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                MSectionTitle("БАЛАНС")
+                MSectionTitle(tr("БАЛАНС"))
                 Spacer(Modifier.height(4.dp))
                 Text(
                     wallet.availableText(),
@@ -229,14 +230,14 @@ private fun WalletPlate(wallet: WalletBalance, onTopUp: () -> Unit, modifier: Mo
             MButtonRow {
                 if (wallet.withdrawableKopecks > 0) {
                     MBadge(
-                        "К выводу " + wallet.withdrawableKopecks.kopecksAsRubles(),
+                        tr("К выводу {0}", wallet.withdrawableKopecks.kopecksAsRubles()),
                         color = colors.accentText,
                         background = colors.accentSoft,
                     )
                 }
                 if (wallet.heldKopecks > 0) {
                     MBadge(
-                        "В холде " + wallet.heldKopecks.kopecksAsRubles(),
+                        tr("В холде {0}", wallet.heldKopecks.kopecksAsRubles()),
                         color = colors.warning,
                         background = colors.warningSoft,
                         icon = MIcons.clock,
@@ -246,7 +247,7 @@ private fun WalletPlate(wallet: WalletBalance, onTopUp: () -> Unit, modifier: Mo
         }
         Spacer(Modifier.height(14.dp))
         MPrimaryButton(
-            "Пополнить",
+            tr("Пополнить"),
             onClick = onTopUp,
             modifier = Modifier.fillMaxWidth(),
             icon = MIcons.externalLink,
@@ -264,7 +265,7 @@ private fun OperationsCard(operations: List<WalletOperation>, modifier: Modifier
                 .filter { it.isNotEmpty() }
                 .joinToString(" · ")
             MListRow(
-                title = operation.title.ifEmpty { operation.category.ifEmpty { "Операция" } },
+                title = operation.title.ifEmpty { operation.category.ifEmpty { tr("Операция") } },
                 subtitle = detail.ifEmpty { null },
                 icon = if (operation.incoming) MIcons.arrowDown else MIcons.arrowUp,
                 plate = false,
@@ -278,7 +279,7 @@ private fun OperationsCard(operations: List<WalletOperation>, modifier: Modifier
                         )
                         if (operation.held) {
                             Spacer(Modifier.height(4.dp))
-                            MBadge("Холд", color = colors.warning, background = colors.warningSoft)
+                            MBadge(tr("Холд"), color = colors.warning, background = colors.warningSoft)
                         }
                     }
                 },
@@ -294,7 +295,7 @@ private fun AwardsSummary(page: AchievementsPage, modifier: Modifier = Modifier)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    "Получено ${page.unlocked} из ${page.total}",
+                    tr("Получено {unlocked} из {total}", page.unlocked, page.total),
                     style = MillidaType.rowTitle,
                     color = colors.fg,
                 )
@@ -302,7 +303,7 @@ private fun AwardsSummary(page: AchievementsPage, modifier: Modifier = Modifier)
                 MProgressBar(if (page.total > 0) page.unlocked.toFloat() / page.total.toFloat() else 0f)
             }
             Spacer(Modifier.width(12.dp))
-            MBadge("${page.points} очк.", color = colors.accentText, background = colors.accentSoft, icon = MIcons.star)
+            MBadge(tr("{points} очк.", page.points), color = colors.accentText, background = colors.accentSoft, icon = MIcons.star)
         }
     }
 }
@@ -345,7 +346,7 @@ private fun AwardTile(award: Achievement, modifier: Modifier = Modifier) {
                     Text(award.progressText, style = MillidaType.pixelSmall, color = colors.fgSubtle, maxLines = 1)
                 }
                 unlocked -> Text(
-                    momentText(award.unlockedAt).ifEmpty { "Получено" },
+                    momentText(award.unlockedAt).ifEmpty { tr("Получено") },
                     style = MillidaType.small,
                     color = colors.fgFaint,
                     maxLines = 1,
@@ -371,7 +372,7 @@ private fun NewsCard(post: NewsItem, onOpen: (() -> Unit)?, modifier: Modifier =
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    post.title.ifEmpty { post.sourceName.ifEmpty { "Новость" } },
+                    post.title.ifEmpty { post.sourceName.ifEmpty { tr("Новость") } },
                     style = MillidaType.rowTitle,
                     color = colors.fg,
                     maxLines = 2,
@@ -385,7 +386,7 @@ private fun NewsCard(post: NewsItem, onOpen: (() -> Unit)?, modifier: Modifier =
             }
             if (post.isWipe) {
                 Spacer(Modifier.width(8.dp))
-                MBadge("Вайп", color = colors.warning, background = colors.warningSoft)
+                MBadge(tr("Вайп"), color = colors.warning, background = colors.warningSoft)
             }
         }
         if (post.body.isNotEmpty() && post.body != post.title) {
@@ -431,8 +432,8 @@ private fun achievementIconUrl(award: Achievement): String {
     return "$MILLIDA_SITE/blocks/Block${hash % BLOCKS_COUNT + 1}Millida.png"
 }
 
-private val cabinetMoment: DateTimeFormatter =
-    DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.forLanguageTag("ru"))
+private val cabinetMoment: DateTimeFormatter
+    get() = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", I18n.javaLocale)
 
 /** The server sends several shapes of ISO date; an unparsed one still shows. */
 private fun momentText(raw: String): String {

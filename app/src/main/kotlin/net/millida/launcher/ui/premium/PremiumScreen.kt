@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.UiState
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.premium.PackSource
 import net.millida.launcher.core.premium.Premium
 import net.millida.launcher.core.premium.PremiumPack
@@ -93,8 +94,8 @@ fun PremiumScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
             featured == null -> item(key = "premium-soon") {
                 MEmptyState(
                     icon = MIcons.crown,
-                    title = "Платные сборки скоро",
-                    actionText = "Обновить",
+                    title = tr("Платные сборки скоро"),
+                    actionText = tr("Обновить"),
                     onAction = model.premium::reload,
                     actionIcon = MIcons.refresh,
                     primary = false,
@@ -114,7 +115,7 @@ fun PremiumScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                 }
                 item(key = "premium-cancel") { Column { CancelRow(sub, onManage = model.premium::manage) } }
                 if (rest.isNotEmpty()) {
-                    item(key = "premium-rest-head") { MSectionHeader("Другие сборки") }
+                    item(key = "premium-rest-head") { MSectionHeader(tr("Другие сборки")) }
                     adaptiveItems(rest, columns, key = { it.id }, contentType = "premium-card", gap = 12.dp) { pack ->
                         WidePremiumCard(pack, plan, sub, onOpen = { model.premium.open(pack) })
                     }
@@ -136,7 +137,7 @@ fun PremiumScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                 if (rest.isNotEmpty()) {
                     item(key = "premium-rest") {
                         Column {
-                            MSectionHeader("Другие сборки")
+                            MSectionHeader(tr("Другие сборки"))
                             PairRows(rest) { pack, cell ->
                                 PremiumCard(pack, plan, sub, onOpen = { model.premium.open(pack) }, modifier = cell)
                             }
@@ -197,7 +198,7 @@ private fun PremiumHero(
         Spacer(Modifier.height(12.dp))
         BuyRow(pack, plan, sub, waiting, asking, onPrimary)
         Spacer(Modifier.height(8.dp))
-        MSecondaryButton("Подробнее", onClick = onOpen, modifier = Modifier.fillMaxWidth())
+        MSecondaryButton(tr("Подробнее"), onClick = onOpen, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -205,8 +206,8 @@ private fun PremiumHero(
 internal fun PackBadge(pack: PremiumPack, small: Boolean = false) {
     val colors = millida
     when {
-        pack.inSubscription -> MBadge(if (small) "Подписка" else "По подписке", colors.warning, colors.warningSoft, icon = MIcons.crown)
-        pack.source == PackSource.CATALOG -> MBadge("Платная", colors.warning, colors.warningSoft, icon = MIcons.crown)
+        pack.inSubscription -> MBadge(if (small) tr("Подписка") else tr("По подписке"), colors.warning, colors.warningSoft, icon = MIcons.crown)
+        pack.source == PackSource.CATALOG -> MBadge(tr("Платная"), colors.warning, colors.warningSoft, icon = MIcons.crown)
     }
 }
 
@@ -220,7 +221,7 @@ private fun PremiumCard(
     modifier: Modifier = Modifier,
 ) {
     val colors = millida
-    val price = if (Premium.hasAccess(pack, sub)) "Открыто" else Premium.priceLabel(pack, plan)
+    val price = if (Premium.hasAccess(pack, sub)) tr("Открыто") else Premium.priceLabel(pack, plan)
     MCard(modifier = modifier, onClick = onOpen, contentPadding = 10.dp) {
         Box(
             Modifier
@@ -238,7 +239,7 @@ private fun PremiumCard(
         when {
             price.isNotEmpty() -> Text(price, style = MillidaType.pixel, color = colors.accentText, maxLines = 1)
             (pack.downloads ?: 0) > 0 -> Text(
-                "${Premium.count(pack.downloads ?: 0)} скачиваний",
+                tr("{0} скачиваний", Premium.count(pack.downloads ?: 0)),
                 style = MillidaType.small,
                 color = colors.fgSubtle,
                 maxLines = 1,

@@ -5,6 +5,9 @@ plugins {
     alias(libs.plugins.kotlin.android)
 }
 
+val gameAbis = providers.gradleProperty("millida.abis").getOrElse("arm64-v8a")
+    .split(',').map { it.trim() }.filter { it.isNotEmpty() }
+
 android {
     namespace = "net.millida.launcher.runtime"
     compileSdk = 35
@@ -12,7 +15,7 @@ android {
     defaultConfig {
         minSdk = 26
         ndk {
-            abiFilters += "arm64-v8a"
+            abiFilters += gameAbis
         }
         externalNativeBuild {
             cmake {

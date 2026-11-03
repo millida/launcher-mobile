@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import net.millida.launcher.HostingPanel
 import net.millida.launcher.core.hosting.HostingPlan
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trPlural
 import net.millida.launcher.ui.HostingFact
 import net.millida.launcher.ui.LocalWideLayout
 import net.millida.launcher.ui.MButtonSize
@@ -101,14 +103,14 @@ private fun PaidRoad(facts: HostingPlanFacts, loading: Boolean, onPaid: () -> Un
     val shadow = with(LocalDensity.current) { 2.dp.toPx() }
     val ramText = when {
         facts.ramHigh <= 0 -> null
-        facts.ramLow > 0 && facts.ramLow != facts.ramHigh -> "${hostingGb(facts.ramLow)}–${hostingGb(facts.ramHigh)} ГБ"
-        else -> "${hostingGb(facts.ramHigh)} ГБ"
+        facts.ramLow > 0 && facts.ramLow != facts.ramHigh -> tr("{0}–{1} ГБ", hostingGb(facts.ramLow), hostingGb(facts.ramHigh))
+        else -> tr("{0} ГБ", hostingGb(facts.ramHigh))
     }
     val list = buildList {
-        if (ramText != null) add(HostingRoadFact(MIcons.monitor, ramText, "памяти"))
-        if (facts.playersMax > 0) add(HostingRoadFact(MIcons.users, "до ${facts.playersMax}", "игроков"))
-        add(HostingRoadFact(MIcons.blocks, "Моды", "и плагины"))
-        if (facts.paidAwake) add(HostingRoadFact(MIcons.clock, "24/7", "не засыпает"))
+        if (ramText != null) add(HostingRoadFact(MIcons.monitor, ramText, tr("памяти")))
+        if (facts.playersMax > 0) add(HostingRoadFact(MIcons.users, tr("до {playersMax}", facts.playersMax), tr("игроков")))
+        add(HostingRoadFact(MIcons.blocks, tr("Моды"), tr("и плагины")))
+        if (facts.paidAwake) add(HostingRoadFact(MIcons.clock, "24/7", tr("не засыпает")))
     }
     Column(
         modifier
@@ -131,21 +133,21 @@ private fun PaidRoad(facts: HostingPlanFacts, loading: Boolean, onPaid: () -> Un
     ) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                "Платный сервер",
+                tr("Платный сервер"),
                 modifier = Modifier.weight(1f),
                 style = MillidaType.tileTitle.copy(shadow = Shadow(MillidaPixel.textShadow, Offset(0f, shadow), 0f)),
                 color = MillidaPixel.white,
             )
             if (facts.minPrice > 0) {
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("от ${hostingRubles(facts.minPrice)}", style = MillidaType.pixel, color = MillidaPixel.white, maxLines = 1)
-                    Text("в месяц", style = MillidaType.small, color = MillidaPixel.whiteSoft, maxLines = 1)
+                    Text(tr("от {0}", hostingRubles(facts.minPrice)), style = MillidaType.pixel, color = MillidaPixel.white, maxLines = 1)
+                    Text(tr("в месяц"), style = MillidaType.small, color = MillidaPixel.whiteSoft, maxLines = 1)
                 }
             }
         }
         RoadFacts(list, loading, tone.band, MillidaPixel.white, MillidaPixel.whiteSoft)
         MPrimaryButton(
-            "Выбрать тариф",
+            tr("Выбрать тариф"),
             onClick = onPaid,
             modifier = Modifier.fillMaxWidth(),
             icon = MIcons.server,
@@ -165,14 +167,14 @@ private fun FreeRoad(
     val colors = millida
     val free = facts.free
     val list = buildList {
-        if (free != null && free.ramMb > 0) add(HostingRoadFact(MIcons.monitor, "${hostingGb(free.ramMb)} ГБ", "памяти"))
-        if (free != null && free.maxPlayers > 0) add(HostingRoadFact(MIcons.users, "${free.maxPlayers}", "друзей"))
-        if (free != null && free.worldKeepDays > 0) add(HostingRoadFact(MIcons.clock, hostingDaysLabel(free.worldKeepDays), "хранится мир"))
+        if (free != null && free.ramMb > 0) add(HostingRoadFact(MIcons.monitor, tr("{0} ГБ", hostingGb(free.ramMb)), tr("памяти")))
+        if (free != null && free.maxPlayers > 0) add(HostingRoadFact(MIcons.users, "${free.maxPlayers}", tr("друзей")))
+        if (free != null && free.worldKeepDays > 0) add(HostingRoadFact(MIcons.clock, hostingDaysLabel(free.worldKeepDays), tr("хранится мир")))
     }
     MCard(modifier = modifier, contentPadding = 18.dp) {
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                "Бесплатно",
+                tr("Бесплатно"),
                 modifier = Modifier.weight(1f),
                 style = MillidaType.tileTitle.copy(fontSize = 19.sp),
                 color = colors.fg,
@@ -185,7 +187,7 @@ private fun FreeRoad(
         }
         Spacer(Modifier.height(14.dp))
         MSecondaryButton(
-            "Начать бесплатно",
+            tr("Начать бесплатно"),
             onClick = onFree,
             modifier = Modifier.fillMaxWidth(),
             icon = MIcons.play,
@@ -235,14 +237,4 @@ private fun RoadFacts(
     }
 }
 
-internal fun hostingDaysLabel(days: Int): String {
-    val tail = days % 100
-    val last = days % 10
-    val word = when {
-        tail in 11..14 -> "дней"
-        last == 1 -> "день"
-        last in 2..4 -> "дня"
-        else -> "дней"
-    }
-    return "$days $word"
-}
+internal fun hostingDaysLabel(days: Int): String = "$days " + trPlural(days, tr("день"), tr("дня"), tr("дней"))

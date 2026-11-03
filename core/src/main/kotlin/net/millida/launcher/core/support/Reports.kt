@@ -1,5 +1,8 @@
 package net.millida.launcher.core.support
 
+import net.millida.launcher.core.i18n.tr
+
+import net.millida.launcher.core.i18n.trKey
 private const val REDACTED = "<redacted>"
 private const val MASK_MIN = 4
 
@@ -119,13 +122,15 @@ data class ErrorReport(
     }
 }
 
-enum class BugKind(val category: String, val label: String, val severity: String) {
-    CRASH("crash", "Вылет", "high"),
-    GAME_LAUNCH("game_launch", "Игра не запускается", "high"),
-    DOWNLOAD("download", "Не качается", "medium"),
-    AUTH("auth", "Не пускает в аккаунт", "high"),
-    VISUAL("visual", "Что-то съехало", "medium"),
-    OTHER("other", "Другое", "medium"),
+enum class BugKind(val category: String, private val labelKey: String, val severity: String) {
+    CRASH("crash", trKey("Вылет"), "high"),
+    GAME_LAUNCH("game_launch", trKey("Игра не запускается"), "high"),
+    DOWNLOAD("download", trKey("Не качается"), "medium"),
+    AUTH("auth", trKey("Не пускает в аккаунт"), "high"),
+    VISUAL("visual", trKey("Что-то съехало"), "medium"),
+    OTHER("other", trKey("Другое"), "medium"),;
+
+    val label: String get() = tr(labelKey)
 }
 
 data class BugReport(
@@ -157,7 +162,7 @@ data class BugReport(
                 category = BugKind.OTHER.category,
                 severity = "low",
                 title = if (rated) "$REVIEW_TITLE · $stars/5" else REVIEW_TITLE,
-                description = describe((if (rated) "Оценка: $stars из 5. " else "") + text.trim(), facts, ""),
+                description = describe((if (rated) tr("Оценка: {stars} из 5. ", stars) else "") + text.trim(), facts, ""),
             )
         }
 

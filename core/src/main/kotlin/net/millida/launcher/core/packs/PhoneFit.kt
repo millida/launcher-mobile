@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import net.millida.launcher.core.MemoryTuning
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.loader.forgeGameUnsupported
 import java.io.IOException
 
@@ -54,7 +55,7 @@ class PhoneUnsupported(val block: PhoneBlock, val title: String, val gameVersion
 object PhoneFit {
     const val PACK_LAUNCH_FILE = "millida-pack-launch.json"
 
-    const val BETA_HINT = "Можно попробовать на телефоне: Настройки → Дополнительно → «Старые версии и сборки с ПК (бета)»"
+    val BETA_HINT: String get() = tr("Можно попробовать на телефоне: Настройки → Дополнительно → «Старые версии и сборки с ПК (бета)»")
 
     private const val HEAVY_BASE_MB = 512L
 
@@ -124,6 +125,23 @@ object PhoneFit {
     ): Boolean = cardVerdict(card, legacyRuntime, deviceTotalMb) == null
 
     /**
+     * Whether a list may show a pack that names several loaders and versions:
+     * some pair of them passes [listed]. A pack that names none is unknown and stays.
+     */
+    fun listedAny(
+        loaders: List<String>,
+        versions: List<String>,
+        ownLaunch: Boolean = false,
+        accessRequired: Boolean = false,
+        legacyRuntime: Boolean = legacyRuntime(),
+        deviceTotalMb: Int = deviceTotalMb(),
+    ): Boolean = loaders.ifEmpty { listOf("") }.any { loader ->
+        versions.ifEmpty { listOf("") }.any { version ->
+            listed(PhoneCard(loader, version, ownLaunch, accessRequired), legacyRuntime, deviceTotalMb)
+        }
+    }
+
+    /**
      * The archive is no measure of the heap a pack needs, but a client bigger
      * than everything the game could get is a sure refusal: half a gigabyte of
      * game on top of the files is the least it takes. Unknown sizes pass.
@@ -143,26 +161,26 @@ object PhoneFit {
     ): String {
         val text = when (block) {
             PhoneBlock.OLD_FORGE ->
-                "«$title» на Forge ${gameVersion.ifBlank { "до 1.13" }} — на телефоне такие сборки не запускаются." +
-                    "Играй в неё через Millida Launcher на компьютере"
+                tr("«{title}» на Forge {0} — на телефоне такие сборки не запускаются.", title, gameVersion.ifBlank { tr("до 1.13") }) +
+                    tr("Играй в неё через Millida Launcher на компьютере")
             PhoneBlock.OWN_LAUNCH ->
-                "У «$title» свой запуск, написанный для компьютера. Играй в неё через Millida Launcher на компьютере"
+                tr("У «{title}» свой запуск, написанный для компьютера. Играй в неё через Millida Launcher на компьютере", title)
             PhoneBlock.BROKEN_LAUNCH ->
-                "У «$title» свой запуск, телефон его не поддерживает. Играй в неё через Millida Launcher на компьютере"
+                tr("У «{title}» свой запуск, телефон его не поддерживает. Играй в неё через Millida Launcher на компьютере", title)
             PhoneBlock.PAID_OWN_LAUNCH ->
-                "«$title» запускается своим способом, написанным для компьютера, — на телефоне она не работает. " +
-                    "Играй в неё через Millida Launcher на компьютере"
+                tr("«{title}» запускается своим способом, написанным для компьютера, — на телефоне она не работает. ", title) +
+                    tr("Играй в неё через Millida Launcher на компьютере")
             PhoneBlock.SDL_WINDOW -> if (sdlRuntime) {
-                "«$title» открывает окно игры через SDL3 — на телефоне такие сборки идут только в бете"
+                tr("«{title}» открывает окно игры через SDL3 — на телефоне такие сборки идут только в бете", title)
             } else {
-                "«$title» открывает окно игры через SDL3, а на телефоне этой библиотеки нет. " +
-                    "Играй в неё через Millida Launcher на компьютере"
+                tr("«{title}» открывает окно игры через SDL3, а на телефоне этой библиотеки нет. ", title) +
+                    tr("Играй в неё через Millida Launcher на компьютере")
             }
             PhoneBlock.DESKTOP_NATIVE ->
-                "В «$title» есть библиотеки, собранные только для компьютера. " +
-                    "Играй в неё через Millida Launcher на компьютере"
+                tr("В «{title}» есть библиотеки, собранные только для компьютера. ", title) +
+                    tr("Играй в неё через Millida Launcher на компьютере")
             PhoneBlock.TOO_HEAVY ->
-                "«$title» не поместится в память этого телефона. Играй в неё через Millida Launcher на компьютере"
+                tr("«{title}» не поместится в память этого телефона. Играй в неё через Millida Launcher на компьютере", title)
         }
         val unlockable = block == PhoneBlock.OLD_FORGE || block == PhoneBlock.OWN_LAUNCH ||
             (block == PhoneBlock.SDL_WINDOW && sdlRuntime)

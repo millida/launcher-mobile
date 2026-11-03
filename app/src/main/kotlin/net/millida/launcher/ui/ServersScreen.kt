@@ -56,6 +56,7 @@ import net.millida.launcher.Area
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.Screen
 import net.millida.launcher.UiState
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.core.rating.LicenseFilter
 import net.millida.launcher.core.rating.RatedServer
@@ -69,6 +70,8 @@ import net.millida.launcher.ui.home.JoinServerSheet
 import net.millida.launcher.ui.servers.OnlineCount
 import net.millida.launcher.ui.servers.ServerDetailSheet
 import net.millida.launcher.ui.servers.ServerTags
+import net.millida.launcher.ui.servers.ServerTile
+import net.millida.launcher.ui.servers.ServerTileSkeleton
 import net.millida.launcher.ui.servers.serverKey
 
 private const val SERVER_SEARCH_DELAY_MS = 400L
@@ -79,7 +82,9 @@ private val WIDE_SEARCH_WIDTH = 240.dp
 private val WIDE_BANNER_WIDTH = 240.dp
 private val WIDE_BANNER_HEIGHT = 60.dp
 private val WIDE_JOIN_MIN_WIDTH = 96.dp
-private val WIDE_SKELETON_HEIGHT = 92.dp
+private val SERVER_TILE_CELL = 260.dp
+private const val SERVER_TILE_MAX = 4
+private const val PORTRAIT_TWO_COLUMNS_DP = 560
 private const val WIDE_BANNER_FROM_DP = 720
 private val LOGO_SIZE = 48.dp
 private val BLOCK_SIZE = 30.dp
@@ -109,7 +114,7 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
         val address = server.joinAddress
         if (address.isNotEmpty()) {
             clipboard.setText(AnnotatedString(address))
-            model.notice("Адрес скопирован: $address")
+            model.notice(tr("Адрес скопирован: {address}", address))
         }
     }
     val play: (RatedServer) -> Unit = { server ->
@@ -147,12 +152,12 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
     }
 
     val wide = LocalWideLayout.current
-    val skeletonHeight = if (wide) WIDE_SKELETON_HEIGHT else 132.dp
+    val columns = serverColumns()
     val search: @Composable (Modifier) -> Unit = { placement ->
         MField(
             value = state.serverQuery,
             onValueChange = model::setServerQuery,
-            placeholder = "Поиск",
+            placeholder = tr("Поиск"),
             modifier = placement,
             leadingIcon = MIcons.search,
             clearable = true,
@@ -166,15 +171,15 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
 
     MScreen(
         modifier = modifier.imePadding(),
-        title = "Серверы",
-        subtitle = if (state.serversTotal > 0) "В рейтинге ${groupDigits(state.serversTotal.toLong())}" else null,
+        title = tr("Серверы"),
+        subtitle = if (state.serversTotal > 0) tr("В рейтинге {0}", groupDigits(state.serversTotal.toLong())) else null,
         onBack = { model.back() },
         listState = listState,
         actions = {
             if (wide) {
                 search(Modifier.width(WIDE_SEARCH_WIDTH))
                 MSecondaryButton(
-                    "Свой сервер",
+                    tr("Свой сервер"),
                     onClick = { model.openLinkOrNotice(context, RATING_ADD_URL) },
                     icon = MIcons.plus,
                     size = MButtonSize.Small,
@@ -183,7 +188,7 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                 MIconButton(
                     icon = MIcons.plus,
                     onClick = { model.openLinkOrNotice(context, RATING_ADD_URL) },
-                    label = "Добавить свой сервер",
+                    label = tr("Добавить свой сервер"),
                 )
             }
         },
@@ -199,39 +204,39 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 MChip(
-                    text = ServerFilters.categoryLabel(state.serverCategory)?.takeIf { state.serverCategory.isNotEmpty() } ?: "Категория",
+                    text = ServerFilters.categoryLabel(state.serverCategory)?.takeIf { state.serverCategory.isNotEmpty() } ?: tr("Категория"),
                     selected = state.serverCategory.isNotEmpty(),
                     onClick = { sheet = ServerFilterSheet.CATEGORY },
                     icon = MIcons.grid,
                 )
                 MChip(
-                    text = if (state.serverSort != RatingSort.RATING) ServerFilters.sortLabel(state.serverSort) else "Сортировка",
+                    text = if (state.serverSort != RatingSort.RATING) ServerFilters.sortLabel(state.serverSort) else tr("Сортировка"),
                     selected = state.serverSort != RatingSort.RATING,
                     onClick = { sheet = ServerFilterSheet.SORT },
                     icon = MIcons.filter,
                 )
                 MChip(
-                    text = if (state.serverLicense != LicenseFilter.ANY) ServerFilters.licenseLabel(state.serverLicense) else "Лицензия",
+                    text = if (state.serverLicense != LicenseFilter.ANY) ServerFilters.licenseLabel(state.serverLicense) else tr("Лицензия"),
                     selected = state.serverLicense != LicenseFilter.ANY,
                     onClick = { sheet = ServerFilterSheet.LICENSE },
                     icon = MIcons.key,
                 )
                 MChip(
-                    text = ServerFilters.onlineLabel(state.serverOnline)?.takeIf { state.serverOnline.isNotEmpty() } ?: "Онлайн",
+                    text = ServerFilters.onlineLabel(state.serverOnline)?.takeIf { state.serverOnline.isNotEmpty() } ?: tr("Онлайн"),
                     selected = state.serverOnline.isNotEmpty(),
                     onClick = { sheet = ServerFilterSheet.ONLINE },
                     icon = MIcons.users,
                 )
                 if (state.serverVersions.isNotEmpty() || state.serverVersion.isNotEmpty()) {
                     MChip(
-                        text = state.serverVersion.ifEmpty { "Версия" },
+                        text = state.serverVersion.ifEmpty { tr("Версия") },
                         selected = state.serverVersion.isNotEmpty(),
                         onClick = { sheet = ServerFilterSheet.VERSION },
                         icon = MIcons.blocks,
                     )
                 }
                 if (filtered) {
-                    MChip(text = "Сбросить", selected = false, onClick = reset, icon = MIcons.close)
+                    MChip(text = tr("Сбросить"), selected = false, onClick = reset, icon = MIcons.close)
                 }
             }
         }
@@ -244,37 +249,34 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
             item(key = "reloading") { MProgressBar(progress = null) }
         }
         when {
-            servers.isEmpty() && loading -> items(5, key = { "skeleton-$it" }) { MSkeleton(height = skeletonHeight) }
+            servers.isEmpty() && loading -> adaptiveItems(List(columns * 2) { it }, columns, key = { "skeleton-$it" }) {
+                ServerTileSkeleton()
+            }
             servers.isEmpty() && error != null -> item(key = "error") {
                 MErrorCard(message = error, onRetry = { model.retry(Area.SERVERS) })
             }
             servers.isEmpty() -> item(key = "empty") {
                 MEmptyState(
                     icon = if (filtered) MIcons.search else MIcons.server,
-                    title = if (filtered) "Ничего не нашли" else "Здесь пока пусто",
-                    actionText = if (filtered) "Сбросить" else null,
+                    title = if (filtered) tr("Ничего не нашли") else tr("Здесь пока пусто"),
+                    actionText = if (filtered) tr("Сбросить") else null,
                     onAction = if (filtered) reset else null,
                     primary = false,
                 )
             }
         }
-        items(servers, key = ::serverKey, contentType = { "server" }) { server ->
-            ServerCard(
+        adaptiveItems(servers, columns, key = ::serverKey, contentType = "server") { server ->
+            ServerTile(
                 server = server,
-                onCopy = { copy(server) },
-                onPlay = { play(server) },
-                modifier = Modifier.animateItem(
-                    fadeInSpec = tween(durationMillis = 180, easing = MillidaMotion.steps(3)),
-                    placementSpec = null,
-                    fadeOutSpec = null,
-                ),
                 onOpen = { opened = server },
+                onPlay = { play(server) },
+                onCopy = { copy(server) },
                 joining = lobby.joining.isNotEmpty() && lobby.joining == server.joinAddress,
             )
         }
         if (servers.isNotEmpty() && !stale) {
             when {
-                loading && pagingMore -> item(key = "more-loading") { MSkeleton(height = skeletonHeight) }
+                loading && pagingMore -> item(key = "more-loading") { ServerTileSkeleton() }
                 error != null -> item(key = "more-error") {
                     MErrorCard(
                         message = error,
@@ -289,7 +291,7 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
     }
 
     when (sheet) {
-        ServerFilterSheet.CATEGORY -> MBottomSheet(onDismiss = { sheet = null }, title = "Категория") {
+        ServerFilterSheet.CATEGORY -> MBottomSheet(onDismiss = { sheet = null }, title = tr("Категория")) {
             ServerFilters.CATEGORIES.forEach { (code, label) ->
                 FilterOption(
                     text = label,
@@ -301,7 +303,7 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                 )
             }
         }
-        ServerFilterSheet.SORT -> MBottomSheet(onDismiss = { sheet = null }, title = "Сортировка") {
+        ServerFilterSheet.SORT -> MBottomSheet(onDismiss = { sheet = null }, title = tr("Сортировка")) {
             ServerFilters.SORTS.forEach { option ->
                 FilterOption(
                     text = ServerFilters.sortLabel(option),
@@ -313,7 +315,7 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                 )
             }
         }
-        ServerFilterSheet.ONLINE -> MBottomSheet(onDismiss = { sheet = null }, title = "Онлайн") {
+        ServerFilterSheet.ONLINE -> MBottomSheet(onDismiss = { sheet = null }, title = tr("Онлайн")) {
             ServerFilters.ONLINE.forEach { (value, label) ->
                 FilterOption(
                     text = label,
@@ -325,7 +327,7 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                 )
             }
         }
-        ServerFilterSheet.LICENSE -> MBottomSheet(onDismiss = { sheet = null }, title = "Лицензия") {
+        ServerFilterSheet.LICENSE -> MBottomSheet(onDismiss = { sheet = null }, title = tr("Лицензия")) {
             LicenseFilter.entries.forEach { option ->
                 FilterOption(
                     text = ServerFilters.licenseLabel(option),
@@ -337,9 +339,9 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
                 )
             }
         }
-        ServerFilterSheet.VERSION -> MBottomSheet(onDismiss = { sheet = null }, title = "Версия") {
+        ServerFilterSheet.VERSION -> MBottomSheet(onDismiss = { sheet = null }, title = tr("Версия")) {
             FilterOption(
-                text = "Любая версия",
+                text = tr("Любая версия"),
                 selected = state.serverVersion.isEmpty(),
                 onClick = {
                     sheet = null
@@ -383,6 +385,14 @@ fun ServersScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
             model.open(Screen.HOME)
         },
     )
+}
+
+/** Tiles of the desktop's server grid: one or two across a phone held upright, as many as fit sideways. */
+@Composable
+private fun serverColumns(): Int {
+    val width = LocalConfiguration.current.screenWidthDp
+    if (LocalWideLayout.current) return adaptiveColumns(cell = SERVER_TILE_CELL, max = SERVER_TILE_MAX)
+    return if (width >= PORTRAIT_TWO_COLUMNS_DP) 2 else 1
 }
 
 @Composable
@@ -436,7 +446,7 @@ internal fun ServerCard(
                 interactionSource = interaction,
                 indication = null,
                 role = Role.Button,
-                onLongClickLabel = "Скопировать адрес",
+                onLongClickLabel = tr("Скопировать адрес"),
                 onLongClick = if (address.isNotEmpty()) onCopy else null,
                 onClick = { onOpen?.invoke() },
             )
@@ -455,7 +465,7 @@ internal fun ServerCard(
                 )
                 Spacer(Modifier.height(3.dp))
                 Text(
-                    address.ifEmpty { if (launcherOnly) "Вход через лаунчер" else "Вход по заявке" },
+                    address.ifEmpty { if (launcherOnly) tr("Вход через лаунчер") else tr("Вход по заявке") },
                     style = MillidaType.pixelSmall,
                     color = colors.fgFaint,
                     maxLines = 1,
@@ -506,7 +516,7 @@ internal fun ServerCard(
             if (address.isNotEmpty() || launcherOnly) {
                 Spacer(Modifier.width(8.dp))
                 MPrimaryButton(
-                    text = "Играть",
+                    text = tr("Играть"),
                     onClick = onPlay,
                     enabled = server.up,
                     icon = MIcons.play,
@@ -540,7 +550,7 @@ private fun ServerRowWide(
     val colors = millida
     val roomy = LocalConfiguration.current.screenWidthDp >= WIDE_BANNER_FROM_DP
     val range = versionRangeLabel(server.versionMajors)
-    val entry = address.ifEmpty { if (launcherOnly) "Вход через лаунчер" else "" }
+    val entry = address.ifEmpty { if (launcherOnly) tr("Вход через лаунчер") else "" }
     Row(
         modifier
             .fillMaxWidth()
@@ -549,7 +559,7 @@ private fun ServerRowWide(
                 interactionSource = interaction,
                 indication = null,
                 role = Role.Button,
-                onLongClickLabel = "Скопировать адрес",
+                onLongClickLabel = tr("Скопировать адрес"),
                 onLongClick = if (address.isNotEmpty()) onCopy else null,
                 onClick = { onOpen?.invoke() },
             )
@@ -596,7 +606,7 @@ private fun ServerRowWide(
             OnlineCount(server)
             if (address.isNotEmpty() || launcherOnly) {
                 MPrimaryButton(
-                    text = "Играть",
+                    text = tr("Играть"),
                     onClick = onPlay,
                     modifier = Modifier.widthIn(min = WIDE_JOIN_MIN_WIDTH),
                     enabled = server.up,
@@ -605,7 +615,7 @@ private fun ServerRowWide(
                     loading = joining,
                 )
             } else {
-                MBadge("Вход по заявке", colors.fgMuted, colors.surface2)
+                MBadge(tr("Вход по заявке"), colors.fgMuted, colors.surface2)
             }
         }
     }
@@ -643,7 +653,7 @@ private fun ServerBannerSlot(server: RatedServer) {
             contentAlignment = Alignment.CenterStart,
         ) {
             if (!server.up) {
-                Text("Сервер не в сети", style = MillidaType.pixelSmall, color = colors.fgSubtle, maxLines = 1)
+                Text(tr("Сервер не в сети"), style = MillidaType.pixelSmall, color = colors.fgSubtle, maxLines = 1)
             }
         }
     }

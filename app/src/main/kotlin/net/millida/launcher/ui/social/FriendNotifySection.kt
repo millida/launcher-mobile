@@ -19,6 +19,7 @@ import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.core.friends.NotifyKind
 import net.millida.launcher.core.friends.NotifyLevel
 import net.millida.launcher.core.friends.levelOf
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.ui.LocalUiFeedback
 import net.millida.launcher.ui.MSegmented
@@ -28,18 +29,18 @@ import net.millida.launcher.ui.settings.SettingHead
 import net.millida.launcher.ui.settings.SettingHint
 import net.millida.launcher.ui.settings.SettingsSection
 
-private val ROWS = listOf(
-    NotifyKind.MSG to "Личные сообщения",
-    NotifyKind.ROOM to "Сообщения в группах",
-    NotifyKind.PLAY to "Друг зашёл в игру",
-    NotifyKind.ONLINE to "Друг в сети",
-    NotifyKind.REQUEST to "Заявки в друзья",
+private val ROWS get() = listOf(
+    NotifyKind.MSG to tr("Личные сообщения"),
+    NotifyKind.ROOM to tr("Сообщения в группах"),
+    NotifyKind.PLAY to tr("Друг зашёл в игру"),
+    NotifyKind.ONLINE to tr("Друг в сети"),
+    NotifyKind.REQUEST to tr("Заявки в друзья"),
 )
 
 private fun NotifyLevel.label(): String = when (this) {
-    NotifyLevel.SOUND -> "Со звуком"
-    NotifyLevel.SILENT -> "Без звука"
-    NotifyLevel.OFF -> "Выкл"
+    NotifyLevel.SOUND -> tr("Со звуком")
+    NotifyLevel.SILENT -> tr("Без звука")
+    NotifyLevel.OFF -> tr("Выкл")
 }
 
 /** The desktop "Уведомления" matrix (src/modals/Settings.tsx), one row per kind. */
@@ -51,16 +52,16 @@ fun FriendNotifySection(model: LauncherViewModel, modifier: Modifier = Modifier)
     var systemAllowed by remember { mutableStateOf(model.social.notifySystemAllowed()) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { systemAllowed = model.social.notifySystemAllowed() }
 
-    SettingsSection("УВЕДОМЛЕНИЯ", modifier) {
+    SettingsSection(tr("УВЕДОМЛЕНИЯ"), modifier) {
         if (!systemAllowed) {
-            SettingHint("Выключены в настройках телефона", color = millida.danger)
+            SettingHint(tr("Выключены в настройках телефона"), color = millida.danger)
             MTextButton(
-                "Включить",
+                tr("Включить"),
                 onClick = {
                     val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                         .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
                     runCatching { context.startActivity(intent) }
-                        .onFailure { model.notice("Открой настройки телефона → Приложения → Millida → Уведомления", isError = true) }
+                        .onFailure { model.notice(tr("Открой настройки телефона → Приложения → Millida → Уведомления"), isError = true) }
                 },
                 color = millida.accentText,
             )

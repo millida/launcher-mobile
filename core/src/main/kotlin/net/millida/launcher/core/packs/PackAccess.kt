@@ -12,6 +12,7 @@ import net.millida.launcher.core.account.Unauthorized
 import java.io.File
 import java.io.IOException
 
+import net.millida.launcher.core.i18n.tr
 /** What our API says about a paid pack that is about to run or is running. */
 sealed interface PackAccess {
     data class Allowed(val recheckInSec: Long) : PackAccess
@@ -23,7 +24,7 @@ sealed interface PackAccess {
         const val RECHECK_MIN_SEC = 5 * 60L
         const val RECHECK_MAX_SEC = 60 * 60L
         const val RECHECK_RETRY_SEC = 5 * 60L
-        private const val LOST_DEFAULT = "У этого аккаунта больше нет доступа к сборке"
+        private val LOST_DEFAULT: String get() = tr("У этого аккаунта больше нет доступа к сборке")
 
         /**
          * Only a verdict spelled out by our API takes the pack away. An unknown
@@ -65,7 +66,7 @@ object PackLaunchToken {
             ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
             ?.filter { PackJvmArgs.allowed(it) }
             .orEmpty()
-        if (kept.isEmpty()) throw IOException("сервер не выдал ключ запуска сборки — нажми «Играть» ещё раз через минуту")
+        if (kept.isEmpty()) throw IOException(tr("сервер не выдал ключ запуска сборки — нажми «Играть» ещё раз через минуту"))
         return kept
     }
 }
@@ -129,7 +130,7 @@ class PackLaunchGate(
                 null
             }
             if (verdict is PackAccess.Lost) throw PackAccessLost(slug, verdict.reason)
-            if (failure is Unauthorized) throw Unauthorized("войди в аккаунт Millida — эта сборка запускается по доступу")
+            if (failure is Unauthorized) throw Unauthorized(tr("войди в аккаунт Millida — эта сборка запускается по доступу"))
             throw failure
         }
         return PackAdmission(slug = slug, tokenArgs = token, watch = true)
@@ -139,7 +140,7 @@ class PackLaunchGate(
     private suspend fun gate(slug: String) {
         if (!api.signedIn()) {
             val required = withTimeoutOrNull(gateWaitMs) { quietly { api.accessRequired(slug) } } == true
-            if (required) throw PackAccessDenied("Войди в аккаунт Millida — эта сборка открывается по подписке")
+            if (required) throw PackAccessDenied(tr("Войди в аккаунт Millida — эта сборка открывается по подписке"))
             return
         }
         val verdict = withTimeoutOrNull(gateWaitMs) { quietly { api.access(slug) } }

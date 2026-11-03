@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.doubleOrNull
 
+import net.millida.launcher.core.i18n.tr
 data class CosmeticVariant(
     val name: String,
     val color: String = "",
@@ -66,55 +67,55 @@ fun splitVariantCode(id: String): Pair<String, String> {
     return if (at < 0) id to "" else id.substring(0, at) to id.substring(at + 1)
 }
 
-private val TITLE_WORDS: List<Pair<Regex, String>> = listOf(
-    Regex("rainbow") to "радуги",
-    Regex("prism|chroma") to "призмы",
-    Regex("galaxy|cosmic|space|star") to "галактики",
-    Regex("holo") to "голограммы",
-    Regex("aurora") to "северного сияния",
-    Regex("void") to "пустоты",
-    Regex("aether") to "эфира",
-    Regex("herobrine") to "Херобрина",
-    Regex("wither") to "иссушения",
-    Regex("(^|_)ender|end($|_)") to "Края",
-    Regex("portal") to "портала",
-    Regex("soul") to "душ",
-    Regex("magma|lava") to "магмы",
-    Regex("fire|flame|blaze") to "огня",
-    Regex("(^|_)ice($|_)|frost|snow") to "инея",
-    Regex("lightning|thunder|storm") to "грозы",
-    Regex("neon") to "неона",
-    Regex("glow|light($|_)") to "сияния",
-    Regex("blood") to "крови",
-    Regex("acid|toxic|poison") to "яда",
-    Regex("diamond") to "алмаза",
-    Regex("emerald") to "изумруда",
-    Regex("amethyst") to "аметиста",
-    Regex("netherite") to "незерита",
-    Regex("obsidian") to "обсидиана",
-    Regex("copper") to "меди",
-    Regex("iron|silver|steel") to "луны",
-    Regex("gold") to "солнца",
-    Regex("crimson|scarlet|ruby") to "багрянца",
-    Regex("red") to "заката",
-    Regex("orange|amber") to "пламени",
-    Regex("yellow|lemon") to "полудня",
-    Regex("lime") to "лайма",
-    Regex("green|mint|forest") to "леса",
-    Regex("teal|cyan|aqua|turquoise") to "лагуны",
-    Regex("light_blue|sky") to "неба",
-    Regex("navy|dark_blue") to "шторма",
-    Regex("blue") to "глубин",
-    Regex("purple|violet|lavender") to "сумерек",
-    Regex("magenta|pink|rose") to "сакуры",
-    Regex("white|pearl") to "снега",
-    Regex("black|dark|shadow") to "ночи",
-    Regex("gray|grey|ash") to "пепла",
-    Regex("brown|wood|choco") to "коры",
+private val TITLE_WORDS: List<Pair<Regex, String>> get() = listOf(
+    Regex("rainbow") to tr("радуги"),
+    Regex("prism|chroma") to tr("призмы"),
+    Regex("galaxy|cosmic|space|star") to tr("галактики"),
+    Regex("holo") to tr("голограммы"),
+    Regex("aurora") to tr("северного сияния"),
+    Regex("void") to tr("пустоты"),
+    Regex("aether") to tr("эфира"),
+    Regex("herobrine") to tr("Херобрина"),
+    Regex("wither") to tr("иссушения"),
+    Regex("(^|_)ender|end($|_)") to tr("Края"),
+    Regex("portal") to tr("портала"),
+    Regex("soul") to tr("душ"),
+    Regex("magma|lava") to tr("магмы"),
+    Regex("fire|flame|blaze") to tr("огня"),
+    Regex("(^|_)ice($|_)|frost|snow") to tr("инея"),
+    Regex("lightning|thunder|storm") to tr("грозы"),
+    Regex("neon") to tr("неона"),
+    Regex("glow|light($|_)") to tr("сияния"),
+    Regex("blood") to tr("крови"),
+    Regex("acid|toxic|poison") to tr("яда"),
+    Regex("diamond") to tr("алмаза"),
+    Regex("emerald") to tr("изумруда"),
+    Regex("amethyst") to tr("аметиста"),
+    Regex("netherite") to tr("незерита"),
+    Regex("obsidian") to tr("обсидиана"),
+    Regex("copper") to tr("меди"),
+    Regex("iron|silver|steel") to tr("луны"),
+    Regex("gold") to tr("солнца"),
+    Regex("crimson|scarlet|ruby") to tr("багрянца"),
+    Regex("red") to tr("заката"),
+    Regex("orange|amber") to tr("пламени"),
+    Regex("yellow|lemon") to tr("полудня"),
+    Regex("lime") to tr("лайма"),
+    Regex("green|mint|forest") to tr("леса"),
+    Regex("teal|cyan|aqua|turquoise") to tr("лагуны"),
+    Regex("light_blue|sky") to tr("неба"),
+    Regex("navy|dark_blue") to tr("шторма"),
+    Regex("blue") to tr("глубин"),
+    Regex("purple|violet|lavender") to tr("сумерек"),
+    Regex("magenta|pink|rose") to tr("сакуры"),
+    Regex("white|pearl") to tr("снега"),
+    Regex("black|dark|shadow") to tr("ночи"),
+    Regex("gray|grey|ash") to tr("пепла"),
+    Regex("brown|wood|choco") to tr("коры"),
 )
 
-private val TITLE_SPARE = listOf(
-    "рассвета", "бури", "тумана", "прилива", "полуночи", "грёз", "вьюги", "зари", "миража", "эха", "бездны", "зенита",
+private val TITLE_SPARE get() = listOf(
+    tr("рассвета"), tr("бури"), tr("тумана"), tr("прилива"), tr("полуночи"), tr("грёз"), tr("вьюги"), tr("зари"), tr("миража"), tr("эха"), tr("бездны"), tr("зенита"),
 )
 
 /**
@@ -130,7 +131,7 @@ fun variantTitles(baseName: String, names: List<String>): List<String> {
         val spare = TITLE_SPARE.drop(index % TITLE_SPARE.size) + TITLE_SPARE
         val word = (words + spare).firstOrNull { it !in used } ?: (index + 1).toString()
         used.add(word)
-        "$baseName $word"
+        tr("{item} {variant}", baseName, word)
     }
 }
 
@@ -294,43 +295,43 @@ data class CosmeticSection(val key: String, val name: String, val chips: List<Co
 object CosmeticSections {
     const val EMOTES = "emote"
 
-    val ALL: List<CosmeticSection> = listOf(
+    val ALL: List<CosmeticSection> get() = listOf(
         CosmeticSection(
             "head",
-            "Голова",
+            tr("Голова"),
             listOf(
-                CosmeticChip("HAT", "Шляпы", listOf("HAT")),
-                CosmeticChip("HEAD", "Причёски", listOf("HEAD")),
-                CosmeticChip("FACE", "Лицо", listOf("FACE")),
-                CosmeticChip("EARS", "Уши и рога", listOf("EARS")),
+                CosmeticChip("HAT", tr("Шляпы"), listOf("HAT")),
+                CosmeticChip("HEAD", tr("Причёски"), listOf("HEAD")),
+                CosmeticChip("FACE", tr("Лицо"), listOf("FACE")),
+                CosmeticChip("EARS", tr("Уши и рога"), listOf("EARS")),
             ),
         ),
         CosmeticSection(
             "body",
-            "Тело",
+            tr("Тело"),
             listOf(
-                CosmeticChip("FULL_BODY", "Костюмы", listOf("FULL_BODY")),
-                CosmeticChip("TOP", "Верх", listOf("TOP", "ACCESSORY")),
-                CosmeticChip("PANTS", "Низ", listOf("PANTS", "SKIRT", "WAIST")),
-                CosmeticChip("SHOES", "Обувь", listOf("SHOES", "FEET")),
-                CosmeticChip("ARMS", "Руки", listOf("ARMS", "HAND", "SHOULDERS", "SHOULDER")),
+                CosmeticChip("FULL_BODY", tr("Костюмы"), listOf("FULL_BODY")),
+                CosmeticChip("TOP", tr("Верх"), listOf("TOP", "ACCESSORY")),
+                CosmeticChip("PANTS", tr("Низ"), listOf("PANTS", "SKIRT", "WAIST")),
+                CosmeticChip("SHOES", tr("Обувь"), listOf("SHOES", "FEET")),
+                CosmeticChip("ARMS", tr("Руки"), listOf("ARMS", "HAND", "SHOULDERS", "SHOULDER")),
             ),
         ),
         CosmeticSection(
             "back",
-            "Спина",
+            tr("Спина"),
             listOf(
-                CosmeticChip("WINGS", "Крылья", listOf("WINGS")),
-                CosmeticChip("BACK", "За спиной", listOf("BACK")),
+                CosmeticChip("WINGS", tr("Крылья"), listOf("WINGS")),
+                CosmeticChip("BACK", tr("За спиной"), listOf("BACK")),
             ),
         ),
-        CosmeticSection("pet", "Питомцы", listOf(CosmeticChip("PET", "Питомцы", listOf("PET")))),
+        CosmeticSection("pet", tr("Питомцы"), listOf(CosmeticChip("PET", tr("Питомцы"), listOf("PET")))),
         CosmeticSection(
             EMOTES,
-            "Эмоции",
+            tr("Эмоции"),
             listOf(
-                CosmeticChip("EMOTE", "Эмоции", listOf("EMOTE")),
-                CosmeticChip("EFFECT", "Ауры", listOf("EFFECT", "AURA", "ICON")),
+                CosmeticChip("EMOTE", tr("Эмоции"), listOf("EMOTE")),
+                CosmeticChip("EFFECT", tr("Ауры"), listOf("EFFECT", "AURA", "ICON")),
             ),
         ),
     )
@@ -342,7 +343,7 @@ object CosmeticSections {
         if (slots.isEmpty()) return ALL
         val unknown = slots.filter { it !in KNOWN }.distinct()
         return ALL.map { section ->
-            val extra = if (section.key == "body" && unknown.isNotEmpty()) listOf(CosmeticChip("OTHER", "Другое", unknown)) else emptyList()
+            val extra = if (section.key == "body" && unknown.isNotEmpty()) listOf(CosmeticChip("OTHER", tr("Другое"), unknown)) else emptyList()
             section.copy(chips = (section.chips + extra).filter { chip -> chip.slots.any { it in slots } })
         }.filter { it.chips.isNotEmpty() }
     }

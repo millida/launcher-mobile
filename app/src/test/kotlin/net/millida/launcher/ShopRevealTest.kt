@@ -89,4 +89,15 @@ class ShopRevealTest {
         val card = craftCard(CraftResult(fragments = CraftFragments(amount = 8, have = 8, need = 16)), WorkshopOffer(item = hat, cost = 200))
         assertEquals("пустой item ответа не должен стереть карточку", hat, card.item)
     }
+
+    @Test
+    fun `предмет подарка без картинки берёт её из каталога`() {
+        val catalog = net.millida.launcher.core.cosmetics.CosmeticCatalog.of(
+            listOf(net.millida.launcher.core.cosmetics.CosmeticItem(id = "halo", name = "Ангельский нимб", slot = "HAT", preview = "https://cdn/halo.png", rarity = "UNCOMMON")),
+        )
+        val filled = itemWithCatalogArt(RubyItem(code = "halo", name = "Ангельский нимб"), catalog)
+        assertEquals("https://cdn/halo.png", filled.image)
+        assertEquals("HAT", filled.slot)
+        assertNull("незнакомый код остаётся как есть", itemWithCatalogArt(RubyItem(code = "zzz"), catalog).image)
+    }
 }

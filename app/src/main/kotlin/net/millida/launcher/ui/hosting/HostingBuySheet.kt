@@ -31,6 +31,7 @@ import net.millida.launcher.core.hosting.HOSTING_NAME_MAX
 import net.millida.launcher.core.hosting.HostingMap
 import net.millida.launcher.core.hosting.HostingPlan
 import net.millida.launcher.core.hosting.HostingServerState
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.ui.LocalUiFeedback
 import net.millida.launcher.ui.MBadge
@@ -70,11 +71,11 @@ private const val MAP_KIND = "map"
 
 private data class HostingPlayKind(val id: String, val label: String, val icon: MillidaIcon)
 
-private val PLAY_KIND_OPTIONS: List<HostingPlayKind> = listOf(
-    HostingPlayKind("vanilla", "Обычный", MIcons.blocks),
-    HostingPlayKind("modpack", "Сборка модов", MIcons.box),
-    HostingPlayKind(MAP_KIND, "Карта", MIcons.map),
-    HostingPlayKind("minigames", "Мини-игры", MIcons.users),
+private val PLAY_KIND_OPTIONS: List<HostingPlayKind> get() = listOf(
+    HostingPlayKind("vanilla", tr("Обычный"), MIcons.blocks),
+    HostingPlayKind("modpack", tr("Сборка модов"), MIcons.box),
+    HostingPlayKind(MAP_KIND, tr("Карта"), MIcons.map),
+    HostingPlayKind("minigames", tr("Мини-игры"), MIcons.users),
 )
 
 @Composable
@@ -162,17 +163,17 @@ fun HostingBuySheet(
         if (upgrade) maxOf(0L, plan.priceKopecks - upgradeCreditKopecks) else plan.priceKopecks
     }
 
-    MBottomSheet(onDismiss = onDismiss, title = if (upgrade) "Сменить тариф" else "Новый сервер") {
+    MBottomSheet(onDismiss = onDismiss, title = if (upgrade) tr("Сменить тариф") else tr("Новый сервер")) {
         if (!upgrade) {
             MField(
                 value = name,
                 onValueChange = { name = it.take(HOSTING_NAME_MAX) },
-                placeholder = "Название сервера",
+                placeholder = tr("Название сервера"),
                 leadingIcon = MIcons.edit,
                 clearable = true,
             )
             Spacer(Modifier.height(16.dp))
-            MSectionTitle("ВО ЧТО ИГРАЕМ")
+            MSectionTitle(tr("ВО ЧТО ИГРАЕМ"))
             Spacer(Modifier.height(8.dp))
             MButtonRow {
                 PLAY_KIND_OPTIONS.forEach { option ->
@@ -208,13 +209,13 @@ fun HostingBuySheet(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Бесплатный уже есть — один на аккаунт",
+                        tr("Бесплатный уже есть — один на аккаунт"),
                         modifier = Modifier.weight(1f),
                         style = MillidaType.small,
                         color = colors.fgSubtle,
                     )
                     MTextButton(
-                        "Открыть",
+                        tr("Открыть"),
                         onClick = {
                             onDismiss()
                             model.openHostedServer(freeServer.id)
@@ -241,9 +242,9 @@ fun HostingBuySheet(
                     val current = currentCode.isNotEmpty() && plan.code == currentCode
                     val blocked = when {
                         current -> null
-                        downgrade(plan) -> "Только повышение"
-                        !upgrade && plan.free && freeServer != null -> "Бесплатный уже есть"
-                        choosingMap && mapPick == null -> "Сначала выбери карту"
+                        downgrade(plan) -> tr("Только повышение")
+                        !upgrade && plan.free && freeServer != null -> tr("Бесплатный уже есть")
+                        choosingMap && mapPick == null -> tr("Сначала выбери карту")
                         else -> null
                     }
                     PlanOffer(
@@ -272,13 +273,13 @@ fun HostingBuySheet(
         val due = hostingRubles(dueOf(plan))
         val credited = upgrade && upgradeCreditKopecks > 0
         MConfirmDialog(
-            title = "Тариф «${plan.name}»",
+            title = tr("Тариф «{name}»", plan.name),
             text = if (credited) {
-                "К оплате $due — остаток прошлого тарифа зачтён. Спишем с кошелька Millida."
+                tr("К оплате {due} — остаток прошлого тарифа зачтён. Спишем с кошелька Millida.", due)
             } else {
-                "$price в месяц спишем с кошелька Millida."
+                tr("{price} в месяц спишем с кошелька Millida.", price)
             },
-            confirm = "Оплатить $due",
+            confirm = tr("Оплатить {due}", due),
             onConfirm = {
                 confirm = null
                 order(plan)
@@ -290,19 +291,19 @@ fun HostingBuySheet(
 
     panel.freeGate?.let { gate ->
         val link = if (gate.botStarted) gate.channelUrl else gate.botUrl
-        MBottomSheet(onDismiss = { hosting.closeFreeGate() }, title = "Бесплатный сервер") {
+        MBottomSheet(onDismiss = { hosting.closeFreeGate() }, title = tr("Бесплатный сервер")) {
             Text(
                 if (gate.botStarted) {
-                    "Подпишись на канал Millida и нажми «Проверить»"
+                    tr("Подпишись на канал Millida и нажми «Проверить»")
                 } else {
-                    "Запусти бота${gate.botUsername.takeIf { it.isNotBlank() }?.let { " @$it" }.orEmpty()} — после этого выдадим сервер"
+                    tr("Запусти бота{0} — после этого выдадим сервер", gate.botUsername.takeIf { it.isNotBlank() }?.let { " @$it" }.orEmpty())
                 },
                 style = MillidaType.body,
                 color = colors.fgMuted,
             )
             Spacer(Modifier.height(16.dp))
             MPrimaryButton(
-                if (gate.botStarted) "Открыть канал" else "Открыть бота",
+                if (gate.botStarted) tr("Открыть канал") else tr("Открыть бота"),
                 onClick = { model.openLinkOrNotice(context, link) },
                 modifier = Modifier.fillMaxWidth(),
                 enabled = link.isNotBlank(),
@@ -310,7 +311,7 @@ fun HostingBuySheet(
             )
             Spacer(Modifier.height(8.dp))
             MSecondaryButton(
-                "Проверить",
+                tr("Проверить"),
                 onClick = { hosting.recheckFreeGate { gatePlan?.let { picked -> order(picked) } } },
                 modifier = Modifier.fillMaxWidth(),
                 icon = MIcons.refresh,
@@ -335,7 +336,7 @@ private fun BalanceRow(balanceKopecks: Long?, onTopUp: () -> Unit) {
         MIcon(MIcons.wallet, size = 20.dp)
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text("Баланс Millida", style = MillidaType.small.copy(fontSize = 11.5.sp), color = colors.fgSubtle, maxLines = 1)
+            Text(tr("Баланс Millida"), style = MillidaType.small.copy(fontSize = 11.5.sp), color = colors.fgSubtle, maxLines = 1)
             Text(
                 balanceKopecks?.let(::hostingRubles) ?: "—",
                 style = MillidaType.pixel,
@@ -343,7 +344,7 @@ private fun BalanceRow(balanceKopecks: Long?, onTopUp: () -> Unit) {
                 maxLines = 1,
             )
         }
-        MTextButton("Пополнить", onClick = onTopUp, icon = MIcons.plus, color = colors.accentText)
+        MTextButton(tr("Пополнить"), onClick = onTopUp, icon = MIcons.plus, color = colors.accentText)
     }
 }
 
@@ -360,8 +361,8 @@ private fun PlanOffer(
 ) {
     val colors = millida
     val players = when {
-        plan.maxPlayers > 0 -> "${plan.maxPlayers} игроков"
-        plan.playersComfort > 0 -> "до ${plan.playersComfort} игроков"
+        plan.maxPlayers > 0 -> tr("{maxPlayers} игроков", plan.maxPlayers)
+        plan.playersComfort > 0 -> tr("до {playersComfort} игроков", plan.playersComfort)
         else -> null
     }
     MCard(background = if (current) colors.accentToday else colors.surface2, contentPadding = 14.dp) {
@@ -376,7 +377,7 @@ private fun PlanOffer(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                if (plan.free) "0 ₽" else "${hostingRubles(plan.priceKopecks)}/мес",
+                if (plan.free) "0 ₽" else tr("{0}/мес", hostingRubles(plan.priceKopecks)),
                 style = MillidaType.pixel,
                 color = colors.accentText,
                 maxLines = 1,
@@ -384,24 +385,24 @@ private fun PlanOffer(
         }
         if (plan.featured) {
             Spacer(Modifier.height(6.dp))
-            MBadge("Берут чаще всего", colors.accentText, colors.accentSoft, icon = MIcons.star)
+            MBadge(tr("Берут чаще всего"), colors.accentText, colors.accentSoft, icon = MIcons.star)
         } else if (plan.tagline.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
             Text(plan.tagline, style = MillidaType.small, color = colors.fgSubtle, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.height(10.dp))
         MButtonRow {
-            if (plan.ramMb > 0) PlanSpec(MIcons.monitor, "${hostingGb(plan.ramMb)} ГБ")
+            if (plan.ramMb > 0) PlanSpec(MIcons.monitor, tr("{0} ГБ", hostingGb(plan.ramMb)))
             if (players != null) PlanSpec(MIcons.users, players)
-            if (plan.diskMb > 0) PlanSpec(MIcons.box, "${hostingGb(plan.diskMb)} ГБ диск")
+            if (plan.diskMb > 0) PlanSpec(MIcons.box, tr("{0} ГБ диск", hostingGb(plan.diskMb)))
         }
         Spacer(Modifier.height(12.dp))
         val label = when {
-            current -> "Текущий тариф"
-            busy -> "Оформляем"
+            current -> tr("Текущий тариф")
+            busy -> tr("Оформляем")
             blocked != null -> blocked
-            plan.free -> "Запустить бесплатно"
-            else -> "Оплатить ${hostingRubles(payKopecks)}"
+            plan.free -> tr("Запустить бесплатно")
+            else -> tr("Оплатить {0}", hostingRubles(payKopecks))
         }
         MButton(
             text = label,
@@ -447,14 +448,14 @@ private fun MapPicker(
     MField(
         value = query,
         onValueChange = { onQuery(it.take(60)) },
-        placeholder = "Поиск карты",
+        placeholder = tr("Поиск карты"),
         leadingIcon = MIcons.search,
         clearable = true,
         imeAction = ImeAction.Search,
     )
     Spacer(Modifier.height(8.dp))
     if (picked != null) {
-        MBadge("Карта: ${picked.name}", colors.accentText, colors.accentSoft, icon = MIcons.check)
+        MBadge(tr("Карта: {name}", picked.name), colors.accentText, colors.accentSoft, icon = MIcons.check)
         Spacer(Modifier.height(8.dp))
     }
     when {
@@ -464,7 +465,7 @@ private fun MapPicker(
         }
 
         maps.isEmpty() -> Text(
-            "Ничего не нашлось",
+            tr("Ничего не нашлось"),
             modifier = Modifier.padding(vertical = 10.dp),
             style = MillidaType.small,
             color = colors.fgFaint,
@@ -474,7 +475,7 @@ private fun MapPicker(
             maps.take(8).forEach { map ->
                 MListRow(
                     title = map.name,
-                    subtitle = if (map.downloads > 0) "Загрузок: ${groupDigits(map.downloads)}" else null,
+                    subtitle = if (map.downloads > 0) tr("Загрузок: {0}", groupDigits(map.downloads)) else null,
                     plate = false,
                     leading = { MRemoteImage(url = map.iconUrl, icon = MIcons.map, size = 40.dp) },
                     onClick = { onPick(map) },

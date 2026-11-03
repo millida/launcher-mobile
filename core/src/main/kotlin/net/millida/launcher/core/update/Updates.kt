@@ -10,6 +10,8 @@ import net.millida.launcher.core.http.HttpError
 import net.millida.launcher.core.http.NetworkFaults
 import net.millida.launcher.core.http.RemoteFile
 import net.millida.launcher.core.http.TransferProgress
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trSource
 import net.millida.launcher.core.mojang.MojangJson
 import java.io.File
 import java.io.IOException
@@ -86,32 +88,32 @@ object UpdateCheck {
         platform: String = ANDROID_PLATFORM,
     ): UpdateVerdict {
         val version = manifest.version.trim().removePrefix("v")
-        if (version.isEmpty()) return UpdateVerdict.Rejected("в манифесте обновления нет версии")
+        if (version.isEmpty()) return UpdateVerdict.Rejected(tr("в манифесте обновления нет версии"))
 
         val build = manifest.buildFor(platform)
-            ?: return UpdateVerdict.Rejected("в манифесте нет сборки под Android")
+            ?: return UpdateVerdict.Rejected(tr("в манифесте нет сборки под Android"))
         if (build.versionCode <= 0) {
-            return UpdateVerdict.Rejected("в манифесте нет номера сборки — обновляться не по чему")
+            return UpdateVerdict.Rejected(tr("в манифесте нет номера сборки — обновляться не по чему"))
         }
         if (!isNewer(build.versionCode, currentVersionCode)) return UpdateVerdict.UpToDate
 
         val url = build.url.trim()
         if (!url.startsWith("https://")) {
-            return UpdateVerdict.Rejected("адрес обновления должен начинаться с https://")
+            return UpdateVerdict.Rejected(tr("адрес обновления должен начинаться с https://"))
         }
         if (!fromUpdateHost(url)) {
-            return UpdateVerdict.Rejected("обновление лежит не на нашей раздаче — такой файл мы не ставим")
+            return UpdateVerdict.Rejected(tr("обновление лежит не на нашей раздаче — такой файл мы не ставим"))
         }
 
         val sha256 = build.sha256.trim()
         if (!SHA256.matches(sha256)) {
             return UpdateVerdict.Rejected(
-                "у обновления нет контрольной суммы — такой файл мы не ставим",
+                tr("у обновления нет контрольной суммы — такой файл мы не ставим"),
             )
         }
         if (build.minSdk > 0 && deviceSdk > 0 && build.minSdk > deviceSdk) {
             return UpdateVerdict.Rejected(
-                "обновление рассчитано на Android новее, чем на этом устройстве",
+                tr("обновление рассчитано на Android новее, чем на этом устройстве"),
             )
         }
 
@@ -136,21 +138,21 @@ object UpdateFaults {
 
     fun describe(error: Throwable): String {
         if (NetworkFaults.unknownHost(error) != null) {
-            return NetworkFaults.nameLookupAdvice("канала обновлений")
+            return NetworkFaults.updatesLookupAdvice()
         }
         val status = causes(error).filterIsInstance<HttpError>().firstOrNull()
         if (status != null) {
             return if (status.code == 404) {
-                "Канал обновлений ещё не открыт — новые версии пока раздаём файлом"
+                tr("Канал обновлений ещё не открыт — новые версии пока раздаём файлом")
             } else {
-                "Канал обновлений ответил ошибкой ${status.code} — повтори позже"
+                tr("Канал обновлений ответил ошибкой {code} — повтори позже", status.code)
             }
         }
-        val unreadable = causes(error).firstOrNull { it is IOException && it.message?.startsWith("манифест") == true }
+        val unreadable = causes(error).firstOrNull { it is IOException && it.message?.let(::trSource)?.startsWith("манифест") == true }
         if (unreadable != null) {
-            return "Канал обновлений отдал битый файл — повтори позже"
+            return tr("Канал обновлений отдал битый файл — повтори позже")
         }
-        return "Канал обновлений не ответил — проверь сеть и повтори"
+        return tr("Канал обновлений не ответил — проверь сеть и повтори")
     }
 
     private fun causes(error: Throwable): List<Throwable> =
@@ -270,7 +272,7 @@ class UpdateClient(
     suspend fun manifest(): UpdateManifest {
         if (!manifestUrl.startsWith("http://") && !manifestUrl.startsWith("https://")) {
             val local = File(manifestUrl.removePrefix("file://"))
-            if (!local.isFile) throw IOException("файл манифеста не найден: ${local.absolutePath}")
+            if (!local.isFile) throw IOException(tr("файл манифеста не найден: {absolutePath}", local.absolutePath))
             return decode(local.readText())
         }
         val cached = File(layout.caches, CACHED_MANIFEST)
@@ -313,7 +315,7 @@ class UpdateClient(
         onProgress: (TransferProgress) -> Unit = {},
     ): File = withContext(Dispatchers.IO) {
         if (release.sha256.isBlank()) {
-            throw IOException("обновление пришло без контрольной суммы — установка отменена")
+            throw IOException(tr("обновление пришло без контрольной суммы — установка отменена"))
         }
         // A plain-http package is rewritten on the way and is refused here as
         // well as in `decide`. Everything that is not http(s) is the local-file
@@ -321,7 +323,7 @@ class UpdateClient(
         // takes network addresses only; a channel manifest from the server can
         // never produce one, because `decide` only lets https through.
         if (release.url.startsWith("http://")) {
-            throw IOException("адрес обновления должен начинаться с https://")
+            throw IOException(tr("адрес обновления должен начинаться с https://"))
         }
 
         val target = apkFile(release)
@@ -343,12 +345,12 @@ class UpdateClient(
             } else {
                 File(release.url.removePrefix("file://")).takeIf { it.isFile }?.copyTo(staging, overwrite = true)
             }
-            if (!staging.isFile) throw IOException("файл обновления не скачался")
+            if (!staging.isFile) throw IOException(tr("файл обновления не скачался"))
             if (!verify(release, staging)) {
-                throw IOException("контрольная сумма обновления не совпала — установка отменена")
+                throw IOException(tr("контрольная сумма обновления не совпала — установка отменена"))
             }
             if (!staging.renameTo(target)) {
-                throw IOException("не удалось сохранить файл обновления")
+                throw IOException(tr("не удалось сохранить файл обновления"))
             }
             target
         } finally {
@@ -358,11 +360,11 @@ class UpdateClient(
 
     private fun decode(body: String): UpdateManifest {
         val text = body.trim()
-        if (text.isEmpty()) throw IOException("манифест обновления пуст")
+        if (text.isEmpty()) throw IOException(tr("манифест обновления пуст"))
         return try {
             MojangJson.decodeFromString(UpdateManifest.serializer(), text)
         } catch (error: Exception) {
-            throw IOException("манифест обновления не читается", error)
+            throw IOException(tr("манифест обновления не читается"), error)
         }
     }
 

@@ -7,6 +7,7 @@ import net.millida.launcher.core.Hashing
 import net.millida.launcher.core.atomicWriteText
 import java.io.File
 
+import net.millida.launcher.core.i18n.tr
 @Serializable
 private data class TextureMeta(
     val file: String = "",
@@ -47,7 +48,7 @@ class TextureLibrary(
 
     fun read(kind: TextureKind, file: String): ByteArray {
         val target = File(dir(kind), safeName(file))
-        if (!target.isFile) throw TextureError("Текстура не найдена")
+        if (!target.isFile) throw TextureError(tr("Текстура не найдена"))
         return target.readBytes()
     }
 
@@ -66,7 +67,7 @@ class TextureLibrary(
             0,
             TextureMeta(
                 file = file,
-                name = title.ifEmpty { if (kind == TextureKind.CAPE) "Плащ" else "Скин" },
+                name = title.ifEmpty { if (kind == TextureKind.CAPE) tr("Плащ") else tr("Скин") },
                 slim = slim,
                 slimManual = false,
             ),
@@ -78,7 +79,7 @@ class TextureLibrary(
 
     fun rename(kind: TextureKind, file: String, name: String): List<TextureEntry> {
         val title = name.trim()
-        if (title.isEmpty()) throw TextureError("Имя не может быть пустым")
+        if (title.isEmpty()) throw TextureError(tr("Имя не может быть пустым"))
         val target = safeName(file)
         val metas = sync(kind).map { if (it.file == target) it.copy(name = title.take(60)) else it }
         return store(kind, metas)
@@ -167,7 +168,7 @@ class TextureLibrary(
         fun safeName(file: String): String {
             val name = file.trim()
             if (name.isEmpty() || name.contains('/') || name.contains('\\') || name.contains("..")) {
-                throw TextureError("Недопустимое имя файла")
+                throw TextureError(tr("Недопустимое имя файла"))
             }
             return name
         }

@@ -7,9 +7,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
+import net.millida.launcher.core.hub.PhoneBlocked
 import net.millida.launcher.core.catalog.MillidaCard
 import net.millida.launcher.core.catalog.MillidaCatalog
 import net.millida.launcher.core.catalog.MillidaPaid
+import net.millida.launcher.core.i18n.I18n
+import net.millida.launcher.core.i18n.tr
+import net.millida.launcher.core.i18n.trPlural
 import net.millida.launcher.core.packs.PhoneBlock
 import net.millida.launcher.core.packs.PhoneCard
 import net.millida.launcher.core.packs.PhoneFit
@@ -19,7 +23,6 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 enum class PremiumPeriod {
     MONTH,
@@ -27,8 +30,8 @@ enum class PremiumPeriod {
     NONE;
 
     val suffix: String get() = when (this) {
-        MONTH -> "/мес"
-        YEAR -> "/год"
+        MONTH -> tr("/мес")
+        YEAR -> tr("/год")
         NONE -> ""
     }
 
@@ -288,7 +291,7 @@ object Premium {
 
     /** Only live numbers of the server, joined by a dot. */
     fun facts(pack: PremiumPack): String = buildList {
-        pack.modsCount?.takeIf { it > 0 }?.let { add(count(it.toLong()) + " модов") }
+        pack.modsCount?.takeIf { it > 0 }?.let { n -> count(n.toLong()).let { add(trPlural(n.toLong(), tr("{0} мод", it), tr("{0} мода", it), tr("{0} модов", it))) } }
         pack.mcVersion?.takeIf { it.isNotBlank() }?.let(::add)
         pack.loader?.takeIf { it.isNotBlank() }?.let(::add)
     }.joinToString(" · ")
@@ -332,7 +335,8 @@ object Premium {
     )
 
     /** Lists on the phone show only what can start there; a link still opens the page, which says why not. */
-    fun forPhone(packs: List<PremiumPack>): List<PremiumPack> = packs.filter { phoneBlock(it) == null }
+    fun forPhone(packs: List<PremiumPack>): List<PremiumPack> =
+        packs.filter { phoneBlock(it) == null && !PhoneBlocked.hides(it.slug, it.id) }
 
     /** The catalogue card read for the page knows the launch and the size the list left out. */
     fun withView(pack: PremiumPack, view: PackView?): PremiumPack {
@@ -349,14 +353,14 @@ object Premium {
     fun priceLine(pack: PremiumPack, plan: PremiumTier?, sub: PremiumSubscription?, zone: ZoneId = ZoneId.systemDefault()): PriceLine? {
         if (hasAccess(pack, sub)) {
             val until = untilText(sub?.paidUntil, zone)
-            return PriceLine("Доступ открыт", if (sub?.active == true && until.isNotEmpty()) listOf("Подписка до $until") else emptyList())
+            return PriceLine(tr("Доступ открыт"), if (sub?.active == true && until.isNotEmpty()) listOf(tr("Подписка до {until}", until)) else emptyList())
         }
         val main = priceLabel(pack, plan)
         if (main.isEmpty()) return null
         val notes = buildList {
             val once = pack.priceKopecks ?: 0
-            if (pack.inSubscription && plan != null && once > 0) add("или ${MillidaPaid.rubles(once)} разово")
-            if (!pack.inSubscription) add("Покупка навсегда")
+            if (pack.inSubscription && plan != null && once > 0) add(tr("или {0} разово", MillidaPaid.rubles(once)))
+            if (!pack.inSubscription) add(tr("Покупка навсегда"))
         }
         return PriceLine(main, notes)
     }
@@ -364,29 +368,29 @@ object Premium {
     /** Cancelling sits where the subscription is; null when there is nothing to say. */
     fun cancelNote(sub: PremiumSubscription?, zone: ZoneId = ZoneId.systemDefault()): String? {
         if (sub == null) return null
-        if (!sub.active) return "Отмена в любой момент"
+        if (!sub.active) return tr("Отмена в любой момент")
         val until = untilText(sub.paidUntil, zone)
         return if (sub.canceled) {
-            "Продление выключено" + if (until.isNotEmpty()) ", доступ до $until" else ""
+            if (until.isNotEmpty()) tr("Продление выключено, доступ до {until}", until) else tr("Продление выключено")
         } else {
-            "Списание каждый месяц" + if (until.isNotEmpty()) ", следующее $until" else ""
+            if (until.isNotEmpty()) tr("Списание каждый месяц, следующее {until}", until) else tr("Списание каждый месяц")
         }
     }
 
     fun tiles(pack: PremiumPack, updatedAt: String?, zone: ZoneId = ZoneId.systemDefault()): List<PackTile> = buildList {
-        pack.modsCount?.takeIf { it > 0 }?.let { add(PackTile("Модов", count(it.toLong()))) }
-        pack.mcVersion?.takeIf { it.isNotBlank() }?.let { add(PackTile("Версия", it)) }
-        pack.loader?.takeIf { it.isNotBlank() }?.let { add(PackTile("Загрузчик", it)) }
-        pack.online?.let { add(PackTile("Сейчас играют", count(it.toLong()))) }
-        pack.downloads?.takeIf { it > 0 }?.let { add(PackTile("Скачиваний", count(it))) }
-        pack.author?.takeIf { it.isNotBlank() }?.let { add(PackTile("Собрал", it)) }
-        untilText(updatedAt, zone).takeIf { it.isNotEmpty() }?.let { add(PackTile("Обновлено", it)) }
+        pack.modsCount?.takeIf { it > 0 }?.let { add(PackTile(tr("Модов"), count(it.toLong()))) }
+        pack.mcVersion?.takeIf { it.isNotBlank() }?.let { add(PackTile(tr("Версия"), it)) }
+        pack.loader?.takeIf { it.isNotBlank() }?.let { add(PackTile(tr("Загрузчик"), it)) }
+        pack.online?.let { add(PackTile(tr("Сейчас играют"), count(it.toLong()))) }
+        pack.downloads?.takeIf { it > 0 }?.let { add(PackTile(tr("Скачиваний"), count(it))) }
+        pack.author?.takeIf { it.isNotBlank() }?.let { add(PackTile(tr("Собрал"), it)) }
+        untilText(updatedAt, zone).takeIf { it.isNotEmpty() }?.let { add(PackTile(tr("Обновлено"), it)) }
     }
 
     /** The pack's own server is the only thing the catalogue says about what comes with it. */
     fun includes(detail: PremiumPackDetail): List<String> = when {
         detail.includes.isNotEmpty() -> detail.includes
-        detail.pack.hasServer -> listOf("Сервер сборки")
+        detail.pack.hasServer -> listOf(tr("Сервер сборки"))
         else -> emptyList()
     }
 
@@ -396,7 +400,7 @@ object Premium {
     /** The partner promotes the bundle: «all packs» comes first and the single pack second. */
     fun orderedPlans(plans: List<PremiumTier>): List<PremiumTier> = plans.sortedBy { if (it.id == SINGLE_PLAN) 1 else 0 }
 
-    fun planLabel(plan: PremiumTier): String = (if (plan.id == SINGLE_PLAN) "Эта сборка" else "Все сборки") + " · " + planPrice(plan)
+    fun planLabel(plan: PremiumTier): String = (if (plan.id == SINGLE_PLAN) tr("Эта сборка") else tr("Все сборки")) + " · " + planPrice(plan)
 
     /** «12 октября»; empty for a missing or broken date. */
     fun untilText(iso: String?, zone: ZoneId = ZoneId.systemDefault()): String {
@@ -406,7 +410,7 @@ object Premium {
         return date.format(DAY_MONTH)
     }
 
-    fun count(value: Long): String = NumberFormat.getIntegerInstance(RU).format(value)
+    fun count(value: Long): String = NumberFormat.getIntegerInstance(I18n.javaLocale).format(value)
 
     private fun parseDate(raw: String, zone: ZoneId): LocalDate? =
         runCatching { Instant.parse(raw).atZone(zone).toLocalDate() }.getOrNull()
@@ -460,8 +464,7 @@ object Premium {
     )
 
     private const val SINGLE_PLAN = "pack"
-    private val RU = Locale("ru", "RU")
-    private val DAY_MONTH: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMMM", RU)
+    private val DAY_MONTH: DateTimeFormatter get() = DateTimeFormatter.ofPattern("d MMMM", I18n.javaLocale)
 }
 
 private fun JsonObject.has(key: String): Boolean = (this[key] as? JsonPrimitive)?.let { !it.isString && it.booleanOrNull != null } == true

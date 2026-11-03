@@ -9,6 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import net.millida.launcher.core.bedrock.isBedrockAddress
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.rating.RatedServer
 import net.millida.launcher.core.rating.versionRangeLabel
 import net.millida.launcher.ui.MBadge
@@ -41,7 +42,7 @@ internal fun OnlineCount(server: RatedServer, modifier: Modifier = Modifier) {
             Text(onlineText(server), style = MillidaType.pixel, color = colors.accentText, maxLines = 1)
         }
     } else {
-        Text("офлайн", modifier = modifier, style = MillidaType.small, color = colors.fgFaint, maxLines = 1)
+        Text(tr("офлайн"), modifier = modifier, style = MillidaType.small, color = colors.fgFaint, maxLines = 1)
     }
 }
 
@@ -57,7 +58,7 @@ internal fun ServerTags(server: RatedServer, withVersions: Boolean = true) {
         MBadge(categoryLabel(category), colors.info, colors.infoSoft)
     }
     if (server.license.equals("CRACKED", ignoreCase = true)) {
-        MBadge("Без лицензии", colors.fgMuted, colors.surface2)
+        MBadge(tr("Без лицензии"), colors.fgMuted, colors.surface2)
     }
     if (isBedrockAddress(server.joinAddress) || !server.bedrockAddress.isNullOrBlank()) {
         MBadge("Bedrock", colors.warning, colors.warningSoft)

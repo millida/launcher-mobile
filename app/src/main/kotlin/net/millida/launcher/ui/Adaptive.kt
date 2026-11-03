@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -20,6 +23,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListScope
@@ -35,6 +39,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -60,7 +67,54 @@ fun ProvideWideLayout(content: @Composable () -> Unit) {
     val configuration = LocalConfiguration.current
     val wide = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
         configuration.screenWidthDp >= WIDE_MIN_WIDTH_DP
-    CompositionLocalProvider(LocalWideLayout provides wide, content = content)
+    CompositionLocalProvider(LocalWideLayout provides wide) { ProvideCompactDensity(content) }
+}
+
+/** A phone on its side: under this height every dp of the interface is drawn smaller, as a game HUD. */
+internal const val COMPACT_MAX_HEIGHT_DP = 480
+
+/** The window height a compact phone's interface is drawn for; shorter windows shrink it, down to [COMPACT_SCALE_MIN]. */
+internal const val COMPACT_REFERENCE_HEIGHT_DP = 470f
+internal const val COMPACT_SCALE_MIN = 0.82f
+
+/**
+ * How much of a dp a compact landscape phone keeps, taken from the device: a 411 dp tall window
+ * (Redmi Note 13 on its side) keeps about 0.87, a window of 470 dp and more keeps everything.
+ * Text follows the boxes, with no step of its own.
+ */
+internal fun compactScale(screenHeightDp: Int): Float =
+    (screenHeightDp / COMPACT_REFERENCE_HEIGHT_DP).coerceIn(COMPACT_SCALE_MIN, 1f)
+
+/** The scale [ProvideCompactDensity] applied; 1 outside compact mode. */
+val LocalCompactScale = staticCompositionLocalOf { 1f }
+
+/** True inside [ProvideCompactDensity] on a phone held sideways; lobby and dialogs read it to pick tighter sizes. */
+val LocalCompactUi = staticCompositionLocalOf { false }
+
+/**
+ * The one density knob for landscape phones. It sets the density from the
+ * device's own (not on top of the inherited one), so applying it again inside
+ * a dialog or popup window never scales twice.
+ */
+@Composable
+fun ProvideCompactDensity(content: @Composable () -> Unit) {
+    val configuration = LocalConfiguration.current
+    val compact = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE &&
+        configuration.screenHeightDp < COMPACT_MAX_HEIGHT_DP
+    if (!compact) {
+        CompositionLocalProvider(LocalCompactUi provides false, content = content)
+        return
+    }
+    val base = LocalContext.current.resources.displayMetrics.density
+    val fontScale = configuration.fontScale
+    val scale = compactScale(configuration.screenHeightDp)
+    val density = remember(base, fontScale, scale) { Density(base * scale, fontScale) }
+    CompositionLocalProvider(
+        LocalDensity provides density,
+        LocalCompactUi provides true,
+        LocalCompactScale provides scale,
+        content = content,
+    )
 }
 
 /**
@@ -89,12 +143,22 @@ class WideHub(private val libraryOpen: MutableState<Boolean>) {
 
 val LocalWideHub = staticCompositionLocalOf { WideHub(mutableStateOf(false)) }
 
+/**
+ * The gesture bar under a landscape screen. The wide shell keeps screens inside
+ * the top and side insets only, so the last row of a list or a pane would sit
+ * under the bar without this room; portrait has its sections bar there and gets zero.
+ */
+@Composable
+fun wideBottomInset(): Dp =
+    if (LocalWideLayout.current) WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() else 0.dp
+
 /** How many cells of at least [cell] fit across a screen; one in portrait. */
 @Composable
 @ReadOnlyComposable
 fun adaptiveColumns(cell: Dp = WIDE_LIST_CELL, max: Int = 4): Int {
     if (!LocalWideLayout.current) return 1
-    val room = LocalConfiguration.current.screenWidthDp.dp - screenPadding * 2
+    val room = effectiveScreenWidthDp().dp - screenPadding * 2
+    if (LocalCompactUi.current) return (room / (cell * LocalCompactScale.current)).toInt().coerceIn(2, (max + 2).coerceAtMost(6))
     return (room / cell).toInt().coerceIn(2, max)
 }
 
@@ -107,7 +171,7 @@ fun <T> LazyListScope.adaptiveItems(
     columns: Int,
     key: (T) -> Any,
     contentType: Any? = null,
-    gap: Dp = 10.dp,
+    gap: Dp = 14.dp,
     itemContent: @Composable LazyItemScope.(T) -> Unit,
 ) {
     if (columns <= 1) {
@@ -207,8 +271,8 @@ fun PlayHubTabs(resources: Boolean, onLibrary: () -> Unit, onResources: () -> Un
             .padding(3.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        HubTab("Библиотека", MIcons.chest, picked = !resources, onClick = onLibrary)
-        HubTab("Ресурсы", MIcons.book, picked = resources, onClick = onResources)
+        HubTab(tr("Библиотека"), MIcons.chest, picked = !resources, onClick = onLibrary)
+        HubTab(tr("Ресурсы"), MIcons.book, picked = resources, onClick = onResources)
     }
 }
 
@@ -220,3 +284,15 @@ private fun HubTab(text: String, icon: MillidaIcon, picked: Boolean, onClick: ()
         MSecondaryButton(text, onClick = onClick, icon = icon, size = MButtonSize.Small)
     }
 }
+
+/** The window's height in the dp the interface is drawn in: a compact phone's dp are smaller, so it holds more of them. */
+@Composable
+@ReadOnlyComposable
+fun effectiveScreenHeightDp(): Float =
+    LocalConfiguration.current.screenHeightDp / LocalCompactScale.current
+
+/** Same for the width. */
+@Composable
+@ReadOnlyComposable
+fun effectiveScreenWidthDp(): Float =
+    LocalConfiguration.current.screenWidthDp / LocalCompactScale.current

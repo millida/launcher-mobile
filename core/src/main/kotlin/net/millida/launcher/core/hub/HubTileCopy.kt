@@ -1,5 +1,7 @@
 package net.millida.launcher.core.hub
 
+import net.millida.launcher.core.i18n.tr
+
 /**
  * Words on the lobby section tiles, the desktop's HubTile.tsx: a subtitle shows
  * only when something happened (a bonus waits, something new, the skin was
@@ -19,13 +21,13 @@ object HubTileCopy {
         Kind.SHOP -> {
             val gift = shopNew || bonusReady
             val subtitle = when {
-                bonusReady -> "Бонус ждёт"
-                gift -> "Есть новое"
+                bonusReady -> tr("Бонус ждёт")
+                gift -> tr("Есть новое")
                 else -> null
             }
-            Copy("Магазин", subtitle, ribbon = null, alert = gift)
+            Copy(tr("Магазин"), subtitle, ribbon = null, alert = gift)
         }
-        Kind.WARDROBE -> Copy("Мой скин", if (skinSeen) null else "Загрузи свой", ribbon = null, alert = !skinSeen)
-        Kind.SERVER -> Copy("Играть с друзьями", null, ribbon = if (hostedCount > 0) null else "Бесплатно", alert = false)
+        Kind.WARDROBE -> Copy(tr("Мой скин"), if (skinSeen) null else tr("Загрузи свой"), ribbon = null, alert = !skinSeen)
+        Kind.SERVER -> Copy(tr("Играть с друзьями"), null, ribbon = null, alert = false)
     }
 }

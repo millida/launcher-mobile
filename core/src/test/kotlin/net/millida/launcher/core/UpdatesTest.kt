@@ -495,4 +495,24 @@ class UpdatePolicyTest {
         assertTrue(p.canSkipUserAction(31))
         assertTrue(p.canSkipUserAction(35))
     }
+
+    @Test
+    fun `тихой установка бывает только с разрешением и с Android 12`() {
+        val p = net.millida.launcher.core.update.UpdatePolicy
+        val declared = listOf("android.permission.INTERNET", p.SILENT_UPDATE_PERMISSION)
+        assertTrue("разрешение объявлено, система не спросит", p.installsSilently(35, declared))
+        assertFalse("без разрешения система спрашивает всегда, что бы ни стояло в сессии", p.installsSilently(35, listOf("android.permission.INTERNET")))
+        assertFalse("до Android 12 система спрашивает всегда", p.installsSilently(30, declared))
+    }
+
+    @Test
+    fun `установку с вопросом системы начинает только нажатие игрока`() {
+        val p = net.millida.launcher.core.update.UpdatePolicy
+        assertTrue("игрок нажал «Обновить»: подтверждение системы он и ждёт", p.startsInstall(manual = true, silent = false))
+        assertTrue("система не спросит: ставим и без нажатия", p.startsInstall(manual = false, silent = true))
+        assertFalse(
+            "фоновая загрузка не открывает окно подтверждения сама — оно выскочило бы поверх того, чем игрок занят",
+            p.startsInstall(manual = false, silent = false),
+        )
+    }
 }

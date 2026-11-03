@@ -5,8 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import net.millida.launcher.LauncherViewModel
 
-private const val LINK_FAILED_NOTICE = "Ссылка не открылась — поставь или включи браузер"
-private const val LINK_BROKEN_NOTICE = "Ссылка битая — сообщи в поддержку"
+import net.millida.launcher.core.i18n.tr
+private val LINK_FAILED_NOTICE: String get() = tr("Ссылка не открылась — поставь или включи браузер")
+private val LINK_BROKEN_NOTICE: String get() = tr("Ссылка битая — сообщи в поддержку")
 
 private val WEB_SCHEMES = setOf("http", "https")
 
@@ -37,15 +38,15 @@ internal fun LauncherViewModel.openLinkOrNotice(context: Context, url: String) {
 }
 
 fun humanSize(bytes: Long): String = when {
-    bytes <= 0 -> "пусто"
-    bytes < 1024 -> "$bytes Б"
-    bytes < 1024L * 1024 -> "${(bytes / 1024.0).toInt()} КБ"
-    bytes < 1024L * 1024 * 1024 -> String.format(java.util.Locale.ROOT, "%.1f МБ", bytes / 1024.0 / 1024)
-    else -> String.format(java.util.Locale.ROOT, "%.1f ГБ", bytes / 1024.0 / 1024 / 1024)
+    bytes <= 0 -> tr("пусто")
+    bytes < 1024 -> tr("{bytes} Б", bytes)
+    bytes < 1024L * 1024 -> tr("{0} КБ", (bytes / 1024.0).toInt())
+    bytes < 1024L * 1024 * 1024 -> tr("{0} МБ", String.format(java.util.Locale.ROOT, "%.1f", bytes / 1024.0 / 1024))
+    else -> tr("{0} ГБ", String.format(java.util.Locale.ROOT, "%.1f", bytes / 1024.0 / 1024 / 1024))
 }
 
 internal fun shotMoment(millis: Long): String {
-    if (millis <= 0) return "без даты"
+    if (millis <= 0) return tr("без даты")
     val format = java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault())
     return format.format(java.util.Date(millis))
 }

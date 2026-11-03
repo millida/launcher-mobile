@@ -1,5 +1,7 @@
 package net.millida.launcher.core
 
+import net.millida.launcher.core.catalog.Catalog
+import net.millida.launcher.core.catalog.CatalogItem
 import net.millida.launcher.core.catalog.MillidaCard
 import net.millida.launcher.core.catalog.MillidaCatalog
 import net.millida.launcher.core.packs.PhoneCard
@@ -56,6 +58,24 @@ class PhoneListedTest {
         )
         cases.forEach { case ->
             assertEquals(case.why, case.listed, MillidaCatalog.phoneListed(case.card, legacyRuntime = false, deviceTotalMb = 4_000))
+        }
+    }
+
+    @Test
+    fun `модпак из Modrinth и CurseForge виден если подходит хоть один вариант`() {
+        data class Case(val item: CatalogItem, val beta: Boolean, val listed: Boolean, val why: String)
+
+        val cases = listOf(
+            Case(CatalogItem(projectId = "a", gameVersions = listOf("1.12.2"), loaders = listOf("forge")), false, false, "модпак только на старом Forge не запустится и не предлагается"),
+            Case(CatalogItem(projectId = "b", gameVersions = listOf("1.12.2"), loaders = listOf("forge")), true, true, "с бетой старый Forge снова в поиске"),
+            Case(CatalogItem(projectId = "c", gameVersions = listOf("1.12.2"), categories = listOf("forge", "technology")), false, false, "загрузчик Modrinth в категориях тоже читается"),
+            Case(CatalogItem(projectId = "d", gameVersions = listOf("1.12.2", "1.20.1"), loaders = listOf("forge")), false, true, "есть версия, которая идёт на телефоне"),
+            Case(CatalogItem(projectId = "e", gameVersions = listOf("1.20.1"), loaders = listOf("fabric")), false, true, "обычный модпак на Fabric виден"),
+            Case(CatalogItem(projectId = "f"), false, true, "модпак без версий и загрузчиков неизвестен и остаётся"),
+        )
+        cases.forEach { case ->
+            val shown = Catalog.modpacksForPhone(listOf(case.item), legacyRuntime = case.beta, deviceTotalMb = 4_000).isNotEmpty()
+            assertEquals(case.why, case.listed, shown)
         }
     }
 

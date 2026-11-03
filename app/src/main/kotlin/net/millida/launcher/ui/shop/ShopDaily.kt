@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -45,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import net.millida.launcher.DailyTarget
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.core.rubies.DailyStatus
 import net.millida.launcher.core.rubies.RubyReward
@@ -114,6 +116,9 @@ internal fun readyTargets(columns: List<PassColumn>): List<DailyTarget.Cell> = b
     }
 }
 
+/** Something else to take when the pass cells are empty: a week star or a pack quest, the desktop's `extra`. */
+internal class PassExtra(val busy: Boolean, val onClaim: () -> Unit)
+
 @Composable
 internal fun DailyPassCard(
     status: DailyStatus,
@@ -123,27 +128,28 @@ internal fun DailyPassCard(
     onPlus: () -> Unit,
     onElapsed: () -> Unit,
     modifier: Modifier = Modifier,
+    extra: PassExtra? = null,
 ) {
     val colors = millida
     val columns = remember(status) { passColumns(status) }
     MCard(modifier = modifier, contentPadding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Бонус за вход",
+                tr("Пропуск сезона"),
                 modifier = Modifier.weight(1f),
                 style = MillidaType.sectionTitle,
                 color = colors.fg,
                 maxLines = 1,
             )
             if (status.streak > 0) {
-                MBadge("${status.streak} подряд", color = colors.warning, background = colors.warningSoft, icon = MIcons.flame)
+                MBadge(tr("{streak} подряд", status.streak), color = colors.warning, background = colors.warningSoft, icon = MIcons.flame)
             }
         }
         dayMonth(status.season?.endsAt)?.let { end ->
             Spacer(Modifier.height(2.dp))
-            Text("Сезон до $end", style = MillidaType.small, color = colors.fgFaint)
+            Text(tr("Сезон до {end}", end), style = MillidaType.small, color = colors.fgFaint)
         }
-        SeasonPass(status, columns, plusPriceKopecks, claiming, onClaim, onPlus, onElapsed)
+        SeasonPass(status, columns, plusPriceKopecks, claiming, onClaim, onPlus, onElapsed, extra)
     }
 }
 
@@ -156,6 +162,7 @@ private fun SeasonPass(
     onClaim: (DailyTarget) -> Unit,
     onPlus: () -> Unit,
     onElapsed: () -> Unit,
+    extra: PassExtra?,
 ) {
     val own = status.plus
     if (!own) {
@@ -169,11 +176,20 @@ private fun SeasonPass(
     val ready = readyTargets(columns)
     if (ready.isNotEmpty()) {
         MPrimaryButton(
-            text = if (ready.size > 1) "Забрать всё (${ready.size})" else "Забрать",
+            text = if (ready.size > 1) tr("Забрать всё ({size})", ready.size) else tr("Забрать"),
             onClick = { onClaim(if (ready.size > 1) DailyTarget.All else ready.first()) },
             modifier = Modifier.fillMaxWidth(),
             size = MButtonSize.Large,
             loading = claiming,
+            icon = MIcons.gift,
+        )
+    } else if (extra != null) {
+        MPrimaryButton(
+            text = tr("Забрать"),
+            onClick = extra.onClaim,
+            modifier = Modifier.fillMaxWidth(),
+            size = MButtonSize.Large,
+            loading = extra.busy,
             icon = MIcons.gift,
         )
     } else if (nextAt != null) {
@@ -199,8 +215,10 @@ private fun NextUnlock(at: Long, onElapsed: () -> Unit) {
     ) {
         MIcon(MIcons.clock, size = 16.dp, color = colors.fgSubtle)
         Spacer(Modifier.width(8.dp))
-        Text("Новая клетка через ", style = MillidaType.body, color = colors.fgSubtle)
+        val (before, after) = tr("Новая клетка через {0}").split("{0}", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
+        if (before.isNotEmpty()) Text(before, style = MillidaType.body, color = colors.fgSubtle)
         Text(timerText(left), style = MillidaType.pixel, color = colors.accentText)
+        if (after.isNotEmpty()) Text(after, style = MillidaType.body, color = colors.fgSubtle)
     }
 }
 
@@ -217,14 +235,14 @@ private fun PlusBar(priceKopecks: Long?, onPlus: () -> Unit) {
         PlusBadge()
         Spacer(Modifier.width(8.dp))
         Text(
-            if (priceKopecks != null && priceKopecks > 0) rubles(priceKopecks) + "/мес" else "Золотая строка",
+            if (priceKopecks != null && priceKopecks > 0) rubles(priceKopecks) + tr("/мес") else tr("Золотая строка"),
             modifier = Modifier.weight(1f),
             style = MillidaType.small.copy(fontWeight = FontWeight.Bold),
             color = colors.fg,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        MSecondaryButton("Оформить", onClick = onPlus, size = MButtonSize.Small, icon = MIcons.crown)
+        MSecondaryButton(tr("Открыть PLUS"), onClick = onPlus, size = MButtonSize.Small, icon = MIcons.crown)
     }
 }
 
@@ -283,7 +301,7 @@ private fun RowBracket(own: Boolean) {
         Modifier
             .width(BRACKET_WIDTH)
             .height(total)
-            .semantics { contentDescription = if (own) "PLUS забирает обе строки" else "Нижняя строка — PLUS" },
+            .semantics { contentDescription = if (own) tr("PLUS забирает обе строки") else tr("Нижняя строка — PLUS") },
     ) {
         Canvas(Modifier.width(BRACKET_WIDTH).height(total)) {
             val bar = 3.dp.toPx()
@@ -357,7 +375,7 @@ private fun PassColumnView(
                 Spacer(Modifier.width(3.dp))
             }
             Text(
-                "ДЕНЬ ${column.day}",
+                tr("ДЕНЬ {day}", column.day),
                 style = MillidaType.caption.copy(fontSize = 10.sp, lineHeight = 12.sp),
                 color = headInk,
                 maxLines = 1,
@@ -368,7 +386,7 @@ private fun PassColumnView(
             rewards = column.free,
             plus = false,
             state = column.freeState,
-            label = "День ${column.day}",
+            label = tr("День {day}", column.day),
             soonAt = soonAt,
             onClick = when {
                 column.freeState == READY && !busy -> ({ onClaim(DailyTarget.Cell(column.day, TrackRow.FREE)) })
@@ -381,7 +399,7 @@ private fun PassColumnView(
             rewards = column.plus,
             plus = true,
             state = column.plusState,
-            label = "PLUS, день ${column.day}",
+            label = tr("PLUS, день {day}", column.day),
             soonAt = null,
             onClick = when {
                 column.plusState == READY && !busy -> ({ onClaim(DailyTarget.Cell(column.day, TrackRow.PLUS)) })
@@ -431,11 +449,11 @@ private fun PassCell(
         null
     }
     val spoken = rewards.joinToString(", ") { it.spoken() }
-    val action = when (state) {
-        READY -> "Забрать: "
-        LOCKED -> "Только с PLUS: "
-        CLAIMED -> "Забрано: "
-        else -> ""
+    val described = when (state) {
+        READY -> tr("Забрать: {label} — {spoken}", label, spoken)
+        LOCKED -> tr("Только с PLUS: {label} — {spoken}", label, spoken)
+        CLAIMED -> tr("Забрано: {label} — {spoken}", label, spoken)
+        else -> "$label — $spoken"
     }
     Box(
         Modifier
@@ -450,7 +468,7 @@ private fun PassCell(
                     Modifier
                 },
             )
-            .semantics { contentDescription = "$action$label — $spoken" },
+            .semantics { contentDescription = described },
     ) {
         Column(
             Modifier
@@ -483,7 +501,7 @@ private fun PassCell(
                         .padding(horizontal = 7.dp, vertical = 2.dp),
                 ) {
                     Text(
-                        "Забрать",
+                        tr("Забрать"),
                         style = MillidaType.tabLabel.copy(fontWeight = FontWeight.Black),
                         color = if (plus) MillidaPixel.goldInk else colors.onAccent,
                         maxLines = 1,
@@ -538,12 +556,13 @@ private fun SoonTag(at: Long, onElapsed: () -> Unit) {
     LaunchedEffect(at) { refreshWhenDue(at) { elapsed() } }
     Row(
         Modifier
+            .wrapContentWidth(unbounded = true)
             .pixelSurface(colors.bg, MillidaCut.badge)
             .padding(horizontal = 5.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MIcon(MIcons.clock, size = 10.dp, color = colors.accentText)
         Spacer(Modifier.width(3.dp))
-        Text(timerText(left), style = MillidaType.pixelSmall.copy(fontSize = 10.sp), color = colors.accentText, maxLines = 1)
+        Text(timerText(left), style = MillidaType.pixelSmall.copy(fontSize = 10.sp), color = colors.accentText, maxLines = 1, softWrap = false)
     }
 }

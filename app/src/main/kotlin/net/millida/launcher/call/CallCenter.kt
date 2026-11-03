@@ -40,6 +40,7 @@ import net.millida.launcher.core.call.QualityLevel
 import net.millida.launcher.core.call.Ring
 import net.millida.launcher.core.call.VoiceMember
 import net.millida.launcher.core.call.politeToward
+import net.millida.launcher.core.i18n.tr
 import org.webrtc.PeerConnection
 
 data class CallParticipant(
@@ -66,7 +67,7 @@ data class CallUiState(
     val volume: Int = 100,
     val parts: List<CallParticipant> = emptyList(),
 ) {
-    val title: String get() = if (mode == CallMode.ROOM) roomTitle.ifEmpty { "Группа" } else peerNick.ifEmpty { "Друг" }
+    val title: String get() = if (mode == CallMode.ROOM) roomTitle.ifEmpty { tr("Группа") } else peerNick.ifEmpty { tr("Друг") }
 
     val quality: QualityLevel
         get() {
@@ -220,10 +221,10 @@ class CallCenter private constructor(private val context: Context) {
     fun ringRoom(roomId: String) = VoiceEngine.post {
         try {
             val called = withContext(Dispatchers.IO) { client.ringRoom(roomId) }
-            notice(if (called > 0) "Позвали $called чел." else "Все уже в разговоре")
+            notice(if (called > 0) tr("Позвали {called} чел.", called) else tr("Все уже в разговоре"))
         } catch (failed: Exception) {
             if (failed is CancellationException) throw failed
-            notice(failed.message ?: "Не удалось позвать", error = true)
+            notice(failed.message ?: tr("Не удалось позвать"), error = true)
         }
     }
 
@@ -240,7 +241,7 @@ class CallCenter private constructor(private val context: Context) {
         noticeFlow.tryEmit(CallNotice(text, error))
     }
 
-    private fun nickOf(userId: String): String = nicknames[userId]?.takeIf { it.isNotBlank() } ?: "Друг"
+    private fun nickOf(userId: String): String = nicknames[userId]?.takeIf { it.isNotBlank() } ?: tr("Друг")
 
     private suspend fun pump() {
         var cursor = cursorStore.getLong(KEY_CURSOR, 0L)
@@ -291,13 +292,13 @@ class CallCenter private constructor(private val context: Context) {
 
     private fun openMicOrFail(): MicTrack? {
         if (!micGranted()) {
-            notice("Нужен доступ к микрофону — разреши его и позвони снова", error = true)
+            notice(tr("Нужен доступ к микрофону — разреши его и позвони снова"), error = true)
             return null
         }
         return try {
             VoiceEngine.openMic(context).also { it.setMuted(st.muted) }
         } catch (failed: IllegalStateException) {
-            notice("Микрофон не открылся: ${failed.message}", error = true)
+            notice(tr("Микрофон не открылся: {message}", failed.message), error = true)
             null
         }
     }
@@ -387,7 +388,7 @@ class CallCenter private constructor(private val context: Context) {
         ringTimer = VoiceEngine.scope.launch {
             delay(CallTimings.CONNECT_TIMEOUT_MS)
             if (st.status != CallStatus.CONNECTING) return@launch
-            notice("Не удалось соединиться — попробуй позвонить ещё раз", error = true)
+            notice(tr("Не удалось соединиться — попробуй позвонить ещё раз"), error = true)
             finish(CallSignalKind.END)
         }
     }
@@ -443,17 +444,17 @@ class CallCenter private constructor(private val context: Context) {
         val used = retries[peerId] ?: 0
         if (used >= CallTimings.RETRY_LIMIT) {
             if (st.mode == CallMode.DM) {
-                notice("Связь оборвалась", error = true)
+                notice(tr("Связь оборвалась"), error = true)
                 finish(CallSignalKind.END)
                 return
             }
-            notice("Связь с ${nickOf(peerId)} оборвалась", error = true)
+            notice(tr("Связь с {0} оборвалась", nickOf(peerId)), error = true)
             drop(peerId)
             patchPart(peerId) { it.copy(connection = PeerConnection.PeerConnectionState.FAILED) }
             return
         }
         retries[peerId] = used + 1
-        if (st.mode == CallMode.DM) notice("Связь пропала — восстанавливаем")
+        if (st.mode == CallMode.DM) notice(tr("Связь пропала — восстанавливаем"))
         drop(peerId)
         connect(peerId, politeFor(peerId))
     }
@@ -481,7 +482,7 @@ class CallCenter private constructor(private val context: Context) {
 
     private suspend fun startCall(peerId: String, nick: String) {
         if (st.status != CallStatus.IDLE) {
-            notice("Сначала заверши текущий звонок", error = true)
+            notice(tr("Сначала заверши текущий звонок"), error = true)
             return
         }
         val callId = CallIds.next()
@@ -500,7 +501,7 @@ class CallCenter private constructor(private val context: Context) {
         } catch (failed: Exception) {
             if (failed is CancellationException) throw failed
             if (st.callId == callId) reset()
-            notice(failed.message ?: "Не удалось начать звонок", error = true)
+            notice(failed.message ?: tr("Не удалось начать звонок"), error = true)
             return
         }
         if (st.callId != callId || st.status != CallStatus.OUTGOING) return
@@ -508,7 +509,7 @@ class CallCenter private constructor(private val context: Context) {
         ringTimer = VoiceEngine.scope.launch {
             delay(CallTimings.RING_TIMEOUT_MS)
             if (st.status != CallStatus.OUTGOING || st.callId != callId) return@launch
-            notice("Не ответил — звонок отменён")
+            notice(tr("Не ответил — звонок отменён"))
             finish(CallSignalKind.CANCEL)
         }
     }
@@ -542,7 +543,7 @@ class CallCenter private constructor(private val context: Context) {
     private suspend fun joinRoomVoice(roomId: String, title: String) {
         if (st.status != CallStatus.IDLE) {
             if (st.mode == CallMode.ROOM && st.roomId == roomId) return
-            notice("Сначала заверши текущий разговор", error = true)
+            notice(tr("Сначала заверши текущий разговор"), error = true)
             return
         }
         inviteFlow.value = null
@@ -560,7 +561,7 @@ class CallCenter private constructor(private val context: Context) {
         } catch (failed: Exception) {
             if (failed is CancellationException) throw failed
             if (st.roomId == roomId) reset()
-            notice(failed.message ?: "Не удалось войти в разговор", error = true)
+            notice(failed.message ?: tr("Не удалось войти в разговор"), error = true)
             return
         }
         if (st.roomId != roomId) return

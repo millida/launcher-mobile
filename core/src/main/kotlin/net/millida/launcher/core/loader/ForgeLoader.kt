@@ -14,6 +14,7 @@ import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.http.HttpError
 import net.millida.launcher.core.http.RemoteFile
 import net.millida.launcher.core.http.TransferProgress
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.launch.LaunchRequest
 import net.millida.launcher.core.launch.LaunchSpec
 import net.millida.launcher.core.launch.LaunchSpecBuilder
@@ -239,7 +240,7 @@ object ForgeInstallProfile {
             val ch = value[index]
             when {
                 ch == '\\' -> {
-                    if (index == value.length - 1) throw IOException("в профиле установщика обрыв после \\: $value")
+                    if (index == value.length - 1) throw IOException(tr("в профиле установщика обрыв после \\: {value}", value))
                     out.append(value[index + 1])
                     index += 2
                 }
@@ -248,10 +249,10 @@ object ForgeInstallProfile {
                     val key = StringBuilder()
                     var cursor = index + 1
                     while (true) {
-                        if (cursor >= value.length) throw IOException("в профиле установщика не закрыт $ch: $value")
+                        if (cursor >= value.length) throw IOException(tr("в профиле установщика не закрыт {ch}: {value}", ch, value))
                         val next = value[cursor]
                         if (next == '\\') {
-                            if (cursor == value.length - 1) throw IOException("в профиле установщика обрыв после \\: $value")
+                            if (cursor == value.length - 1) throw IOException(tr("в профиле установщика обрыв после \\: {value}", value))
                             key.append(value[cursor + 1])
                             cursor += 2
                             continue
@@ -263,7 +264,7 @@ object ForgeInstallProfile {
                     if (ch == '\'') {
                         out.append(key)
                     } else {
-                        out.append(values[key.toString()] ?: throw IOException("в профиле установщика нет значения {$key}"))
+                        out.append(values[key.toString()] ?: throw IOException(tr("в профиле установщика нет значения {{key}}", key)))
                     }
                     index = cursor + 1
                 }
@@ -479,7 +480,7 @@ class ForgeFamilyInstaller(
         }
         val build = loaderVersion.ifBlank {
             source.recommended(gameVersion)
-                ?: throw IOException("${kind.label} для $gameVersion не найден")
+                ?: throw IOException(tr("{label} для {gameVersion} не найден", kind.label, gameVersion))
         }
         val refs = source.installers(gameVersion, build)
         val absent = ArrayList<String>()
@@ -506,13 +507,13 @@ class ForgeFamilyInstaller(
         }
         failure?.let { throw it }
         throw IOException(
-            if (absent.isEmpty()) "${kind.label} $build для $gameVersion не найден"
-            else "${kind.label} $build: такой сборки нет в репозитории загрузчика"
+            if (absent.isEmpty()) tr("{label} {build} для {gameVersion} не найден", kind.label, build, gameVersion)
+            else tr("{label} {build}: такой сборки нет в репозитории загрузчика", kind.label, build)
         )
     }
 
     private fun legacyUnsupported(gameVersion: String) = IOException(
-        "${kind.label} для Minecraft $gameVersion на телефоне не поддерживается. Выбери 1.13 или новее. ${PhoneFit.BETA_HINT}"
+        tr("{label} для Minecraft {gameVersion} на телефоне не поддерживается. Выбери 1.13 или новее. {BETA_HINT}", kind.label, gameVersion, PhoneFit.BETA_HINT)
     )
 
     /**
@@ -520,7 +521,7 @@ class ForgeFamilyInstaller(
      * checksum maven publishes next to it.
      */
     private suspend fun download(url: String, target: File) {
-        val sum = publishedSha1(url) ?: throw IOException("контрольная сумма установщика ${kind.label} нечитаема")
+        val sum = publishedSha1(url) ?: throw IOException(tr("контрольная сумма установщика {label} нечитаема", kind.label))
         if (target.isFile) target.delete()
         mirror.fetch(RemoteFile(url = url, target = target, sha1 = sum))
     }
@@ -535,7 +536,7 @@ class ForgeFamilyInstaller(
         onStep: (ForgeInstallStep) -> Unit,
     ): String = ZipFile(installer).use { zip ->
         val profile = zip.json("install_profile.json")
-            ?: throw IOException("в установщике ${kind.label} нет install_profile.json")
+            ?: throw IOException(tr("в установщике {label} нет install_profile.json", kind.label))
         if (ForgeInstallProfile.isLegacy(profile)) {
             if (!legacyForge()) throw legacyUnsupported(gameVersion)
             return@use applyLegacy(zip, profile, ref, gameVersion, onStep)
@@ -559,9 +560,9 @@ class ForgeFamilyInstaller(
         onStep: (ForgeInstallStep) -> Unit,
     ): String {
         val info = profile["versionInfo"] as? JsonObject
-            ?: throw IOException("в установщике ${kind.label} нет описания версии")
+            ?: throw IOException(tr("в установщике {label} нет описания версии", kind.label))
         val universal = LegacyForgeProfile.universal(profile)
-            ?: throw IOException("в установщике ${kind.label} не указан основной архив загрузчика")
+            ?: throw IOException(tr("в установщике {label} не указан основной архив загрузчика", kind.label))
         val universalFile = SafePath.join(layout.libraries, Maven.pathOf(universal.coordinate))
         extract(zip, universal.entry, universalFile)
 
@@ -588,7 +589,7 @@ class ForgeFamilyInstaller(
         val target = SafePath.join(layout.libraries, library.path)
         val expected = library.checksums.ifEmpty {
             listOfNotNull(publishedSha1(library.url)).ifEmpty {
-                throw IOException("у библиотеки ${library.name} нет контрольной суммы — без неё ${kind.label} не ставим")
+                throw IOException(tr("у библиотеки {name} нет контрольной суммы — без неё {label} не ставим", library.name, kind.label))
             }
         }
         if (expected.none { Hashing.matches(target, it) }) {
@@ -599,7 +600,7 @@ class ForgeFamilyInstaller(
             try {
                 mirror.fetch(RemoteFile(url = library.url, target = fresh, sha1 = expected.singleOrNull()))
                 if (expected.none { Hashing.matches(fresh, it) }) {
-                    throw IOException("библиотека ${library.name} скачалась с ошибкой — повтори установку")
+                    throw IOException(tr("библиотека {name} скачалась с ошибкой — повтори установку", library.name))
                 }
                 if (!fresh.renameTo(target)) target.atomicCopyFrom(fresh)
             } finally {
@@ -609,7 +610,7 @@ class ForgeFamilyInstaller(
         val sum = expected.firstOrNull { Hashing.matches(target, it) }
         if (sum == null) {
             target.delete()
-            throw IOException("библиотека ${library.name} скачалась с ошибкой — повтори установку")
+            throw IOException(tr("библиотека {name} скачалась с ошибкой — повтори установку", library.name))
         }
         return Artifact(path = library.path, sha1 = sum, size = target.length(), url = library.url)
     }
@@ -624,12 +625,11 @@ class ForgeFamilyInstaller(
     ): String {
         val jsonPath = profile["json"]?.asText() ?: "/version.json"
         val version = zip.json(jsonPath.removePrefix("/"))
-            ?: throw IOException("в установщике ${kind.label} нет описания версии")
+            ?: throw IOException(tr("в установщике {label} нет описания версии", kind.label))
 
         val steps = clientSteps(profile)
         val runner = if (steps.isEmpty()) null else processors ?: throw IOException(
-            "${kind.label} для $gameVersion дособирает клиент своим установщиком " +
-                "(${steps.size} шагов на Java), а среда Java к установке не подключена"
+            tr("{label} для {gameVersion} дособирает клиент своим установщиком ({size} шагов на Java), а среда Java к установке не подключена", kind.label, gameVersion, steps.size)
         )
 
         val tools = libraryFiles(zip, profile["libraries"] as? JsonArray)
@@ -640,7 +640,7 @@ class ForgeFamilyInstaller(
         if (runner != null) {
             onStep(ForgeInstallStep.Client)
             val client = game?.clientJar(gameVersion) ?: layout.versionJar(gameVersion)
-            if (!client.isFile) throw IOException("нет клиента Minecraft $gameVersion — без него ${kind.label} не собрать")
+            if (!client.isFile) throw IOException(tr("нет клиента Minecraft {gameVersion} — без него {label} не собрать", gameVersion, kind.label))
             val trusted = tools.mapNotNull { tool -> tool.remote.sha1?.let { tool.remote.target.canonicalPath to it } }.toMap()
             val plan = plan(zip, profile, steps, ref, gameVersion, installer, client, trusted)
             val prefetched = prefetchMappings(plan, gameVersion)
@@ -693,14 +693,14 @@ class ForgeFamilyInstaller(
         values["MINECRAFT_VERSION"] = gameVersion
 
         val jobs = steps.map { step ->
-            val coordinate = step["jar"]?.asText() ?: throw IOException("в шаге установщика нет программы")
+            val coordinate = step["jar"]?.asText() ?: throw IOException(tr("в шаге установщика нет программы"))
             val jar = SafePath.join(layout.libraries, Maven.pathOf(coordinate))
             val classpath = (step["classpath"] as? JsonArray).orEmpty().mapNotNull { it.asText() }
                 .map { SafePath.join(layout.libraries, Maven.pathOf(it)) }
             (listOf(jar) + classpath).forEach { requireTrusted(it, trusted) }
             ForgeProcessorJob(
                 jar = jar,
-                mainClass = mainClassOf(jar) ?: throw IOException("у программы $coordinate нет Main-Class"),
+                mainClass = mainClassOf(jar) ?: throw IOException(tr("у программы {coordinate} нет Main-Class", coordinate)),
                 classpath = classpath,
                 args = ForgeInstallProfile.resolveArguments(
                     (step["args"] as? JsonArray).orEmpty().mapNotNull { it.asText() },
@@ -719,11 +719,11 @@ class ForgeFamilyInstaller(
 
     private fun requireTrusted(file: File, trusted: Map<String, String>) {
         val sum = trusted[file.canonicalPath] ?: throw IOException(
-            "у программы установщика ${file.name} нет контрольной суммы — такой установщик не запускаем"
+            tr("у программы установщика {name} нет контрольной суммы — такой установщик не запускаем", file.name)
         )
         if (!Hashing.matches(file, sum)) {
             file.delete()
-            throw IOException("программа установщика ${file.name} повреждена — повтори установку")
+            throw IOException(tr("программа установщика {name} повреждена — повтори установку", file.name))
         }
     }
 
@@ -738,7 +738,7 @@ class ForgeFamilyInstaller(
                 continue
             }
             val file = File(target)
-            if (!SafePath.isInside(layout.root, file)) throw IOException("шаг установщика пишет за пределы папки игры")
+            if (!SafePath.isInside(layout.root, file)) throw IOException(tr("шаг установщика пишет за пределы папки игры"))
             mirror.fetch(RemoteFile(url = mappings.url, target = file, sha1 = mappings.sha1, size = mappings.size))
         }
         return plan.copy(jobs = kept)
@@ -750,7 +750,7 @@ class ForgeFamilyInstaller(
                 val file = File(path)
                 if (!ForgeProcessorOutput.accepted(file, sum.takeIf { it.isSha1() })) {
                     file.delete()
-                    throw IOException("${kind.label}: шаг установщика собрал ${file.name} с ошибкой — повтори установку")
+                    throw IOException(tr("{label}: шаг установщика собрал {name} с ошибкой — повтори установку", kind.label, file.name))
                 }
             }
         }
@@ -760,7 +760,7 @@ class ForgeFamilyInstaller(
         val missing = libraries.filter { it.produced && !it.remote.target.isFile }
         if (missing.isNotEmpty()) {
             throw IOException(
-                "${kind.label} не собрал ${missing.size} файл(ов): ${missing.first().remote.target.name} — повтори установку"
+                tr("{label} не собрал {size} файл(ов): {0} — повтори установку", kind.label, missing.size, missing.first().remote.target.name)
             )
         }
     }
@@ -801,7 +801,7 @@ class ForgeFamilyInstaller(
             mirror.fetchAll(remote) { progress -> onStep(ForgeInstallStep.Libraries(progress.doneFiles, remote.size)) }
             val missing = remote.filterNot { Hashing.matches(it.target, it.sha1) && it.target.length() > 0 }
             if (missing.isNotEmpty()) {
-                throw IOException("не скачались библиотеки ${kind.label}: ${missing.size} шт.")
+                throw IOException(tr("не скачались библиотеки {label}: {size} шт.", kind.label, missing.size))
             }
         }
     }
@@ -815,7 +815,7 @@ class ForgeFamilyInstaller(
             extract(zip, packed, target)
             if (sum != null && !Hashing.matches(target, sum)) {
                 target.delete()
-                throw IOException("в установщике ${kind.label} повреждена библиотека ${target.name}")
+                throw IOException(tr("в установщике {label} повреждена библиотека {name}", kind.label, target.name))
             }
         }
     }
@@ -836,7 +836,7 @@ class ForgeFamilyInstaller(
     }
 
     private fun extract(zip: ZipFile, name: String, target: File) {
-        val entry = zip.getEntry(name) ?: throw IOException("в установщике ${kind.label} нет $name")
+        val entry = zip.getEntry(name) ?: throw IOException(tr("в установщике {label} нет {name}", kind.label, name))
         target.parentFile?.mkdirs()
         val temp = File(target.parentFile, target.name + ".part")
         try {

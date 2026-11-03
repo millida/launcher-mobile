@@ -1,5 +1,7 @@
 package net.millida.launcher.core.mojang
 
+import net.millida.launcher.core.i18n.tr
+
 data class HostProfile(
     val osName: String,
     val osArch: String,
@@ -54,7 +56,7 @@ object Maven {
      * the whole build down, so it is reported as an unusable library instead. */
     fun pathOf(name: String): String {
         val parts = name.split(':')
-        if (parts.size < 3) throw java.io.IOException("непонятная координата библиотеки: $name")
+        if (parts.size < 3) throw java.io.IOException(tr("непонятная координата библиотеки: {name}", name))
         val group = parts[0].replace('.', '/')
         val artifact = parts[1]
         val version = parts[2]

@@ -26,6 +26,18 @@ class PackRuntimeRulesTest {
     }
 
     @Test
+    fun `zink с Turnip грузит драйвер из DRIVER_PATH, а не системный`() {
+        val env = packRendererEnvironment("opengles3_desktopgl_zink_kopper", "/cache/shaders", "/files/turnip-driver")
+        assertEquals("/files/turnip-driver", env["DRIVER_PATH"])
+        assertFalse("флаг системного драйвера отключил бы Turnip", env.containsKey("POJAV_ZINK_PREFER_SYSTEM_DRIVER"))
+        assertEquals("zink", env["MESA_LOADER_DRIVER_OVERRIDE"])
+        assertEquals("4.6", env["MESA_GL_VERSION_OVERRIDE"])
+        val system = packRendererEnvironment("opengles3_desktopgl_zink_kopper", "/cache/shaders")
+        assertEquals("1", system["POJAV_ZINK_PREFER_SYSTEM_DRIVER"])
+        assertFalse(system.containsKey("DRIVER_PATH"))
+    }
+
+    @Test
     fun `окружение настольного слоя через zink`() {
         val env = packRendererEnvironment("opengles3_desktopgl_zink_kopper", "/cache/shaders")
 
@@ -77,6 +89,7 @@ class PackRuntimeRulesTest {
             Case("-XX:MaxMetaspaceSize=256m", true, "предел метапространства ломает моды на телефоне"),
             Case("-XX:TieredStopAtLevel=1", true, "уровень JIT не берётся из описания"),
             Case("-Dmillida.debug=1", true, "свои свойства лаунчер ставит сам"),
+            Case("-Dmillida.token=mod-abc", false, "токен мода кладёт сборщик запуска: без него гардероб в моде не знает игрока"),
             Case("-Duser.language=en", false, "язык не путается с домашней папкой из-за общего начала"),
             Case("-Dfml.ignorePatchDiscrepancies=true", false, "флаги загрузчика из описания нужны игре"),
             Case("-XX:+UseG1GC", false, "прочие флаги машины передаются как есть"),

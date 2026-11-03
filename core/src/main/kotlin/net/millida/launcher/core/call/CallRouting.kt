@@ -1,5 +1,7 @@
 package net.millida.launcher.core.call
 
+import net.millida.launcher.core.i18n.tr
+
 enum class CallStatus { IDLE, OUTGOING, INCOMING, CONNECTING, ACTIVE }
 
 enum class CallMode { DM, ROOM }
@@ -26,7 +28,7 @@ object CallRouter {
     fun route(event: CallEvent, status: CallStatus, mode: CallMode, callId: String): CallRoute {
         if (event.kind == CallSignalKind.RING) {
             val roomId = event.roomId ?: event.callId
-            val title = event.data.string("title")?.takeIf { it.isNotBlank() } ?: "группе"
+            val title = event.data.string("title")?.takeIf { it.isNotBlank() } ?: tr("группе")
             return if (status == CallStatus.IDLE) CallRoute.RoomRing(roomId, title) else CallRoute.Ignore
         }
         event.roomId?.let { return CallRoute.Room(it) }

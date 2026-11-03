@@ -11,6 +11,11 @@ CATEGORIES = {
     "tool": "tools",
     "sdl": "sdl",
 }
+DEFAULT_ABI = "arm64-v8a"
+SECTIONS = {
+    "arm64-v8a": ("jre", "bridge", "renderers", "tools", "sdl"),
+    "armeabi-v7a": ("jre", "bridge", "renderers", "tools"),
+}
 
 
 def digest(path):
@@ -32,7 +37,7 @@ def classify(name):
     return "tool"
 
 
-def entry(category, name, url, sha, size):
+def entry(category, name, url, sha, size, abi):
     identifier = name[: -len(".zip")] if name.endswith(".zip") else name
     common = {"id": identifier, "url": url, "sha256": sha, "size": size}
     if category == "jre":
@@ -41,7 +46,7 @@ def entry(category, name, url, sha, size):
             if part.isdigit():
                 major = int(part)
                 break
-        common.update({"major": major, "abi": "arm64-v8a", "javaHome": ""})
+        common.update({"major": major, "abi": abi, "javaHome": ""})
     if category == "bridge":
         common.update({"classpath": []})
     if category == "renderer":
@@ -65,6 +70,7 @@ def main():
     parser.add_argument("--base", required=True, help="адрес раздачи без слэша на конце")
     parser.add_argument("--out", default="-")
     parser.add_argument("--revision", type=int, default=1)
+    parser.add_argument("--abi", choices=sorted(SECTIONS), default=DEFAULT_ABI)
     parser.add_argument(
         "--meta",
         default="",
@@ -72,7 +78,8 @@ def main():
     )
     args = parser.parse_args()
 
-    manifest = {"revision": args.revision, "jre": [], "bridge": [], "renderers": [], "tools": [], "sdl": []}
+    manifest = {"revision": args.revision}
+    manifest.update({section: [] for section in SECTIONS[args.abi]})
 
     if args.meta:
         with open(args.meta, encoding="utf-8") as handle:
@@ -82,9 +89,13 @@ def main():
             if not os.path.isfile(path):
                 sys.exit("в папке нет компонента " + item["file"])
             category = item["category"]
+            if CATEGORIES[category] not in manifest:
+                sys.exit("в манифесте под {} нет раздела {}: лишний компонент {}".format(args.abi, CATEGORIES[category], item["file"]))
             url = args.base.rstrip("/") + "/" + item["file"]
-            common = entry(category, item["file"], url, digest(path), os.path.getsize(path))
+            common = entry(category, item["file"], url, digest(path), os.path.getsize(path), args.abi)
             common.update(item["fields"])
+            if category == "jre" and common["abi"] != args.abi:
+                sys.exit("компонент {} собран под {}, а манифест — под {}".format(item["file"], common["abi"], args.abi))
             manifest[CATEGORIES[category]].append(common)
         missing = [name for name in ("jre", "bridge", "renderers") if not manifest[name]]
         if missing:
@@ -104,6 +115,7 @@ def main():
                 args.base.rstrip("/") + "/" + name,
                 digest(path),
                 os.path.getsize(path),
+                args.abi,
             )
         )
 

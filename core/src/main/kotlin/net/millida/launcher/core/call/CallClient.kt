@@ -10,6 +10,7 @@ import net.millida.launcher.core.friends.FriendsErrors
 import java.io.IOException
 import java.net.URLEncoder
 
+import net.millida.launcher.core.i18n.tr
 data class VoiceMember(val userId: String, val since: Long, val muted: Boolean, val screen: Boolean)
 
 data class VoiceReply(val me: String, val members: List<VoiceMember>)
@@ -31,7 +32,7 @@ class CallClient(private val auth: MillidaAuth, private val now: () -> Long = Sy
         data: JsonObject = JsonObject(emptyMap()),
         seconds: Long? = null,
         roomId: String? = null,
-    ) = guarded("Сигнал звонка не ушёл") {
+    ) = guarded(tr("Сигнал звонка не ушёл")) {
         auth.authorized("/friends/call/signal", "POST", CallEnvelopes.signalBody(callId, peerId, kind, data, seconds, roomId))
         Unit
     }
@@ -40,7 +41,7 @@ class CallClient(private val auth: MillidaAuth, private val now: () -> Long = Sy
      * The server holds the request until the first envelope or 45 seconds, so a
      * call rings at once without a socket. [hold] false turns it into a plain read.
      */
-    suspend fun poll(after: Long, hold: Boolean): CallInbox = guarded("Звонки не обновились") {
+    suspend fun poll(after: Long, hold: Boolean): CallInbox = guarded(tr("Звонки не обновились")) {
         val path = "/friends/call/poll?after=" + after.coerceAtLeast(0) + if (hold) "" else "&wait=0"
         CallEnvelopes.parseInbox(auth.authorized(path, "GET", null))
     }
@@ -58,11 +59,11 @@ class CallClient(private val auth: MillidaAuth, private val now: () -> Long = Sy
         return config
     }
 
-    suspend fun joinVoice(roomId: String): VoiceReply = guarded("Не удалось войти в разговор") {
+    suspend fun joinVoice(roomId: String): VoiceReply = guarded(tr("Не удалось войти в разговор")) {
         voiceReply(auth.authorized(voicePath(roomId, "join"), "POST", buildJsonObject { }))
     }
 
-    suspend fun beatVoice(roomId: String, muted: Boolean, deafened: Boolean): VoiceReply = guarded("Голос группы не ответил") {
+    suspend fun beatVoice(roomId: String, muted: Boolean, deafened: Boolean): VoiceReply = guarded(tr("Голос группы не ответил")) {
         val body = buildJsonObject {
             put("muted", muted)
             put("deafened", deafened)
@@ -71,19 +72,19 @@ class CallClient(private val auth: MillidaAuth, private val now: () -> Long = Sy
         voiceReply(auth.authorized(voicePath(roomId, "beat"), "POST", body))
     }
 
-    suspend fun leaveVoice(roomId: String) = guarded("Не удалось выйти из разговора") {
+    suspend fun leaveVoice(roomId: String) = guarded(tr("Не удалось выйти из разговора")) {
         auth.authorized(voicePath(roomId, "leave"), "POST", buildJsonObject { })
         Unit
     }
 
     /** How many were called; zero means everyone is already inside. */
-    suspend fun ringRoom(roomId: String): Int = guarded("Не удалось позвать") {
+    suspend fun ringRoom(roomId: String): Int = guarded(tr("Не удалось позвать")) {
         auth.authorized(voicePath(roomId, "ring"), "POST", buildJsonObject { }).finite("called")?.toInt() ?: 0
     }
 
     private fun voicePath(roomId: String, action: String): String {
         val id = roomId.trim()
-        if (id.isEmpty() || id.contains('/') || id.contains("..")) throw FriendsError("Неверная группа")
+        if (id.isEmpty() || id.contains('/') || id.contains("..")) throw FriendsError(tr("Неверная группа"))
         return "/friends/rooms/" + URLEncoder.encode(id, "UTF-8").replace("+", "%20") + "/voice/" + action
     }
 

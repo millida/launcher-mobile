@@ -55,6 +55,8 @@ import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.UiState
 import net.millida.launcher.core.bedrock.isBedrockAddress
 import net.millida.launcher.core.hosting.HostingServerState
+import net.millida.launcher.core.i18n.I18n
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.ui.hosting.HostingBuyRoad
 import net.millida.launcher.ui.hosting.HostingBuySheet
@@ -65,7 +67,6 @@ import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.util.Locale
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
@@ -100,19 +101,19 @@ fun HostingScreen(state: UiState, model: LauncherViewModel, modifier: Modifier =
 
     MScreen(
         modifier = modifier,
-        title = "Хостинг",
-        subtitle = if (signedIn && state.hosted.isNotEmpty()) "Серверов: ${state.hosted.size}" else null,
+        title = tr("Хостинг"),
+        subtitle = if (signedIn && state.hosted.isNotEmpty()) tr("Серверов: {size}", state.hosted.size) else null,
         onBack = { model.back() },
         actions = {
             if (signedIn && state.hosted.isNotEmpty()) {
                 if (wide) {
-                    MSecondaryButton("Новый сервер", onClick = { road = HostingBuyRoad.Paid.name }, icon = MIcons.plus, size = MButtonSize.Small)
+                    MSecondaryButton(tr("Новый сервер"), onClick = { road = HostingBuyRoad.Paid.name }, icon = MIcons.plus, size = MButtonSize.Small)
                 } else {
-                    MIconButton(MIcons.plus, onClick = { road = HostingBuyRoad.Paid.name }, label = "Новый сервер")
+                    MIconButton(MIcons.plus, onClick = { road = HostingBuyRoad.Paid.name }, label = tr("Новый сервер"))
                 }
             }
             if (signedIn) {
-                MIconButton(MIcons.refresh, onClick = { model.refreshHosted() }, label = "Обновить")
+                MIconButton(MIcons.refresh, onClick = { model.refreshHosted() }, label = tr("Обновить"))
             }
         },
     ) {
@@ -223,7 +224,7 @@ internal fun HostedCard(
         HostingFact(
             icon = MIcons.users,
             value = if (limit > 0) "$online / $limit" else "$online",
-            caption = "в сети",
+            caption = tr("в сети"),
             modifier = placement,
             fraction = if (limit > 0) online.toFloat() / limit else null,
         )
@@ -231,8 +232,8 @@ internal fun HostedCard(
     val memory: @Composable (Modifier) -> Unit = { placement ->
         HostingFact(
             icon = MIcons.monitor,
-            value = if (ram > 0) "${hostingGb(ram)} ГБ" else "—",
-            caption = "памяти",
+            value = if (ram > 0) tr("{0} ГБ", hostingGb(ram)) else "—",
+            caption = tr("памяти"),
             modifier = placement,
         )
     }
@@ -249,12 +250,12 @@ internal fun HostedCard(
     val buttons: @Composable () -> Unit = {
         MButtonRow {
             if (running) {
-                MPrimaryButton("Играть", onClick = onPlay, enabled = server.address.isNotEmpty(), icon = MIcons.play)
+                MPrimaryButton(tr("Играть"), onClick = onPlay, enabled = server.address.isNotEmpty(), icon = MIcons.play)
             } else if (status == "SUSPENDED") {
-                MPrimaryButton("Продлить", onClick = onOpen ?: {}, enabled = onOpen != null, icon = MIcons.wallet)
+                MPrimaryButton(tr("Продлить"), onClick = onOpen ?: {}, enabled = onOpen != null, icon = MIcons.wallet)
             } else {
                 MPrimaryButton(
-                    "Запустить",
+                    tr("Запустить"),
                     onClick = onStart,
                     enabled = !starting && status !in HOSTING_BUSY_STATES,
                     icon = MIcons.power,
@@ -262,7 +263,7 @@ internal fun HostedCard(
                 )
             }
             if (onOpen != null) {
-                MSecondaryButton("Управлять", onClick = onOpen, icon = MIcons.settings)
+                MSecondaryButton(tr("Управлять"), onClick = onOpen, icon = MIcons.settings)
             }
         }
     }
@@ -334,18 +335,18 @@ internal fun hostingTone(status: String): HostingTone = when (status.uppercase()
 }
 
 internal fun hostingStatusLabel(status: String): String = when (status.uppercase()) {
-    "RUNNING", "ONLINE" -> "Работает"
-    "STARTING" -> "Запускается"
-    "STOPPING" -> "Останавливается"
-    "STOPPED", "OFFLINE" -> "Остановлен"
-    "SUSPENDED" -> "Приостановлен"
-    "QUEUED" -> "В очереди"
-    "SLEEPING" -> "Спит"
-    "CRASHED" -> "Упал"
-    "INSTALLING" -> "Устанавливается"
-    "MIGRATING" -> "Переезжает"
-    "ARCHIVED" -> "В архиве"
-    else -> "Нет данных"
+    "RUNNING", "ONLINE" -> tr("Работает")
+    "STARTING" -> tr("Запускается")
+    "STOPPING" -> tr("Останавливается")
+    "STOPPED", "OFFLINE" -> tr("Остановлен")
+    "SUSPENDED" -> tr("Приостановлен")
+    "QUEUED" -> tr("В очереди")
+    "SLEEPING" -> tr("Спит")
+    "CRASHED" -> tr("Упал")
+    "INSTALLING" -> tr("Устанавливается")
+    "MIGRATING" -> tr("Переезжает")
+    "ARCHIVED" -> tr("В архиве")
+    else -> tr("Нет данных")
 }
 
 @Composable
@@ -431,7 +432,7 @@ internal fun HostingAddressWell(
                 interactionSource = interaction,
                 indication = null,
                 enabled = address.isNotEmpty(),
-                onClickLabel = "Скопировать адрес",
+                onClickLabel = tr("Скопировать адрес"),
                 role = Role.Button,
                 onClick = onCopy,
             )
@@ -439,7 +440,7 @@ internal fun HostingAddressWell(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            address.ifEmpty { "Адрес появится после запуска" },
+            address.ifEmpty { tr("Адрес появится после запуска") },
             modifier = Modifier.weight(1f),
             style = if (address.isEmpty()) MillidaType.small else MillidaType.pixel,
             color = ink,
@@ -527,11 +528,11 @@ internal fun HostingFact(
 internal fun LauncherViewModel.copyHostAddress(clipboard: ClipboardManager, address: String) {
     if (address.isEmpty()) return
     clipboard.setText(AnnotatedString(address))
-    notice("Адрес скопирован: $address")
+    notice(tr("Адрес скопирован: {address}", address))
 }
 
 internal fun hostingName(server: HostingServerState): String =
-    server.name.ifEmpty { server.slug.ifEmpty { "Мой сервер" } }
+    server.name.ifEmpty { server.slug.ifEmpty { tr("Мой сервер") } }
 
 internal fun hostingTag(server: HostingServerState): String =
     listOf(server.core, server.version).filter { it.isNotEmpty() }.joinToString(" ")
@@ -540,23 +541,22 @@ internal fun hostingGb(mb: Int): String =
     if (mb % 1024 == 0) {
         (mb / 1024).toString()
     } else {
-        String.format(Locale.ROOT, "%.1f", mb / 1024.0).replace('.', ',')
+        I18n.decimal(mb / 1024.0, 1)
     }
 
 internal fun hostingRubles(kopecks: Long): String = groupDigits((kopecks + 50) / 100) + " ₽"
 
 internal fun hostingPaidNote(server: HostingServerState, paidUntil: String): String? {
     val paid = hostingDay(paidUntil)
-    if (paid.isNotEmpty()) return "Оплачен до $paid"
+    if (paid.isNotEmpty()) return tr("Оплачен до {paid}", paid)
     val kept = hostingDay(server.worldDeleteAt)
-    if (server.free && kept.isNotEmpty()) return "Мир хранится до $kept"
+    if (server.free && kept.isNotEmpty()) return tr("Мир хранится до {kept}", kept)
     return null
 }
 
-private val RUSSIAN: Locale = Locale.forLanguageTag("ru")
-private val DAY_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMMM yyyy", RUSSIAN)
-private val MOMENT_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM, HH:mm", RUSSIAN)
-private val CLOCK_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", RUSSIAN)
+private val DAY_FORMAT: DateTimeFormatter get() = DateTimeFormatter.ofPattern("d MMMM yyyy", I18n.javaLocale)
+private val MOMENT_FORMAT: DateTimeFormatter get() = DateTimeFormatter.ofPattern("d MMM, HH:mm", I18n.javaLocale)
+private val CLOCK_FORMAT: DateTimeFormatter get() = DateTimeFormatter.ofPattern("HH:mm", I18n.javaLocale)
 
 private fun hostingTime(raw: String): ZonedDateTime? {
     val text = raw.trim()

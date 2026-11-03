@@ -1,6 +1,7 @@
 package net.millida.launcher.core.catalog
 
 import net.millida.launcher.core.loader.LoaderKind
+import net.millida.launcher.core.runtime.PhoneVersions
 
 /**
  * «Новая сборка» from a catalogue row: a build for the item's own newest
@@ -19,9 +20,13 @@ object NewBuild {
         .filter { RELEASE.matches(it) }
         .maxWithOrNull { left, right -> compareReleases(left, right) }
 
+    /** The newest release a phone plays well (see [PhoneVersions]); the newest one when the item has nothing else. */
+    fun recommendedRelease(versions: List<String>, phone: PhoneVersions): String? =
+        phone.recommendedId(versions.map { it.trim() }.filter { RELEASE.matches(it) }) { left, right -> compareReleases(left, right) }
+
     /** Shaders need Iris, and Iris lives on Fabric; packs of textures and data need no loader at all. */
-    fun plan(kind: String, versions: List<String>, loaders: List<String>): NewBuildPlan? {
-        val version = newestRelease(versions) ?: return null
+    fun plan(kind: String, versions: List<String>, loaders: List<String>, phone: PhoneVersions = PhoneVersions.DEFAULT): NewBuildPlan? {
+        val version = recommendedRelease(versions, phone) ?: return null
         val ids = loaders.map { it.trim().lowercase() }.toSet()
         return when (kind) {
             "mod" -> LOADER_ORDER.firstOrNull { it.id in ids }?.let { NewBuildPlan(version, it) }

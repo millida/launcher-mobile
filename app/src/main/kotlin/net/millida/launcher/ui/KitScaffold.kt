@@ -1,5 +1,6 @@
 package net.millida.launcher.ui
 
+import android.app.Activity
 import android.graphics.Point
 import android.os.Build
 import android.view.View
@@ -77,11 +78,14 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import net.millida.launcher.LauncherViewModel
 import net.millida.launcher.UiState
 import net.millida.launcher.core.account.AccountKind
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.UiSoundEvent
 import kotlin.math.round
 
@@ -187,6 +191,32 @@ internal fun ExtendWindowUnderCutout() {
     }
 }
 
+/**
+ * Landscape gives the whole screen to the launcher: the status and navigation
+ * bars stay hidden and a swipe from the edge brings them over the content for
+ * a moment, portrait gets them back. Each launcher window hides them itself,
+ * because the bars follow the focused window and an open sheet would bring
+ * them back and shift the screen under it.
+ */
+@Composable
+internal fun HideSystemBarsWhenWide() {
+    val wide = LocalWideLayout.current
+    val view = LocalView.current
+    DisposableEffect(view, wide) {
+        val window = (view.parent as? DialogWindowProvider)?.window ?: (view.context as? Activity)?.window
+        if (window != null) {
+            val controller = WindowInsetsControllerCompat(window, view)
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (wide) {
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        onDispose { }
+    }
+}
+
 @Stable
 internal class ModalStack {
     val layers = mutableStateListOf<Any>()
@@ -253,15 +283,17 @@ private fun ModalWindow(
         onDismissRequest = close,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
+        ProvideCompactDensity {
         DropWindowDim()
         ExtendWindowUnderCutout()
+        HideSystemBarsWhenWide()
         val overflow = rememberWindowOverflow()
         val shown = appear.asState()
         Box(
             Modifier
                 .fillMaxSize()
                 .padding(bottom = overflow)
-                .drawBehind { drawRect(scrim.copy(alpha = scrim.alpha * shown.value)) }
+                
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -270,6 +302,7 @@ private fun ModalWindow(
         ) {
             content(shown, close)
             ModalToasts(layer)
+        }
         }
     }
 }
@@ -281,6 +314,7 @@ fun MDialog(
     onDismiss: () -> Unit,
     body: @Composable ColumnScope.() -> Unit,
     actions: @Composable RowScope.() -> Unit,
+    wide: Boolean = false,
 ) {
     ModalWindow(
         onDismiss = onDismiss,
@@ -295,8 +329,8 @@ fun MDialog(
                 .align(Alignment.Center)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(horizontal = 20.dp, vertical = 24.dp)
-                .widthIn(max = 440.dp)
-                .fillMaxWidth()
+                .widthIn(max = if (wide && LocalCompactUi.current) 640.dp else if (LocalCompactUi.current) 480.dp else 440.dp)
+                .fillMaxWidth(if (wide && LocalCompactUi.current) 0.7f else if (LocalCompactUi.current) 0.5f else 1f)
                 .graphicsLayer {
                     val shown = appear.value
                     val scale = 0.96f + 0.04f * shown
@@ -340,7 +374,7 @@ fun MConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
     danger: Boolean = true,
-    cancel: String = "Отмена",
+    cancel: String = tr("Отмена"),
 ) {
     MDialog(
         title = title,
@@ -450,7 +484,7 @@ private fun BoxScope.DockedSheet(
     var sheetHeight by remember { mutableIntStateOf(0) }
     var drag by remember { mutableFloatStateOf(0f) }
     val flick = with(density) { 400.dp.toPx() }
-    val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.9f).dp
+    val maxHeight = (effectiveScreenHeightDp() * 0.9f).dp
     val dragState = rememberDraggableState { delta ->
         val next = drag + delta
         drag = if (next >= 0f) next else next * 0.5f
@@ -524,7 +558,7 @@ private fun BoxScope.DockedSheet(
 
 @Composable
 fun LoginDialog(state: UiState, model: LauncherViewModel) {
-    val prompt = state.loginPrompt ?: return
+    val prompt = state.loginPrompt?.takeUnless { it.inline } ?: return
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val colors = millida
@@ -537,26 +571,32 @@ fun LoginDialog(state: UiState, model: LauncherViewModel) {
     }
 
     MDialog(
-        title = if (prompt.kind == AccountKind.MILLIDA) "Подтверди вход" else "Код Microsoft",
+        title = if (prompt.kind == AccountKind.MILLIDA) tr("Подтверди вход") else tr("Код {0}", signInService(prompt.kind)),
         onDismiss = model::cancelLogin,
+        wide = true,
         body = {
             Box(
                 Modifier
                     .fillMaxWidth()
                     .pixelSurface(colors.inset, MillidaCut.control, colors.wellFrame())
-                    .padding(vertical = 14.dp),
+                    .padding(vertical = 14.dp, horizontal = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
+                // One line always: the code shrinks to the plate instead of breaking at a dash.
+                var codeSize by remember(prompt.code) { mutableStateOf(30f) }
                 Text(
                     prompt.code,
-                    style = MillidaType.pixelLarge.copy(fontSize = 30.sp, lineHeight = 34.sp, letterSpacing = 0.12.em),
+                    style = MillidaType.pixelLarge.copy(fontSize = codeSize.sp, lineHeight = (codeSize + 4f).sp, letterSpacing = 0.12.em),
                     color = colors.accentText,
                     textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    softWrap = false,
+                    onTextLayout = { layout -> if (layout.didOverflowWidth && codeSize > 12f) codeSize -= 2f },
                 )
             }
             Spacer(Modifier.height(12.dp))
             Text(
-                "Код скопирован. Введи его на открывшейся странице — окно закроется само.",
+                tr("Код скопирован. Введи его на открывшейся странице — окно закроется само."),
                 style = MillidaType.body,
                 color = colors.fgMuted,
             )
@@ -570,14 +610,14 @@ fun LoginDialog(state: UiState, model: LauncherViewModel) {
             )
         },
         actions = {
-            MTextButton("Отменить", onClick = model::cancelLogin)
+            MTextButton(tr("Отмена"), onClick = model::cancelLogin)
             MSecondaryButton(
-                "Скопировать",
-                onClick = { clipboard.setText(AnnotatedString(prompt.code)) },
+                tr("Копировать"),
+                onClick = { clipboard.setText(AnnotatedString(prompt.url)) },
                 icon = MIcons.copy,
                 size = MButtonSize.Small,
             )
-            MPrimaryButton("Открыть страницу", onClick = { model.openLinkOrNotice(context, prompt.url) }, icon = MIcons.externalLink)
+            MPrimaryButton(tr("Открыть"), onClick = { model.openLinkOrNotice(context, prompt.url) }, icon = MIcons.externalLink)
         },
     )
 }

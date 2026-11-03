@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import net.millida.launcher.core.i18n.tr
 import net.millida.launcher.core.media.Screenshot
 import net.millida.launcher.core.media.UiSoundEvent
 import net.millida.launcher.ui.MLocalImage
@@ -34,7 +35,7 @@ internal fun ShotTile(shot: Screenshot, onOpen: () -> Unit, modifier: Modifier =
             .clickable(
                 interactionSource = interaction,
                 indication = null,
-                onClickLabel = "Открыть снимок",
+                onClickLabel = tr("Открыть снимок"),
                 role = Role.Button,
                 onClick = onOpen,
             ),

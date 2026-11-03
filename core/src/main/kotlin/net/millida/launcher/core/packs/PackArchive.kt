@@ -5,6 +5,7 @@ import net.millida.launcher.core.SafeUnzip
 import java.io.File
 import java.io.IOException
 
+import net.millida.launcher.core.i18n.tr
 /**
  * The single unpacker for everything pack shaped: .mrpack, a CurseForge zip and
  * a Millida catalogue archive all land here. Entry names come from a file a
@@ -15,17 +16,17 @@ object PackArchive {
     private const val MAX_ENTRIES = 40_000
     private const val MAX_TOTAL_BYTES = 8L * 1024 * 1024 * 1024
 
-    private val LIMITS = SafeUnzip.Limits(
+    private val LIMITS get() = SafeUnzip.Limits(
         maxEntries = MAX_ENTRIES,
         maxBytes = MAX_TOTAL_BYTES,
-        broken = { cause -> "архив сборки повреждён ($cause) — скачай сборку заново" },
-        tooMany = "в архиве сборки слишком много файлов — скачай сборку заново",
-        tooBig = "сборка распаковывается в слишком большой объём — установка остановлена",
+        broken = { cause -> tr("архив сборки повреждён ({cause}) — скачай сборку заново", cause) },
+        tooMany = tr("в архиве сборки слишком много файлов — скачай сборку заново"),
+        tooBig = tr("сборка распаковывается в слишком большой объём — установка остановлена"),
     )
 
     @Throws(IOException::class)
     fun unpack(archive: File, target: File): File {
-        if (!archive.isFile) throw IOException("архив сборки не найден: ${archive.name}")
+        if (!archive.isFile) throw IOException(tr("архив сборки не найден: {name}", archive.name))
         SafeUnzip.unpack(archive, target, LIMITS)
         return target
     }
@@ -81,7 +82,7 @@ object PackArchive {
         }
     }
 
-    private val MANIFESTS = listOf("modrinth.index.json", "manifest.json", "millida.pack.json")
+    private val MANIFESTS = listOf("modrinth.index.json", "manifest.json", "millida.pack.json", "mmc-pack.json")
 
     private val ARCHIVER_LITTER = setOf("__MACOSX", "Thumbs.db", "desktop.ini")
 

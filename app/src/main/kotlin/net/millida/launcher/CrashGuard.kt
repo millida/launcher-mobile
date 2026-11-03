@@ -2,7 +2,17 @@ package net.millida.launcher
 
 import android.content.Context
 import android.os.Build
+import android.util.Log
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import net.millida.launcher.core.account.AccountStore
+import net.millida.launcher.core.account.MemoryVault
+import net.millida.launcher.core.account.MillidaAuth
+import net.millida.launcher.core.http.Downloader
 import net.millida.launcher.core.support.CrashFile
+import net.millida.launcher.core.support.ErrorReport
+import net.millida.launcher.core.support.SupportClient
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -19,14 +29,68 @@ object CrashGuard {
 
     private const val FOLDER = "crash"
     private const val FILE = "last.txt"
+    private const val TAG = "millida"
+    private const val RELEASE_PREFIX = "launcher-mobile@"
+    private const val NICK_MASK = "<nick>"
+    private const val EARLY_WAIT_MS = 3_000L
+
+    private val sending = Mutex()
+
+    @Volatile
+    private var early: Thread? = null
 
     fun install(context: Context) {
         val target = file(context)
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             runCatching { write(target, thread.name, error) }
+            // A crash right at start would otherwise kill the report of the previous one mid-flight.
+            early?.takeIf { it !== thread && it.isAlive }?.let { sender -> runCatching { sender.join(EARLY_WAIT_MS) } }
             previous?.uncaughtException(thread, error)
         }
+    }
+
+    /**
+     * A crash on start kills the process before any screen is up, so the report it
+     * left is sent here, off the main thread and without the container or the
+     * translations, which may be the very thing that crashed. A failure leaves the
+     * file in place for the support screen to send later.
+     */
+    fun sendEarly(context: Context) {
+        val app = context.applicationContext
+        val sender = Thread({
+            try {
+                if (!Prefs(app).crashReports) return@Thread
+                val text = report(app) ?: return@Thread
+                val masks = nickMasks(AccountStore(gameLayout(app)))
+                val client = SupportClient(MillidaAuth(Downloader.shared(), MemoryVault()))
+                runBlocking { send(app, client, masks, text) }
+            } catch (failure: Throwable) {
+                Log.w(TAG, "отчёт о вылете при старте не ушёл: $failure")
+            }
+        }, "crash-report")
+        sender.isDaemon = true
+        early = sender
+        sender.start()
+    }
+
+    /** One sender at a time, so the early send and the support screen never post the same crash twice. */
+    suspend fun send(context: Context, client: SupportClient, masks: List<Pair<String?, String>>, text: String) {
+        sending.withLock {
+            if (report(context) != text) return
+            val record = CrashFile.parse(text)
+            val release = RELEASE_PREFIX + record.version.ifEmpty { BuildConfig.VERSION_NAME }
+            client.error(ErrorReport.fromCrash(record, release, masks))
+            clearIfSame(context, text)
+        }
+    }
+
+    /** A report names a fault, not a player. */
+    fun nickMasks(accounts: AccountStore): List<Pair<String?, String>> = try {
+        accounts.load().map { it.nick to NICK_MASK }
+    } catch (unreadable: Exception) {
+        Log.w(TAG, "аккаунты не прочитались для маски ников: ${unreadable.message}")
+        emptyList()
     }
 
     fun report(context: Context): String? {
