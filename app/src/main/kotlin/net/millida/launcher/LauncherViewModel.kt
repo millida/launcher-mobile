@@ -11,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -64,6 +65,7 @@ import net.millida.launcher.core.cabinet.WalletBalance
 import net.millida.launcher.core.cabinet.WalletOperation
 import net.millida.launcher.core.content.MissingMod
 import net.millida.launcher.core.content.ModCompat
+import net.millida.launcher.core.content.PreLaunchCache
 import net.millida.launcher.core.content.ModDependencies
 import net.millida.launcher.core.content.PhoneBlockedMods
 import net.millida.launcher.core.content.newestInstallable
@@ -1798,9 +1800,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             try {
                 val releases = state.value.versions.map { it.id }
-                val wanted = lobby.wantedVersions(address, versions, releases)
+                val server = lobby.wantedVersions(address, versions, releases)
+                val wanted = server.versions
                 val snapshot = state.value
-                when (val plan = joinPlan(joinableBuilds(snapshot.profiles), snapshot.activeProfileId, wanted)) {
+                val builds = if (server.modded) moddedJoinBuilds(snapshot.profiles, wanted) else joinableBuilds(snapshot.profiles)
+                when (val plan = joinPlan(builds, snapshot.activeProfileId, wanted)) {
                     is JoinPlan.Launch -> joinServer(plan.build, address, name)
                     is JoinPlan.Switch -> {
                         notice(tr("Сервер на {0} — заходим сборкой «{name}»", wanted.joinToString(", "), plan.build.name))
@@ -1968,11 +1972,17 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         val mods = File(container.profiles.directory(profile), "mods")
         val tried = missingModsTried[profile.id].orEmpty()
         val missing = withContext(Dispatchers.IO) {
-            when (profile.loader) {
+            val signature = folderSignature(profile, mods)
+            if (PreLaunchCache.cleanFor(prefs.cleanScan(profile.id, "missing"), signature)) {
+                return@withContext emptyList()
+            }
+            val found = when (profile.loader) {
                 LoaderKind.FABRIC -> ModDependencies.missing(mods)
                 LoaderKind.FORGE, LoaderKind.NEOFORGE -> ModCompat.missingForge(mods, profile.loader)
                 else -> emptyList()
             }
+            if (found.isEmpty()) prefs.setCleanScan(profile.id, "missing", signature)
+            found
         }
         return missing.take(MISSING_MODS_MAX).mapNotNull { mod ->
             val project = mod.projectId?.takeUnless { it in tried } ?: return@mapNotNull null
@@ -3429,6 +3439,104 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         play(switched)
     }
 
+    private suspend fun checkMissingMods(profile: Profile): List<InstallableMod> = try {
+        withTimeoutOrNull(MISSING_MODS_CHECK_MS) { installableMissingMods(profile) }.orEmpty()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        Log.w("millida", "проверка модов перед запуском: ${error.message}")
+        emptyList()
+    }
+
+    private suspend fun checkModProblems(profile: Profile) = withTimeoutOrNull(MISSING_MODS_CHECK_MS) {
+        withContext(Dispatchers.IO) {
+            val mods = File(container.profiles.directory(profile), "mods")
+            val signature = folderSignature(profile, mods)
+            if (PreLaunchCache.cleanFor(prefs.cleanScan(profile.id, "problems"), signature)) {
+                return@withContext emptyList()
+            }
+            val found = ModCompat.problems(mods, profile.gameVersion, profile.loader)
+            if (found.isEmpty()) prefs.setCleanScan(profile.id, "problems", signature)
+            found
+        }
+    }.orEmpty()
+
+    /** Mods folder state plus what the scans depend on besides the files: game version and loader. */
+    private fun folderSignature(profile: Profile, mods: File): String =
+        PreLaunchCache.signature(mods, "${profile.gameVersion}/${profile.loader.id}")
+
+    /**
+     * The Millida mod answer: a fresh stored one is used at once and renewed in the background;
+     * without one the check runs as before, under its time limit, and its result is stored.
+     */
+    private suspend fun cachedMillidaModAction(profile: Profile, declined: Boolean): LaunchModAction? {
+        val signature = withContext(Dispatchers.IO) {
+            try { folderSignature(profile, File(container.profiles.directory(profile), "mods")) } catch (e: Exception) { null }
+        }
+        if (signature == null) return withTimeoutOrNull(MOD_OFFER_CHECK_MS) { millidaModAction(profile, declined) }
+        val stored = PreLaunchCache.decodeOffer(prefs.modOffer(profile.id))
+        val remember: (LaunchModAction) -> Unit = { action ->
+            prefs.setModOffer(
+                profile.id,
+                PreLaunchCache.encodeOffer(
+                    PreLaunchCache.Offer(PreLaunchCache.LaunchActionName.valueOf(action.name), signature, declined, System.currentTimeMillis()),
+                ),
+            )
+        }
+        if (PreLaunchCache.offerUsable(stored, signature, declined, System.currentTimeMillis())) {
+            viewModelScope.launch {
+                try {
+                    withTimeoutOrNull(MOD_OFFER_REFRESH_MS) { millidaModAction(profile, declined) }?.let(remember)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Log.w("millida", "обновление ответа по моду Millida: ${error.message}")
+                }
+            }
+            return LaunchModAction.valueOf(stored!!.action.name)
+        }
+        val quick = withTimeoutOrNull(MOD_OFFER_CHECK_MS) { millidaModAction(profile, declined) }
+        if (quick != null) return quick.also(remember)
+        // Slow line (3 s timeout on a Redmi every start, 08.11.2026): finish the check in the background
+        // so the next start takes the stored answer instead of waiting again.
+        viewModelScope.launch {
+            try {
+                withTimeoutOrNull(MOD_OFFER_REFRESH_MS) { millidaModAction(profile, declined) }?.let(remember)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.w("millida", "ответ по моду Millida в фоне: ${error.message}")
+            }
+        }
+        return null
+    }
+
+    /** Shows the launch progress the moment «Играть» is tapped, so the pre-launch reads do not look like a dead button. */
+    private fun checksBegin() {
+        val label = tr("Проверяем моды")
+        if (BuildConfig.TEST_HOOKS) Log.i("millida-test", "STAGE checks start")
+        state.update { it.copy(tasks = it.tasks + label, preparingGame = true) }
+    }
+
+    /** Idempotent: only the call that finds the label removes it and drops the flag. */
+    private fun checksEnd() {
+        val label = tr("Проверяем моды")
+        state.update { current ->
+            val at = current.tasks.lastIndexOf(label)
+            if (at < 0) {
+                current
+            } else {
+                val remaining = current.tasks.toMutableList().also { it.removeAt(at) }
+                if (BuildConfig.TEST_HOOKS) Log.i("millida-test", "STAGE checks end")
+                current.copy(
+                    tasks = remaining,
+                    preparingGame = false,
+                    progress = if (remaining.isEmpty()) 0f else current.progress,
+                )
+            }
+        }
+    }
+
     fun play(
         profile: Profile,
         serverAddress: String = "",
@@ -3453,54 +3561,59 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 return
             }
         }
-        if (!modAnswered) {
-            val asking = viewModelScope.launch(start = CoroutineStart.LAZY) {
-                val declined = profile.id in prefs.millidaModDeclined
-                val action = try {
-                    withTimeoutOrNull(MOD_OFFER_CHECK_MS) { millidaModAction(profile, declined) }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    Log.w("millida", "проверка мода Millida перед запуском: ${error.message}")
-                    null
-                }
-                playJob = null
-                when (action) {
-                    LaunchModAction.OFFER ->
-                        state.update { it.copy(millidaModOffer = PendingModOffer(profile, serverAddress)) }
-                    LaunchModAction.UPDATE -> updateMillidaModAndPlay(profile, serverAddress)
-                    LaunchModAction.NONE, null ->
-                        play(profile, serverAddress, memoryConfirmed = true, modAnswered = true)
-                }
-            }
-            playJob = asking
-            asking.start()
-            return
-        }
-        if (!modsChecked) {
+        if (!modAnswered || !modsChecked) {
             val checking = viewModelScope.launch(start = CoroutineStart.LAZY) {
-                val missing = try {
-                    withTimeoutOrNull(MISSING_MODS_CHECK_MS) { installableMissingMods(profile) }.orEmpty()
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    Log.w("millida", "проверка модов перед запуском: ${error.message}")
-                    emptyList()
-                }
-                if (missing.isNotEmpty()) {
-                    installMissingMods(PendingMissingMods(profile, serverAddress, missing))
-                    return@launch
-                }
-                val problems = withTimeoutOrNull(MISSING_MODS_CHECK_MS) {
-                    withContext(Dispatchers.IO) {
-                        ModCompat.problems(File(container.profiles.directory(profile), "mods"), profile.gameVersion, profile.loader)
+                checksBegin()
+                try {
+                    // The three reads are independent, so they run side by side; the
+                    // answers are still taken in the old order: offer, missing, problems.
+                    val missingJob = async { checkMissingMods(profile) }
+                    val problemsJob = async { checkModProblems(profile) }
+                    if (!modAnswered) {
+                        val declined = profile.id in prefs.millidaModDeclined
+                        val action = try {
+                            cachedMillidaModAction(profile, declined)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            Log.w("millida", "проверка мода Millida перед запуском: ${error.message}")
+                            null
+                        }
+                        when (action) {
+                            LaunchModAction.OFFER -> {
+                                missingJob.cancel(); problemsJob.cancel()
+                                checksEnd()
+                                playJob = null
+                                state.update { it.copy(millidaModOffer = PendingModOffer(profile, serverAddress)) }
+                                return@launch
+                            }
+                            LaunchModAction.UPDATE -> {
+                                missingJob.cancel(); problemsJob.cancel()
+                                checksEnd()
+                                playJob = null
+                                updateMillidaModAndPlay(profile, serverAddress)
+                                return@launch
+                            }
+                            LaunchModAction.NONE, null -> Unit
+                        }
                     }
-                }.orEmpty()
-                playJob = null
-                if (problems.isEmpty()) {
-                    play(profile, serverAddress, memoryConfirmed = true, modAnswered = true, modsChecked = true)
-                } else {
-                    state.update { it.copy(modProblems = PendingModProblems(profile, serverAddress, problems)) }
+                    val missing = missingJob.await()
+                    if (missing.isNotEmpty()) {
+                        problemsJob.cancel()
+                        checksEnd()
+                        installMissingMods(PendingMissingMods(profile, serverAddress, missing))
+                        return@launch
+                    }
+                    val problems = problemsJob.await()
+                    checksEnd()
+                    playJob = null
+                    if (problems.isEmpty()) {
+                        play(profile, serverAddress, memoryConfirmed = true, modAnswered = true, modsChecked = true)
+                    } else {
+                        state.update { it.copy(modProblems = PendingModProblems(profile, serverAddress, problems)) }
+                    }
+                } finally {
+                    checksEnd()
                 }
             }
             playJob = checking
@@ -3509,7 +3622,8 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         }
         if (!networkChecked) {
             val measuring = viewModelScope.launch(start = CoroutineStart.LAZY) {
-                val bytes = if (meteredNetwork()) {
+                checksBegin()
+                val bytes = try { if (meteredNetwork()) {
                     try {
                         withTimeoutOrNull(DOWNLOAD_ESTIMATE_MS) { withContext(Dispatchers.IO) { downloadEstimate(profile) } } ?: 0L
                     } catch (cancelled: CancellationException) {
@@ -3520,7 +3634,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     }
                 } else {
                     0L
-                }
+                } } finally { checksEnd() }
                 playJob = null
                 if (CellularDownload.needsConsent(bytes)) {
                     state.update { it.copy(cellularPlay = PendingCellular(profile, serverAddress, bytes)) }
@@ -3586,7 +3700,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                     }
 
                     launchStage = "runtime"
-                    state.update { it.copy(progressNote = tr("Ставим виртуальную машину Java и рендерер"), progress = 0f) }
+                    state.update { it.copy(progressNote = tr("Ставим виртуальную машину Java и рендерер"), progress = RUNTIME_STAGE_PROGRESS) }
                     val runtime = RuntimeImport.installed(container.layout, javaMajor)
                         ?: container.runtimeInstaller().install(
                         javaMajor = javaMajor,
@@ -4445,7 +4559,11 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
         const val LOST_GAME_LOG_LINES = 200
         const val LOST_GAME_REPORT_LINES = 120
         /** A slow catalogue must not hold the start: past this the game goes on without the question. */
+        // Java is set up after the files are in place: the bar stands near the end, not at 0 % for the
+        // 10-15 s the runtime is unpacked after an app update (Redmi, 08.11.2026: «процентов не видно»).
+        const val RUNTIME_STAGE_PROGRESS = 0.9f
         const val MOD_OFFER_CHECK_MS = 3_000L
+        const val MOD_OFFER_REFRESH_MS = 20_000L
         const val MISSING_MODS_CHECK_MS = 8_000L
         const val DOWNLOAD_ESTIMATE_MS = 6_000L
         const val DOWNLOAD_NOTICE_DELAY_MS = 2_000L

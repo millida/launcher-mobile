@@ -111,6 +111,20 @@ class Prefs(private val context: Context) {
         get() = store.getStringSet(KEY_MILLIDA_MOD_DECLINED, null).orEmpty().toSet()
         set(value) = store.edit().putStringSet(KEY_MILLIDA_MOD_DECLINED, value.toSet()).apply()
 
+    /** Mods-folder signature of the last pre-launch scan that found nothing, per build and check ("missing" / "problems"). */
+    fun cleanScan(profileId: String, check: String): String? = store.getString("clean-scan-$check-$profileId", null)
+
+    fun setCleanScan(profileId: String, check: String, signature: String?) {
+        store.edit().apply { if (signature == null) remove("clean-scan-$check-$profileId") else putString("clean-scan-$check-$profileId", signature) }.apply()
+    }
+
+    /** Last answer of the Millida mod check, see PreLaunchCache. */
+    fun modOffer(profileId: String): String? = store.getString("mod-offer-$profileId", null)
+
+    fun setModOffer(profileId: String, raw: String) {
+        store.edit().putString("mod-offer-$profileId", raw).apply()
+    }
+
     /** How long the game process took from start to its first frame, per build: the loading percent runs against it. */
     fun bootMs(profileId: String): Long = store.getLong("boot-ms-$profileId", 0L)
 

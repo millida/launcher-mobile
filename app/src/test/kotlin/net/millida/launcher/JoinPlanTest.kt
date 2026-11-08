@@ -153,4 +153,24 @@ class JoinPlanTest {
         )
         assertTrue("план всегда опирается на одну из сборок игрока", joinPlan(builds, null, listOf("1.8")) is JoinPlan.Mismatch)
     }
+
+    @Test
+    fun `модовый сервер берёт модовую сборку`() {
+        val vanilla = build("vanilla", "1.21.1")
+        val neo = build("neo", "1.21.1", LoaderKind.NEOFORGE).copy(lastPlayedAt = 5)
+        val neoOld = build("neo-old", "1.21.1", LoaderKind.NEOFORGE).copy(lastPlayedAt = 1)
+        val other = build("neo-1.20", "1.20.1", LoaderKind.NEOFORGE).copy(lastPlayedAt = 9)
+        val wanted = listOf("1.21.1")
+        val all = listOf(vanilla, neoOld, neo, other)
+        assertEquals(JoinPlan.Launch(neo), joinPlan(moddedJoinBuilds(all, wanted), "vanilla", wanted))
+        assertEquals("выбранная модовая остаётся", JoinPlan.Launch(neoOld), joinPlan(moddedJoinBuilds(all, wanted), "neo-old", wanted))
+        assertEquals("модовой нет — как раньше", JoinPlan.Launch(vanilla), joinPlan(moddedJoinBuilds(listOf(vanilla, other), wanted), "vanilla", wanted))
+    }
+
+    @Test
+    fun `пинг помечает модовый сервер`() {
+        assertTrue(net.millida.launcher.core.servers.ServerPing.parseStatus("""{"version":{"name":"1.21.1"},"isModded":true}""", 1).modded)
+        assertTrue(net.millida.launcher.core.servers.ServerPing.parseStatus("""{"forgeData":{"channels":[]}}""", 1).modded)
+        assertTrue(!net.millida.launcher.core.servers.ServerPing.parseStatus("""{"version":{"name":"1.21.1"}}""", 1).modded)
+    }
 }

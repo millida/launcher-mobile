@@ -29,6 +29,8 @@ data class ServerStatus(
     val motd: String,
     val iconBase64: String?,
     val latencyMs: Long,
+    /** The ping carries Forge/NeoForge markers: a vanilla client cannot join. */
+    val modded: Boolean = false,
 )
 
 /** Bedrock speaks RakNet over UDP, which this launcher does not implement. */
@@ -101,8 +103,13 @@ object ServerPing {
                 ?.substringAfter("base64,")
                 ?.takeIf { it.isNotBlank() && it.length <= MAX_ICON_CHARS },
             latencyMs = latencyMs,
+            modded = isModded(root),
         )
     }
+
+    fun isModded(root: JsonObject): Boolean =
+        (root["isModded"] as? JsonPrimitive)?.booleanOrNull == true ||
+            root["forgeData"] is JsonObject || root["modinfo"] is JsonObject
 
     /**
      * A bracketed IPv6 literal has to be split before the last colon is taken

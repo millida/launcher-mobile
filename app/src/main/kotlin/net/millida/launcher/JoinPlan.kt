@@ -77,6 +77,19 @@ fun pingVersions(reported: String, known: Set<String>): List<String> {
 fun joinableBuilds(profiles: List<Profile>): List<Profile> =
     profiles.filter { it.loader == LoaderKind.VANILLA || it.loader == LoaderKind.FABRIC }
 
+/**
+ * A modded server (Forge/NeoForge markers in its ping) is joined with a modded
+ * build of its version, the most recently played first so the plan prefers it
+ * when the selected build is not one. With no modded build that fits, the clean
+ * builds stay: the player is asked as before.
+ */
+fun moddedJoinBuilds(profiles: List<Profile>, wanted: List<String>): List<Profile> {
+    val modded = profiles.filter { it.loader != LoaderKind.VANILLA }
+        .filter { versionFits(it.gameVersion, wanted) }
+        .sortedByDescending { it.lastPlayedAt }
+    return modded.ifEmpty { joinableBuilds(profiles) }
+}
+
 fun pickBuildForServer(builds: List<Profile>, wanted: List<String>): Profile? {
     if (wanted.isEmpty()) return null
     return builds.firstOrNull { it.gameVersion.trim() in wanted }

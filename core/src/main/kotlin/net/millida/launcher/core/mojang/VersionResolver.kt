@@ -17,6 +17,8 @@ import net.millida.launcher.core.runtime.SdlLaunch
 import java.io.File
 import java.io.IOException
 
+private const val MANIFEST_FRESH_MS = 24L * 60 * 60 * 1000
+
 const val MOJANG_MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
 const val MOJANG_LIBRARIES_URL = "https://libraries.minecraft.net/"
 const val MOJANG_RESOURCES_URL = "https://resources.download.minecraft.net/"
@@ -97,6 +99,13 @@ class VersionResolver(
     suspend fun manifest(refresh: Boolean = false): VersionManifest {
         manifestCache?.let { if (!refresh) return it }
         val cached = File(layout.caches, "version_manifest_v2.json")
+        // Every game start asked Mojang for the version list first: on a slow line that was 10 s of the
+        // launcher's 22 s (Redmi, 08.11.2026). A list saved within a day answers the start; a version it
+        // does not know still refreshes it (ensureVersionJson asks with refresh = true).
+        if (!refresh && cached.isFile && System.currentTimeMillis() - cached.lastModified() < MANIFEST_FRESH_MS) {
+            runCatching { MojangJson.decodeFromString(VersionManifest.serializer(), cached.readText()) }
+                .getOrNull()?.let { return it.also { manifestCache = it } }
+        }
         val fresh = try {
             val body = downloader.text(manifestUrl)
             val parsed = MojangJson.decodeFromString(VersionManifest.serializer(), body)

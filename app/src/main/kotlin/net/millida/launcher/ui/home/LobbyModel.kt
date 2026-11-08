@@ -75,6 +75,8 @@ data class LobbyState(
     val serversError: String? = null,
 )
 
+data class WantedServer(val versions: List<String>, val modded: Boolean)
+
 class LobbyModel(
     private val container: Container,
     private val scope: CoroutineScope,
@@ -217,14 +219,14 @@ class LobbyModel(
      * directly. The launcher's own ping allows a few seconds to answer, and a
      * server that stays silent is a question for the player, not a guess.
      */
-    suspend fun wantedVersions(address: String, reported: List<String>, releaseIds: List<String>): List<String> {
+    suspend fun wantedVersions(address: String, reported: List<String>, releaseIds: List<String>): WantedServer {
         val known = knownVersions(releaseIds)
         val listed = serverVersions(reported, known)
-        if (listed.isNotEmpty()) return listed
         // A blocking socket ignores cancellation: only the wait is bounded, the ping still fills the cache.
         val pending = scope.async(Dispatchers.IO) { container.serverStatuses.status(address) }
-        val answer = withTimeoutOrNull(PING_WAIT_MS) { pending.await() }
-        return pingVersions(answer?.version.orEmpty(), known)
+        val answer = withTimeoutOrNull(PING_WAIT_MS) { runCatching { pending.await() }.getOrNull() }
+        val versions = listed.ifEmpty { pingVersions(answer?.version.orEmpty(), known) }
+        return WantedServer(versions, answer?.modded == true)
     }
 
     fun setCover(profile: Profile, resolver: ContentResolver, uri: Uri, profiles: List<Profile>) {
