@@ -111,6 +111,13 @@ class Prefs(private val context: Context) {
         get() = store.getStringSet(KEY_MILLIDA_MOD_DECLINED, null).orEmpty().toSet()
         set(value) = store.edit().putStringSet(KEY_MILLIDA_MOD_DECLINED, value.toSet()).apply()
 
+    /** How long the game process took from start to its first frame, per build: the loading percent runs against it. */
+    fun bootMs(profileId: String): Long = store.getLong("boot-ms-$profileId", 0L)
+
+    fun setBootMs(profileId: String, ms: Long) {
+        store.edit().putLong("boot-ms-$profileId", ms).apply()
+    }
+
     /** Renderers that crashed a build at init, as written by RendererFallback.entry. */
     var rendererInitFailures: Set<String>
         get() = store.getStringSet(KEY_RENDERER_INIT_FAILURES, null).orEmpty().toSet()

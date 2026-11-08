@@ -662,14 +662,21 @@ private fun CursorMark(position: Offset) {
 @Composable
 private fun LoadingScreen(state: GameUiState, onExit: () -> Unit, onLog: () -> Unit) {
     val colors = millida
-    val note = when {
-        !state.booting -> state.note
-        state.bootSeconds > 0 -> tr("Игра загружается · {0}", BootWatch.clock(state.bootSeconds * 1000L))
-        else -> tr("Игра загружается")
-    }
     val progress = when {
-        state.closing || state.booting || state.stage <= 0 -> null
+        state.closing -> null
+        state.booting -> state.bootPercent / 100f
+        state.stage <= 0 -> null
         else -> state.stage / LAUNCH_STAGES.toFloat()
+    }
+    val note = when {
+        state.closing -> state.note
+        state.booting -> {
+            val word = tr("Игра загружается")
+            val clock = if (state.bootSeconds > 0) " · " + BootWatch.clock(state.bootSeconds * 1000L) else ""
+            "$word · ${state.bootPercent}%$clock"
+        }
+        progress != null -> state.note + " · " + (progress * 100).toInt() + "%"
+        else -> state.note
     }
     Box(
         Modifier
@@ -710,16 +717,12 @@ private fun LoadingScreen(state: GameUiState, onExit: () -> Unit, onLog: () -> U
             MProgressBar(progress)
             if (!state.closing) {
                 Spacer(Modifier.height(20.dp))
+                MSecondaryButton(tr("Отмена"), onClick = onExit, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(20.dp))
                 TipLine()
             }
         }
         if (!state.closing) {
-            MTextButton(
-                tr("Выйти"),
-                onClick = onExit,
-                modifier = Modifier.align(Alignment.TopEnd),
-                icon = MIcons.close,
-            )
             MTextButton(
                 tr("Лог"),
                 onClick = onLog,

@@ -50,6 +50,7 @@ import net.millida.launcher.core.packs.PhoneFit
 import net.millida.launcher.core.runtime.AuthlibAgent
 import net.millida.launcher.core.runtime.AuthlibMetadata
 import net.millida.launcher.core.runtime.BootPicture
+import net.millida.launcher.core.runtime.BootProgress
 import net.millida.launcher.core.runtime.BootStep
 import net.millida.launcher.core.runtime.BootWatch
 import net.millida.launcher.core.runtime.GameEnd
@@ -120,6 +121,9 @@ data class GameUiState(
     val booting: Boolean = false,
     /** Seconds the game has been loading, set once its first minute is over: the loading screen shows them. */
     val bootSeconds: Int = 0,
+    /** 0..95 while the game loads before its first frame, from the log and the last measured boot. */
+    val bootPercent: Int = 0,
+    val bootPhase: String = "",
     val started: Boolean = false,
     val blackOffer: BlackOffer? = null,
     val cause: String? = null,
@@ -309,6 +313,9 @@ class GameLaunchModel(application: Application) : AndroidViewModel(application) 
 
     @Volatile
     private var sessionLoop: Job? = null
+
+    /** The start itself: a cancel before the game is up ends it. */
+    private var launchJob: Job? = null
     private val playLock = Any()
     private var playProfileId = ""
     private var playFrom = 0L
@@ -330,7 +337,7 @@ class GameLaunchModel(application: Application) : AndroidViewModel(application) 
 
         launchBegan = SystemClock.elapsedRealtime()
         screenWatch.start()
-        viewModelScope.launch {
+        launchJob = viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) { launch(request) }
             } catch (cancelled: CancellationException) {
@@ -516,12 +523,20 @@ class GameLaunchModel(application: Application) : AndroidViewModel(application) 
             val began = SystemClock.elapsedRealtime()
             var verdict = BootWatch.Verdict.WAITING
             var drawn = false
+            val progress = BootProgress(bootProfileId().let { if (it.isEmpty()) 0L else prefs.bootMs(it) })
+            var logAt = 0L
             while (state.value.running) {
                 if (frameDrawn()) {
                     drawn = true
                     break
                 }
                 val elapsed = SystemClock.elapsedRealtime() - began
+                logAt = feedBootLog(progress, logAt)
+                val percent = progress.percent(elapsed)
+                val phase = bootPhaseWord(progress)
+                if (percent != state.value.bootPercent || phase != state.value.bootPhase) {
+                    state.update { it.copy(bootPercent = percent, bootPhase = phase) }
+                }
                 verdict = BootWatch.verdict(elapsed, logQuietMs())
                 if (verdict == BootWatch.Verdict.SILENT || verdict == BootWatch.Verdict.OVERDUE) break
                 if (verdict == BootWatch.Verdict.LOADING) {
@@ -558,6 +573,7 @@ class GameLaunchModel(application: Application) : AndroidViewModel(application) 
                 prefs.rendererNoFrame = prefs.rendererNoFrame - entry
             }
             if (drawn) {
+                bootProfileId().takeIf { it.isNotEmpty() }?.let { prefs.setBootMs(it, SystemClock.elapsedRealtime() - began) }
                 facts = facts?.copy(frame = true, frameMs = SystemClock.elapsedRealtime() - launchBegan, resolutionPercent = resolutionPercent)
                 facts?.let(telemetry::gameFrameReached)
                 sampleFps()
@@ -668,6 +684,24 @@ class GameLaunchModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** How long ago the game last wrote its log; a log that cannot be read counts as just written. */
+    private fun bootProfileId(): String = synchronized(playLock) { playProfileId }
+
+    private fun bootPhaseWord(progress: BootProgress): String = progress.stage.name
+
+    /** Reads what the game wrote to its log since [offset] into [progress]; returns the new offset. */
+    private fun feedBootLog(progress: BootProgress, offset: Long): Long = runCatching {
+        val file = sessionLog
+        val length = file.length()
+        if (length <= offset) return@runCatching offset
+        java.io.RandomAccessFile(file, "r").use { raf ->
+            raf.seek(offset)
+            val bytes = ByteArray((length - offset).toInt().coerceAtMost(1 shl 20))
+            raf.readFully(bytes)
+            progress.feed(String(bytes, Charsets.UTF_8))
+            offset + bytes.size
+        }
+    }.getOrDefault(offset)
+
     private fun logQuietMs(): Long {
         val written = runCatching { sessionLog.lastModified() }.getOrDefault(0L)
         if (written <= 0L) return 0L
@@ -723,6 +757,7 @@ class GameLaunchModel(application: Application) : AndroidViewModel(application) 
     private suspend fun forceStop(message: String) {
         forced = true
         GameSession.note(sessionLog, "принудительное завершение: $message")
+        if (!state.value.started) launchJob?.cancel()
         withContext(Dispatchers.IO) {
             // A game that hung on a renderer failure is closed by the player, and that is still the renderer's failure.
             rememberInitFailure()

@@ -120,6 +120,29 @@ class ModCompatTest {
     }
 
     @Test
+    fun `NeoForge - мод линии 1_21 с диапазоном до 1_21_1 не выключается, мод 1_20 выключается`() {
+        val dir = temp.newFolder()
+        fun neo(file: String, id: String, minecraft: String) = jar(
+            dir, file,
+            "META-INF/neoforge.mods.toml" to """
+                modLoader="javafml"
+                [[mods]]
+                modId="$id"
+                version="1.0"
+                displayName="$id"
+                [[dependencies.$id]]
+                modId="minecraft"
+                type="required"
+                versionRange="$minecraft"
+            """.trimIndent(),
+        )
+        neo("cucumber.jar", "cucumber", "[1.21,1.21.1)")
+        neo("old.jar", "old", "[1.20,1.21)")
+        val problems = ModCompat.problems(dir, "1.21.1", LoaderKind.NEOFORGE)
+        assertEquals(listOf(ModCompat.Kind.GAME to "old"), names(problems))
+    }
+
+    @Test
     fun `Forge - недостающая библиотека названа, найденная нет`() {
         val dir = temp.newFolder()
         forge(dir, "a.jar", "a", "*", extra = "[[dependencies.a]]\nmodId=\"balm\"\nmandatory=true\nversionRange=\"*\"")

@@ -92,7 +92,7 @@ object ModCompat {
                 continue
             }
             val game = mod.depends.firstOrNull { it.id == GAME }
-            if (game != null && ModVersionRange.satisfies(game.range, gameVersion) == false) {
+            if (game != null && ModVersionRange.satisfies(game.range, gameVersion) == false && !sameLine(loader, game.range, gameVersion)) {
                 flag(mod, Kind.GAME)
                 continue
             }
@@ -132,6 +132,17 @@ object ModCompat {
     }
 
     /** A disabled duplicate does not take its mod away: the copy that is kept still provides it. */
+    /**
+     * NeoForge loads a mod built for the same 1.21 line even when its range stops short of the patch:
+     * BlakeBr0's mods (Cucumber, Extended Crafting) say minecraft "[1.21,1.21.1)" and run on 1.21.1 —
+     * flagging them switched them off on phones and the server then refused the player (08.11.2026).
+     */
+    private fun sameLine(loader: LoaderKind, range: String, gameVersion: String): Boolean {
+        if (loader != LoaderKind.NEOFORGE) return false
+        val line = gameVersion.split('.').take(2).joinToString(".")
+        return line != gameVersion && ModVersionRange.satisfies(range, line) == true
+    }
+
     private fun stillHeld(gone: Info, mods: List<Info>, disabled: Map<File, Problem>): Boolean =
         mods.any { it !== gone && it.id == gone.id && it.file !in disabled }
 
