@@ -27,7 +27,7 @@ object PhoneBlockedMods {
     fun disableIn(modsDir: File): List<String> {
         val jars = modsDir.listFiles { file -> file.isFile && file.name.endsWith(".jar") }.orEmpty()
         return jars.sortedBy { it.name }.mapNotNull { jar ->
-            val reason = blocked(ContentInspector.inspect(jar).modId) ?: return@mapNotNull null
+            val reason = blocked(ContentInspector.modId(jar)) ?: return@mapNotNull null
             val target = File(jar.parentFile, jar.name + DISABLED_SUFFIX)
             if (target.exists() || !jar.renameTo(target)) return@mapNotNull null
             reason

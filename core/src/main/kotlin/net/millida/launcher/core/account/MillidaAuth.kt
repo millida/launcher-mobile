@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -31,11 +32,21 @@ const val MILLIDA_YGGDRASIL = "$MILLIDA_API/yggdrasil"
 
 class Unauthorized(message: String = tr("сессия Millida недействительна")) : IOException(message)
 
-data class LauncherInit(
+/** The server's final word on a sign-in code: asking again cannot change it. */
+class LoginRefused(message: String) : IOException(message)
+
+/**
+ * A sign-in the player started and has not finished. It is kept in the vault because the player
+ * confirms it in a browser, and the system may end the launcher's process in the meantime.
+ * [approved] means the code is spent and the tokens are stored, so no new confirmation is needed.
+ */
+data class PendingLogin(
     val deviceCode: String,
     val userCode: String,
     val verifyUrl: String,
-    val expiresInSec: Int,
+    val expiresAtMs: Long,
+    val inline: Boolean = false,
+    val approved: Boolean = false,
 )
 
 class MillidaAuth(
@@ -43,33 +54,120 @@ class MillidaAuth(
     private val vault: SecretVault,
     private val apiBase: String = MILLIDA_API,
 ) {
-    suspend fun startLogin(clientName: String = "Millida Mobile"): LauncherInit {
+    suspend fun startLogin(inline: Boolean = false, clientName: String = "Millida Mobile"): PendingLogin {
         val response = call("/auth/launcher/init", "POST", buildJsonObject { put("clientName", clientName) }, null).asObject()
         val code = response.text("deviceCode")
         val user = response.text("userCode")
         if (code.isEmpty() || user.isEmpty()) throw IOException(tr("сервер не выдал код входа"))
-        return LauncherInit(
+        val expiresInSec = response.text("expiresInSec").toIntOrNull() ?: 600
+        val pending = PendingLogin(
             deviceCode = code,
             userCode = user,
             verifyUrl = response.text("verifyUrl").ifEmpty { "https://millida.net/auth/launcher" },
-            expiresInSec = response.text("expiresInSec").toIntOrNull() ?: 600,
+            expiresAtMs = System.currentTimeMillis() + expiresInSec * 1000L,
+            inline = inline,
         )
+        remember(pending)
+        return pending
     }
 
-    suspend fun pollLogin(deviceCode: String): Boolean {
+    fun pendingLogin(): PendingLogin? {
+        val stored = vault.read(KEY_PENDING_LOGIN) ?: return null
+        val pending = decodePending(stored)?.takeIf { it.approved || it.expiresAtMs > System.currentTimeMillis() }
+        if (pending == null) finishLogin()
+        return pending
+    }
+
+    fun finishLogin() = vault.remove(KEY_PENDING_LOGIN)
+
+    /**
+     * Waits for the confirmation; false when the code ran out first. A failed request does not end
+     * the wait: Android cuts the network of a backgrounded app, and that is where it waits.
+     */
+    suspend fun awaitApproval(pending: PendingLogin, periodMs: Long = POLL_PERIOD_MS): Boolean {
+        if (pending.approved) return true
+        while (System.currentTimeMillis() < pending.expiresAtMs) {
+            delay(periodMs)
+            val approved = try {
+                pollLogin(pending.deviceCode)
+            } catch (refused: LoginRefused) {
+                finishLogin()
+                throw refused
+            } catch (unreachable: IOException) {
+                false
+            }
+            if (approved) {
+                remember(pending.copy(approved = true))
+                return true
+            }
+        }
+        finishLogin()
+        return false
+    }
+
+    /** The game session of a confirmed sign-in, with room for the network to come back after the browser. */
+    suspend fun awaitGameSession(periodMs: Long = POLL_PERIOD_MS, windowMs: Long = GAME_SESSION_WINDOW_MS): GameSession {
+        val deadline = System.currentTimeMillis() + windowMs
+        while (true) {
+            try {
+                return gameSession()
+            } catch (unauthorized: Unauthorized) {
+                finishLogin()
+                throw unauthorized
+            } catch (unreachable: IOException) {
+                if (System.currentTimeMillis() >= deadline) throw unreachable
+            }
+            delay(periodMs)
+        }
+    }
+
+    private suspend fun pollLogin(deviceCode: String): Boolean {
         val response = call("/auth/launcher/poll", "POST", buildJsonObject { put("deviceCode", deviceCode) }, null).asObject()
         when (val status = response.text("status")) {
             "ok" -> Unit
-            "denied" -> throw IOException(tr("вход отклонён на странице Millida"))
-            "expired" -> throw IOException(tr("код входа истёк — начни заново"))
+            "denied" -> throw LoginRefused(tr("вход отклонён на странице Millida"))
+            "expired" -> throw LoginRefused(tr("код входа истёк — начни заново"))
             "pending", "" -> return false
-            else -> throw IOException(tr("сервер ответил статусом {status}", status))
+            else -> throw LoginRefused(tr("сервер ответил статусом {status}", status))
         }
         val access = response.text("accessToken")
         if (access.isEmpty()) throw IOException(tr("в ответе нет accessToken"))
         vault.write(KEY_ACCESS, access)
         response.text("refreshToken").takeIf { it.isNotEmpty() }?.let { vault.write(KEY_REFRESH, it) }
         return true
+    }
+
+    private fun remember(pending: PendingLogin) {
+        val record = buildJsonObject {
+            put("deviceCode", pending.deviceCode)
+            put("userCode", pending.userCode)
+            put("verifyUrl", pending.verifyUrl)
+            put("expiresAtMs", pending.expiresAtMs)
+            put("inline", pending.inline)
+            put("approved", pending.approved)
+        }
+        vault.write(KEY_PENDING_LOGIN, MojangJson.encodeToString(JsonObject.serializer(), record))
+    }
+
+    private fun decodePending(stored: String): PendingLogin? = try {
+        val record = MojangJson.parseToJsonElement(stored).jsonObject
+        val deviceCode = record.text("deviceCode")
+        val userCode = record.text("userCode")
+        val expiresAtMs = record["expiresAtMs"]?.jsonPrimitive?.longOrNull
+        if (deviceCode.isEmpty() || userCode.isEmpty() || expiresAtMs == null) {
+            null
+        } else {
+            PendingLogin(
+                deviceCode = deviceCode,
+                userCode = userCode,
+                verifyUrl = record.text("verifyUrl"),
+                expiresAtMs = expiresAtMs,
+                inline = record["inline"]?.jsonPrimitive?.booleanOrNull == true,
+                approved = record["approved"]?.jsonPrimitive?.booleanOrNull == true,
+            )
+        }
+    } catch (malformed: IllegalArgumentException) {
+        null
     }
 
     suspend fun profile(): JsonObject = authorized("/auth/me", "GET", null)
@@ -319,6 +417,9 @@ class MillidaAuth(
 
         const val KEY_ACCESS = "millida-access"
         const val KEY_REFRESH = "millida-refresh"
+        const val KEY_PENDING_LOGIN = "millida-pending-login"
+        private const val POLL_PERIOD_MS = 3_000L
+        private const val GAME_SESSION_WINDOW_MS = 120_000L
         private const val SESSION_ATTEMPTS = 3
         private const val MOD_SESSION_TIMEOUT_MS = 6_000L
         private const val EXPIRY_MARGIN_MS = 30_000L

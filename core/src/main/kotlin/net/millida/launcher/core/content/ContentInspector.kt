@@ -105,6 +105,17 @@ object ContentInspector {
     private val HARMLESS_EXTENSIONS = listOf(".png", ".txt", ".json", ".lang", ".dat", ".bin")
     private val CLASS_MAGIC = byteArrayOf(0xCA.toByte(), 0xFE.toByte(), 0xBA.toByte(), 0xBE.toByte())
 
+    /**
+     * Only the mod id, read from the descriptor files. [inspect] reads the head of
+     * every entry; on a pack of 50 big mods that took about a minute on a phone
+     * before every launch.
+     */
+    fun modId(file: File): String = try {
+        if (!file.isFile || !hasArchiveExtension(file.name)) "" else ZipFile(file).use { describe(it).modId }
+    } catch (broken: Exception) {
+        ""
+    }
+
     fun inspect(file: File): ContentFacts {
         val name = file.name
         if (!file.isFile) return ContentFacts(name, ArchiveShape.NOT_AN_ARCHIVE, unreadable = tr("файла нет на месте"))

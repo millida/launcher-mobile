@@ -566,8 +566,10 @@ fun LoginDialog(state: UiState, model: LauncherViewModel) {
     // The code alone is useless without the page it is typed into, so the page
     // opens by itself and the code lands in the clipboard.
     LaunchedEffect(prompt.code) {
-        clipboard.setText(AnnotatedString(prompt.code))
-        model.openLinkOrNotice(context, prompt.url)
+        if (model.claimLoginPage(prompt)) {
+            clipboard.setText(AnnotatedString(prompt.code))
+            model.openLinkOrNotice(context, prompt.url)
+        }
     }
 
     MDialog(

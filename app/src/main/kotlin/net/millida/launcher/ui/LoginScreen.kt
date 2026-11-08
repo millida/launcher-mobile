@@ -60,7 +60,7 @@ fun LoginScreen(state: UiState, model: LauncherViewModel, onLeave: () -> Unit) {
         if (busy || prompt != null) model.cancelLogin() else onLeave()
     }
     LaunchedEffect(prompt?.code) {
-        if (prompt != null) {
+        if (prompt != null && model.claimLoginPage(prompt)) {
             clipboard.setText(AnnotatedString(prompt.code))
             model.openLinkOrNotice(context, prompt.url)
         }

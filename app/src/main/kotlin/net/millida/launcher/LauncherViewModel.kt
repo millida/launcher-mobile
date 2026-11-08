@@ -37,6 +37,7 @@ import net.millida.launcher.core.account.LoginGate
 import net.millida.launcher.core.account.GameSession
 import net.millida.launcher.core.account.MicrosoftSignInRequired
 import net.millida.launcher.core.account.OfflineAuth
+import net.millida.launcher.core.account.PendingLogin
 import net.millida.launcher.core.account.Unauthorized
 import net.millida.launcher.core.catalog.CatalogItem
 import net.millida.launcher.core.catalog.CatalogSource
@@ -447,6 +448,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     )
 
     private var loginJob: Job? = null
+    private var openedLoginCode: String? = null
     private var playJob: Job? = null
 
     /** Dependencies already offered for a build in this session: one that did not help is not offered in a loop. */
@@ -675,6 +677,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
                 }
             }
             state.update { it.copy(profilesLoaded = true) }
+            withContext(Dispatchers.IO) { container.millidaAuth.pendingLogin() }?.let(::resumeMillidaLogin)
             container.telemetry.appStarted()
             refreshVersions()
             refreshRenderers()
@@ -3716,46 +3719,77 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
 
     /** [inline] keeps the code on the sign-in screen that asked for it, as the desktop's Login does, instead of the dialog. */
     fun loginMillida(inline: Boolean = false) {
+        runMillidaLogin {
+            val auth = container.millidaAuth
+            auth.pendingLogin()?.takeIf { it.approved } ?: auth.startLogin(inline)
+        }
+    }
+
+    /** Carries on the sign-in a previous process left unfinished; its page is already open in the browser. */
+    private fun resumeMillidaLogin(pending: PendingLogin) {
+        if (loginJob?.isActive == true) return
+        openedLoginCode = pending.userCode
+        runMillidaLogin { pending }
+    }
+
+    /** True once per Millida code, so coming back to the screen does not throw the player into the browser again. */
+    fun claimLoginPage(prompt: LoginPrompt): Boolean {
+        if (prompt.kind != AccountKind.MILLIDA) return true
+        if (prompt.code == openedLoginCode) return false
+        openedLoginCode = prompt.code
+        return true
+    }
+
+    private fun runMillidaLogin(obtain: suspend () -> PendingLogin) {
         loginJob?.cancel()
         loginJob = viewModelScope.launch {
             runTask(MILLIDA_LOGIN_TASK) {
-                val init = container.millidaAuth.startLogin()
-                state.update {
-                    it.copy(loginPrompt = LoginPrompt(init.userCode, init.verifyUrl, AccountKind.MILLIDA, inline))
-                }
-                val deadline = System.currentTimeMillis() + init.expiresInSec * 1000L
-                while (System.currentTimeMillis() < deadline) {
-                    delay(3000)
-                    if (container.millidaAuth.pollLogin(init.deviceCode)) {
-                        state.update { it.copy(millidaSignedIn = true) }
-                        val session = container.millidaAuth.gameSession()
-                        val returning = prefs.millidaEver
-                        prefs.millidaEver = true
-                        saveAccount(AccountKind.MILLIDA, session)
-                        val stepDue = FirstRunGameStep.due(
-                            returning = returning,
-                            state = prefs.firstRun,
-                            hasGame = state.value.accounts.any { FirstRunGameStep.isGameAccount(it.kind) },
-                        )
-                        if (stepDue) prefs.firstRun = FirstRunGameStep.PENDING
-                        state.update {
-                            it.copy(
-                                loginPrompt = null,
-                                sessionExpired = it.sessionExpired.takeUnless { kind -> kind == AccountKind.MILLIDA },
-                                gameStep = stepDue,
-                                loginGate = false,
-                                guestAllowed = LoginGate.guestAllowed(prefs.millidaEver),
-                            )
-                        }
-                        notice(tr("Вход выполнен: {nick}", session.nick))
-                        refreshPortal()
-                        return@runTask
+                val pending = obtain()
+                if (!pending.approved) {
+                    state.update {
+                        it.copy(loginPrompt = LoginPrompt(pending.userCode, pending.verifyUrl, AccountKind.MILLIDA, pending.inline))
                     }
                 }
-                state.update { it.copy(loginPrompt = null) }
-                notice(tr("Код входа истёк — попробуй снова"), isError = true)
+                try {
+                    completeMillidaLogin(pending)
+                } catch (failed: IOException) {
+                    state.update { it.copy(loginPrompt = null) }
+                    throw failed
+                }
             }
         }
+    }
+
+    private suspend fun completeMillidaLogin(pending: PendingLogin) {
+        val auth = container.millidaAuth
+        if (!auth.awaitApproval(pending)) {
+            state.update { it.copy(loginPrompt = null) }
+            notice(tr("Код входа истёк — попробуй снова"), isError = true)
+            return
+        }
+        state.update { it.copy(millidaSignedIn = true) }
+        val session = auth.awaitGameSession()
+        val returning = prefs.millidaEver
+        prefs.millidaEver = true
+        saveAccount(AccountKind.MILLIDA, session)
+        auth.finishLogin()
+        val stepDue = FirstRunGameStep.due(
+            returning = returning,
+            state = prefs.firstRun,
+            hasGame = state.value.accounts.any { FirstRunGameStep.isGameAccount(it.kind) },
+        )
+        if (stepDue) prefs.firstRun = FirstRunGameStep.PENDING
+        state.update {
+            it.copy(
+                loginPrompt = null,
+                sessionExpired = it.sessionExpired.takeUnless { kind -> kind == AccountKind.MILLIDA },
+                gameStep = stepDue,
+                loginGate = false,
+                guestAllowed = LoginGate.guestAllowed(prefs.millidaEver),
+            )
+        }
+        notice(tr("Вход выполнен: {nick}", session.nick))
+        refreshPortal()
     }
 
     /** [inline] keeps the code in the panel that asked for it, as the desktop's account window does, instead of the dialog. */
@@ -3957,6 +3991,7 @@ class LauncherViewModel(application: Application) : AndroidViewModel(application
     fun cancelLogin() {
         loginJob?.cancel()
         loginJob = null
+        container.millidaAuth.finishLogin()
         state.update { it.copy(loginPrompt = null) }
     }
 

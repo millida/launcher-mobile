@@ -509,7 +509,31 @@ class PackRuntime(
         out += "-Dminecraft.launcher.brand=millida-mobile"
         out += "-Dminecraft.launcher.version=1.0"
         out += "-XX:+UnlockExperimentalVMOptions"
-        out += "-XX:+UseSerialGC"
+        // The Android builds of Java 21 (21.0.1 and our 21.0.13 alike) crash while the symbol and string
+        // tables grow: SymbolTable::grow frees the old buckets under a reader, SIGSEGV at 0x7600000008
+        // in the Service Thread or in SymbolTable::do_lookup. A modded pack grows them right when the
+        // player enters the world: 3–4 crashes in 4 joins on a Redmi Note 13 (07.11.2026). Tables sized
+        // up front never grow: 0 crashes in 5 joins. Cost: 24 MB of native memory on a big heap.
+        if (heapMb >= G1_FROM_HEAP_MB) {
+            out += "-XX:SymbolTableSize=2097152"
+            out += "-XX:StringTableSize=1048576"
+        } else {
+            out += "-XX:SymbolTableSize=262144"
+            out += "-XX:StringTableSize=131072"
+        }
+        // Presized tables cut the crash to ~1 in 4 joins, but SymbolTable::clean_dead_entries still crashed the
+        // same way (08.11.2026). With LSE atomics off: 0 crashes in 8 joins on the same phone and pack. The
+        // concurrent hash table of these Android builds is not safe with LSE atomics; the plain LL/SC path is.
+        // aarch64-only flag: an unknown flag would stop the 32-bit JVM from starting.
+        if (Process.is64Bit()) out += "-XX:-UseLSE"
+        // SerialGC stops a big modded pack for up to 3 s on a phone: measured on a Redmi Note 13 with 57 mods,
+        // G1 holds the same pack at 30 ms on average and 120 ms at worst.
+        if (heapMb >= G1_FROM_HEAP_MB) {
+            out += "-XX:+UseG1GC"
+            out += "-XX:MaxGCPauseMillis=20"
+        } else {
+            out += "-XX:+UseSerialGC"
+        }
         out += "-XX:-OmitStackTraceInFastThrow"
         out += "-XX:ActiveProcessorCount=${Runtime.getRuntime().availableProcessors()}"
         // The Android emulator on Apple M4/M5 reports SVE that the guest cannot execute: the
@@ -638,6 +662,8 @@ internal fun isLauncherOwnedJvmArg(argument: String): Boolean =
  * Debug builds only: a properties file in the build's folder switches parts of
  * the start on and off from adb, so a device experiment needs no new build.
  */
+private const val G1_FROM_HEAP_MB = 1536
+
 private object DebugFlags {
     const val FILE = "millida-debug.properties"
     const val ENV_PREFIX = "env."
